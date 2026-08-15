@@ -62,4 +62,6 @@ Live TODOs tracked out-of-repo: Last.fm scrobbling + listen locations, gamificat
 pocket-lock OS patch, taste/affinity engine.
 
 ---
+Open source — have fun with it! But if you're from HiBy and use this code, please attribute me and MAYBE send over some free samples of new gear! 😉
+
 Maintained by **sworrl** <agent.jearl@gmail.com>.
