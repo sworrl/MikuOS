@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M500 Audio Manual</title>
+<style>
+:root{
+  --bg:#f5f8f7; --surface:#ffffff; --line:#d6e3e0; --code:#eef4f3;
+  --text:#0e1c1f; --muted:#5c7a75; --teal:#0f8f87; --teal2:#0b6f68; --gold:#a9781a; --pink:#c43a76;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --bg:#0b1315; --surface:#111e21; --line:#22383d; --code:#16262a;
+  --text:#e8f4f2; --muted:#89aca7; --teal:#39c5bb; --teal2:#7fe6de; --gold:#ffcf6b; --pink:#ff5fa2;
+}}
+:root[data-theme="dark"]{
+  --bg:#0b1315; --surface:#111e21; --line:#22383d; --code:#16262a;
+  --text:#e8f4f2; --muted:#89aca7; --teal:#39c5bb; --teal2:#7fe6de; --gold:#ffcf6b; --pink:#ff5fa2;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:16px/1.65 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,"JetBrains Mono","SF Mono",monospace}
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:40px;max-width:980px;margin:0 auto;padding:28px 24px 90px}
+nav{position:sticky;top:24px;align-self:start;font-size:14px}
+nav .t{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 8px}
+nav a{display:block;color:var(--muted);text-decoration:none;padding:3px 0}
+nav a:hover{color:var(--teal)}
+main{min-width:0}
+h1{font-size:30px;letter-spacing:-.02em;margin:0 0 4px;text-wrap:balance}
+h1 .m{color:var(--teal)}
+.lede{color:var(--muted);margin:0 0 26px}
+h2{font-size:20px;letter-spacing:-.01em;margin:38px 0 6px;padding-top:10px;border-top:1px solid var(--line)}
+h2:first-of-type{border-top:none}
+h3{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:16px 0 4px;font-weight:650}
+p{margin:8px 0;max-width:65ch}
+.key{font-size:13px;color:var(--muted);margin:2px 0 10px}
+.key code{color:var(--teal2)}
+.now{display:inline-block;background:var(--code);border:1px solid var(--line);border-radius:6px;
+  padding:1px 8px;font-size:13px;color:var(--text)}
+ul{margin:8px 0;padding-left:20px;max-width:65ch}
+li{margin:4px 0}
+li b{font-weight:600}
+code{font-family:ui-monospace,monospace;background:var(--code);padding:1px 5px;border-radius:4px;font-size:.9em}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:13px;margin:10px 0}
+pre code{background:none;padding:0}
+.badge{display:inline-block;border-radius:5px;padding:1px 7px;font-size:12px;font-weight:650}
+.sq{background:var(--code);color:var(--muted);border:1px solid var(--line)}
+.hr{background:var(--gold);color:#241800}
+table{border-collapse:collapse;margin:12px 0;font-size:14px;width:100%}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.tip{background:var(--code);border-left:3px solid var(--teal);border-radius:0 8px 8px 0;padding:10px 14px;margin:14px 0;color:var(--text)}
+footer{color:var(--muted);font-size:13px;margin-top:40px;border-top:1px solid var(--line);padding-top:14px}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{position:static}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <p class="t">Controls</p>
+  <a href="#dac">DAC &amp; badge</a>
+  <a href="#filter">Digital filter</a>
+  <a href="#nos">Oversampling / NOS</a>
+  <a href="#dre">DRE</a>
+  <a href="#gain">Output mode / gain</a>
+  <a href="#route">Output routing</a>
+  <a href="#amp">Amp bias</a>
+  <a href="#digital">Digital output</a>
+  <a href="#cpu">CPU governor</a>
+  <a href="#howto">Reading &amp; changing</a>
+  <a href="#start">Starting point</a>
+</nav>
+<main>
+  <h1>HiBy M500 <span class="m">MIKU</span> Audio Manual</h1>
+  <p class="lede">Every audio control on this unit, what its values do, the value it is set to now, and how to change it. Pulled from the device itself.</p>
+
+  <p class="key">Read them all at once:</p>
+  <pre class="mono"><code>settings list global | grep vendor.audio.hiby</code></pre>
+
+  <h2 id="dac">The DAC and the SQ / HR badge</h2>
+  <p>The M500 uses two Cirrus Logic CS43198 chips. HiBy Music tags each track with a badge based only on sample rate:</p>
+  <p><span class="badge sq">SQ</span> lossless below 88.2 kHz &nbsp;·&nbsp; <span class="badge hr">HR</span> lossless at 88.2 kHz or above (plus DSD).</p>
+  <p>Bit depth does not move the badge. A 24-bit / 48 kHz file is bit-perfect and still reads <span class="badge sq">SQ</span>, because 48 kHz sits under the 88.2 kHz line. The badge measures the container's sample rate, not the fidelity.</p>
+
+  <h2 id="filter">Digital filter</h2>
+  <p class="key"><code>vendor.audio.hiby.digital_filter</code> &nbsp; now: <span class="now mono">fast_rolloff_low_latency</span></p>
+  <p>The DAC's reconstruction filter, working just under 22 kHz. It shapes pre- and post-ringing and the last sliver of treble. It does not change tone or detail across the band, and the differences between the five are small.</p>
+  <h3>The five options</h3>
+  <ul>
+    <li><b>fast_rolloff_low_latency</b>: steep cut, minimum phase, no pre-ringing. Tight and immediate. Good default.</li>
+    <li><b>fast_rolloff_phase_compensated</b>: steep cut, linear phase, symmetric ringing. Measures cleanest.</li>
+    <li><b>slow_rolloff_low_latency</b>: gentle cut, minimum phase, less ringing, slightly softer top end.</li>
+    <li><b>slow_rolloff_phase_compensated</b>: gentle cut, linear phase, symmetric ringing.</li>
+    <li><b>nos</b>: no oversampling filter. Rawest; some rolled-off highs.</li>
+  </ul>
+  <p>If cymbals or sibilance tire you, move to <code>slow_rolloff_low_latency</code> or <code>nos</code>. There is no wrong choice here.</p>
+  <pre class="mono"><code>settings put global vendor.audio.hiby.digital_filter slow_rolloff_low_latency</code></pre>
+
+  <h2 id="nos">Oversampling (hardware NOS)</h2>
+  <p class="key"><code>vendor.audio.hiby.hw.digital_filter</code> &nbsp; now: <span class="now mono">nos</span></p>
+  <p>A hardware non-oversampling toggle, separate from the software filter above. When it is set to <code>nos</code> the DAC runs without oversampling. Treat this and the software filter as one decision rather than two.</p>
+
+  <h2 id="dre">DRE (Dynamic Range Enhancement)</h2>
+  <p class="key"><code>vendor.audio.hiby.dre_mode</code> &nbsp; now: <span class="now mono">dremode_disable</span></p>
+  <p>A CS43198 feature that raises the DAC's measured dynamic range with extra processing. On this unit it made 192 kHz / 32-bit playback stutter; turning it off cleared the stutter.</p>
+  <div class="tip">Leave it off. On adds processing and can glitch the highest-rate files. Off sounds a little more natural and plays hi-res clean. Try it on only for heavily compressed pop if you want a touch more body, then turn it back off for hi-res.</div>
+
+  <h2 id="gain">Output mode / gain</h2>
+  <p class="key"><code>vendor.audio.hiby.high_power</code> &nbsp; now: <span class="now mono">hpower_enable</span> (high gain)</p>
+  <p>Gain sets how much voltage swing is on tap. It is not volume and not quality.</p>
+  <ul>
+    <li><b>Low gain</b> for sensitive IEMs. Lower noise floor, finer volume steps, less hiss.</li>
+    <li><b>High gain</b> for headphones that need more voltage to open up.</li>
+  </ul>
+  <p>Use the balanced 4.4 mm jack when your gear supports it. It delivers more power than the 3.5 mm and usually a lower noise floor.</p>
+
+  <h3>What the Miku IEMs want, and the math behind it</h3>
+  <p>Worked for the Moondrop Aria (Hatsune Miku edition): 122 dB/Vrms at 32 &#8486;. That rating means 1 Vrms across the driver makes 122 dB SPL, past the threshold of pain. Solve it backward for real levels:</p>
+  <pre class="mono"><code>SPL = 122 + 20 &middot; log10(Vrms)
+Vrms = 10^((SPL &minus; 122) / 20)</code></pre>
+  <table>
+    <tr><th>Listening level</th><th>Voltage at the driver</th></tr>
+    <tr><td>80 dB SPL (normal)</td><td>7.9 mVrms</td></tr>
+    <tr><td>90 dB SPL (loud)</td><td>25 mVrms</td></tr>
+    <tr><td>100 dB SPL (peaks)</td><td>79 mVrms</td></tr>
+  </table>
+  <p>The 3.5 mm output tops out near 1.97 Vrms, from V = &#8730;(P &middot; R) = &#8730;(0.121 &middot; 32) on the 121 mW / 32 &#8486; rating. So 80 dB listening uses 7.9 mV out of 1.97 V, which is 48 dB below full scale:</p>
+  <pre class="mono"><code>20 &middot; log10(0.0079 / 1.97) = &minus;48 dB</code></pre>
+  <p>Two results follow, both pointing at low gain:</p>
+  <ul>
+    <li><b>Noise floor.</b> The single-ended path is rated 122 dB SNR against full output, so its noise sits near 1.97 &middot; 10^(&minus;122/20) = 1.6 &micro;Vrms. Through a 122 dB/Vrms IEM that noise reads 122 + 20 &middot; log10(1.6&times;10&#8315;&#8310;) &#8776; 6 dB SPL of hiss. In a quiet room with sealed tips, 6 dB SPL is audible. Low gain lowers the amp's output-referred noise, so the hiss drops.</li>
+    <li><b>Volume resolution.</b> Sitting 48 dB down the range on high gain wastes the top of the control, and if the M500 attenuates in the digital domain it discards bits at your listening level. Low gain moves your band up into finer steps.</li>
+  </ul>
+  <div class="tip">For the Aria Miku: <b>low gain</b>. The 4.4 mm balanced output (480 mW, 125 dB SNR, 3 dB quieter than SE) is worth using for the lower noise and better channel separation, not for the wattage, which this IEM never needs. High gain on this DAP is for full-size headphones. If yours are the CHU II Miku instead (119 dB/Vrms, 18 &#8486;), the voltages shift a little but the answer holds: low gain.</div>
+
+  <h2 id="route">Output routing</h2>
+  <p class="key"><code>vendor.audio.hiby.hw.bal_po_lo_switch</code> &nbsp; now: <span class="now mono">bal_po</span> (balanced phone out)</p>
+  <p>Selects balanced phone out, single-ended phone out, or line out. Line out is a fixed level for feeding an external amp or dock, and it bypasses the internal volume. For headphones and IEMs, keep it on phone out.</p>
+
+  <h2 id="amp">Amp bias (class)</h2>
+  <p class="key"><code>vendor.audio.hiby.hw.balpo_po_a_ab</code> &nbsp; now: <span class="now mono">zoom_ab</span> (Class AB)</p>
+  <p>The internal amp bias. The M500's amp runs Class AB. The pricier R5 and R6 ship with a user Class-A switch; the M500 does not, so treat this as fixed unless a matching menu toggle turns up.</p>
+
+  <h2 id="digital">Digital output format</h2>
+  <p class="key"><code>vendor.audio.hiby.hw.iisspdif</code> &nbsp; now: <span class="now mono">spdif</span></p>
+  <p>The format on the data pin for digital output, I2S against SPDIF. It matters only when you use a digital or coax output. For headphone listening it does nothing audible.</p>
+
+  <h2 id="cpu">CPU governor for audio</h2>
+  <p class="key"><code>vendor.audio.hiby.cpu_tuner</code> &nbsp; now: <span class="now mono">performance</span></p>
+  <p>The CPU governor the audio path requests. <code>performance</code> pins the cores near their top clock, which lowers latency and jitter at a small cost in battery.</p>
+
+  <h2 id="howto">Reading and changing settings</h2>
+  <table>
+    <tr><th>Task</th><th>Command</th></tr>
+    <tr><td>Read all</td><td class="mono">settings list global | grep vendor.audio.hiby</td></tr>
+    <tr><td>Read one</td><td class="mono">settings get global vendor.audio.hiby.digital_filter</td></tr>
+    <tr><td>Change one</td><td class="mono">settings put global vendor.audio.hiby.&lt;key&gt; &lt;value&gt;</td></tr>
+  </table>
+  <p>The shell holds <code>WRITE_SETTINGS</code>, so a write succeeds and reads back. Whether the audio driver re-reads a change live, or only at boot or on the next playback start, is not yet confirmed on this unit. When you are unsure, change the setting from the on-screen menu, or restart playback after a write. The authoritative values live in the <code>global</code> namespace; a write to <code>system</code> makes a stray copy the driver ignores.</p>
+
+  <h2 id="start">A starting point for IEMs</h2>
+  <table>
+    <tr><th>Setting</th><th>Value</th><th>Why</th></tr>
+    <tr><td>Digital filter</td><td>fast_rolloff_low_latency</td><td>clean default; move to slow if treble is hot</td></tr>
+    <tr><td>DRE</td><td>off</td><td>natural, and keeps 192/32 glitch-free</td></tr>
+    <tr><td>Gain</td><td>low (IEMs) / high (headphones)</td><td>noise floor and volume control</td></tr>
+    <tr><td>Output</td><td>balanced 4.4 mm if supported</td><td>more power, lower noise</td></tr>
+    <tr><td>Routing</td><td>phone out</td><td>line out only for an external amp</td></tr>
+    <tr><td>CPU governor</td><td>performance</td><td>lowest latency and jitter</td></tr>
+  </table>
+
+  <footer>
+    Sources: on-device probe (<span class="mono">settings list global</span>, <span class="mono">dumpsys media.audio_flinger</span>, <span class="mono">getprop</span>); HiBy Music badge tiers from the HiBy WiKi; CS43198 filter set from the DAC datasheet and reviews.
+  </footer>
+</main>
+</div>
+</body>
+</html>

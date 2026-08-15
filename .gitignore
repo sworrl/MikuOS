@@ -1,0 +1,24 @@
+# ── The Kotlin player is its own git repo (miku-player-kotlin/.git, full history) ──
+# Push it separately; this backup repo covers everything else.
+/miku-player-kotlin/
+
+# Build outputs & toolchains (regenerable)
+**/build/
+**/.gradle/
+/tools/gradle-8.7/
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Binary APKs — rebuildable from the decompiled trees + stock APKs; keep releases on GitHub
+# Releases instead of in history
+*.apk
+*.apk.idsig
+*.apks
+
+# Signing material — never commit keys
+*.keystore
+*.jks
+*.pk8
+*.pem
