@@ -1,0 +1,3 @@
+# Copy to os/mikuos-dev-wifi.conf (gitignored) to pre-seed a Wi-Fi network at first boot.
+ssid_match=YOUR SSID OR A SUBSTRING OF IT
+psk=your-passphrase
