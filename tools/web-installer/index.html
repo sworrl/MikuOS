@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MikuOS Installer for HiBy M500</title>
+<meta name="description" content="Install MikuOS on the HiBy M500 (Hatsune Miku Edition) straight from your browser over WebUSB. No adb, no fastboot, no drivers.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2339C5BB'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%230b0f14'/%3E%3Ccircle cx='32' cy='32' r='4' fill='%23ff4fa3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>MikuOS <span class="thin">Installer</span></h1>
+      <div class="muted small">HiBy M500 Hatsune Miku Edition - WebUSB fastboot, no tools to install</div>
+    </div>
+  </div>
+  <div class="conn"><span id="conn-state" class="pill bad">not connected</span></div>
+</header>
+
+<nav class="stepnav" aria-label="Steps">
+  <ol>
+    <li data-step="1"><span>1</span>Requirements</li>
+    <li data-step="2"><span>2</span>Connect</li>
+    <li data-step="3"><span>3</span>Choose</li>
+    <li data-step="4"><span>4</span>Flash</li>
+    <li data-step="5"><span>5</span>Done</li>
+  </ol>
+</nav>
+
+<main>
+<!-- ============================ STEP 1 ============================ -->
+<section class="step" data-step="1">
+  <h2>Before you start</h2>
+  <ul class="reqs">
+    <li id="req-browser" class="req"><span class="req-text"></span></li>
+    <li id="req-webusb" class="req"><span class="req-text"></span></li>
+    <li id="req-https" class="req"><span class="req-text"></span></li>
+  </ul>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>You need</h3>
+      <ul>
+        <li>A desktop PC/Mac with <b>Chrome, Edge or Brave</b> (Firefox and Safari have no WebUSB).</li>
+        <li>A good <b>USB-C data cable</b> plugged straight into the computer (no hubs, no front-panel ports if you can avoid them).</li>
+        <li>The M500 charged to <b>at least 50%</b>. <b>Fastboot mode does not charge the M500</b> and a full install moves ~5 GB over USB (about 10 minutes). Charge on a wall charger first.</li>
+        <li>An <b>unlocked bootloader</b> (Settings &rarr; Developer options &rarr; OEM unlocking). The installer checks this and can unlock for you (that wipes data).</li>
+        <li>About 10 minutes where you will not touch the cable or the device.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Put the M500 in fastboot mode</h3>
+      <p><b>From Android (easiest):</b> enable USB debugging, then on the computer run <code>adb reboot bootloader</code>. Or use the "Reboot to bootloader" option in MikuOS' power menu if you already run MikuOS.</p>
+      <p><b>Hardware key combo:</b> with the device fully off, hold <b>Power + Volume Down</b> until the fastboot screen appears. <span class="todo">VERIFY: this combo comes from the repo's older notes; the M500 has a rotary volume wheel, so the exact button may differ. Confirm on a real unit before publishing.</span></p>
+      <p>The screen shows a plain "fastboot" splash; on the PC it enumerates as USB <code>18d1:d00d</code>.</p>
+    </div>
+  </div>
+
+  <div class="card warn">
+    <h3>Read this</h3>
+    <ul>
+      <li><b>Never unplug the cable or touch the device while flashing.</b> An interrupted <code>super</code> flash leaves the OS partitions half-written; the fix is simply to run the install again, but until then the device will not boot.</li>
+      <li>"Install (keep data)" preserves your music, likes, history and accounts. "Clean install" and "Rollback to stock" wipe everything.</li>
+      <li>If the device stops responding mid-flash, follow the <a href="#recovery">recovery section</a> - it is a known USB quirk of the M500, not a brick.</li>
+    </ul>
+  </div>
+
+  <label class="check"><input type="checkbox" id="req-battery"> The M500 is charged to 50% or more.</label>
+  <label class="check"><input type="checkbox" id="req-backup"> I have a backup of anything I cannot lose, and I understand the warnings above.</label>
+  <div class="actions-row">
+    <button id="req-continue" class="primary" data-goto="2" disabled>Continue</button>
+  </div>
+</section>
+
+<!-- ============================ STEP 2 ============================ -->
+<section class="step" data-step="2">
+  <h2>Connect the M500</h2>
+  <div id="manifest-status" class="notice">Loading release manifest...</div>
+  <details class="card" id="local-panel">
+    <summary id="local-toggle">Advanced: load the manifest or images from local files (developers)</summary>
+    <p class="muted small">Useful for testing a build from <code>mikuos/out</code> without hosting 5 GB. Pick a <code>release.json</code> and/or the individual images; sizes must match the manifest exactly, hashes are still verified.</p>
+    <label class="file-row"><span class="mono">release.json</span><input type="file" id="manifest-file" accept=".json"></label>
+    <div id="local-files"></div>
+  </details>
+
+  <div class="actions-row">
+    <button id="btn-connect" class="primary">Connect device</button>
+    <button id="btn-refresh" class="ghost">Re-read device info</button>
+    <button id="btn-reboot-bl" class="ghost">Reboot to bootloader</button>
+    <button id="btn-unlock" class="danger" hidden>Unlock bootloader (wipes data)</button>
+  </div>
+  <p class="muted small">Pick the M500 in the browser's USB dialog. Linux users: if the dialog is empty, add a udev rule for <code>18d1:d00d</code> (see README) and replug.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Device</h3>
+      <table class="kv" id="device-info"><tr><td class="muted">Not connected.</td></tr></table>
+      <details><summary class="small">raw getvar:all</summary><pre id="getvar-all" class="mono small"></pre></details>
+    </div>
+    <div class="card">
+      <h3>Safety checks</h3>
+      <ul id="guard" class="guard"><li class="meh">Connect a device to run the checks.</li></ul>
+      <p class="small muted">Expected product: <code id="expected-product"></code></p>
+      <label class="check small"><input type="checkbox" id="battery-override"> I checked the battery percentage on the device before rebooting and it is above 50% (ignore the voltage estimate).</label>
+      <label class="check small danger-text"><input type="checkbox" id="dev-override"> Developer override: bypass the product / partition / unlock checks. I accept that this can permanently brick a device.</label>
+    </div>
+  </div>
+  <div class="actions-row">
+    <button class="ghost" data-goto="1">Back</button>
+    <button id="connect-continue" class="primary" data-goto="3" disabled>Continue</button>
+  </div>
+</section>
+
+<!-- ============================ STEP 3 ============================ -->
+<section class="step" data-step="3">
+  <h2>What do you want to do?</h2>
+  <div id="actions" class="actions"></div>
+  <label class="check" id="opt-root-wrap" hidden><input type="checkbox" id="opt-root"> Also enable root: use the Magisk-patched <code>init_boot</code> in this install.</label>
+  <div class="card">
+    <h3>Exact fastboot sequence that will run</h3>
+    <pre id="plan-preview" class="mono small">Select an action.</pre>
+    <div id="plan-total" class="muted small"></div>
+  </div>
+  <div class="actions-row">
+    <button class="ghost" data-goto="2">Back</button>
+    <button id="choose-continue" class="primary" disabled>Start flashing</button>
+  </div>
+</section>
+
+<!-- ============================ STEP 4 ============================ -->
+<section class="step" data-step="4">
+  <h2>Flashing</h2>
+  <div id="running-banner" class="notice warn" hidden><b>Do not touch the cable or the device.</b> Keep this tab in the foreground; do not let the computer sleep. <span id="overall"></span></div>
+  <ol id="flash-steps" class="flash-steps"></ol>
+  <div class="actions-row">
+    <button id="btn-abort" class="danger" hidden>Abort</button>
+    <button id="btn-resume" class="primary" hidden>Reconnect &amp; Resume</button>
+  </div>
+</section>
+
+<!-- ============================ STEP 5 ============================ -->
+<section class="step" data-step="5">
+  <h2 id="done-title">Done</h2>
+  <div id="done-body" class="card"></div>
+  <div class="actions-row">
+    <button id="btn-again" class="ghost">Flash something else</button>
+  </div>
+</section>
+
+<!-- ============================ LOG ============================ -->
+<section class="logwrap">
+  <div class="loghead"><h3>Log</h3><div><button id="log-copy" class="ghost small">Copy</button><button id="log-clear" class="ghost small">Clear</button></div></div>
+  <div id="log" class="log mono"></div>
+</section>
+
+<!-- ============================ TROUBLESHOOTING ============================ -->
+<section id="recovery" class="card recovery">
+  <h2>Troubleshooting &amp; recovery</h2>
+  <h3>The transfer froze / "USB transfer stalled" / the device vanished from USB</h3>
+  <p>The M500's fastboot USB gadget can wedge during long transfers (this is why super is sent in 64 MiB chunks). Host-side tricks do not help; only a physical power-cycle clears it:</p>
+  <ol>
+    <li>Unplug the USB cable.</li>
+    <li>Hold <b>Power</b> for about 10 seconds until the device is completely off.</li>
+    <li>Re-enter fastboot (key combo above; a device with a half-written super usually falls back to fastboot by itself after a few failed boot attempts).</li>
+    <li>Plug the cable back in and press <b>Reconnect &amp; Resume</b>. The installer continues at the exact chunk that failed.</li>
+  </ol>
+  <h3>Bootloop after flashing (device bounces between logo / recovery / fastboot)</h3>
+  <p>Either the super flash was interrupted or userdata was left in a raw state. Run a <b>Clean install</b> from this page (it re-flashes every partition, then wipes and lets the system format /data), leave the device alone until the boot animation appears. Slot A's boot-attempt counter is reset by the "set active slot A" step.</p>
+  <h3>Device looks dead after a long session in fastboot</h3>
+  <p>Fastboot does not charge. A flat battery shows as a blue LED and a 2-second splash that loops. Charge on a wall charger for an hour, then try again.</p>
+  <h3>Nothing shows in the browser's USB dialog</h3>
+  <ul>
+    <li>Confirm the device is in fastboot (not Android, not recovery, not "fastbootd").</li>
+    <li>Windows: make sure the Google/Android USB driver is bound (WinUSB); Zadig can bind WinUSB to <code>18d1:d00d</code> if needed.</li>
+    <li>Linux: udev rule <code>SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", ATTR{idProduct}=="d00d", MODE="0666"</code>, then replug. Close any running <code>fastboot</code> CLI - never two fastboot clients at once.</li>
+    <li>Change cable / port; avoid hubs and VM USB passthrough.</li>
+  </ul>
+  <h3>Total recovery (last resort)</h3>
+  <p>The M500 is a Qualcomm SM6225 device with EDL (9008) mode; a full raw restore is possible with the <code>edl</code> tool and a firehose loader. That is outside this installer - see the repository's rooting/unbrick guide.</p>
+</section>
+</main>
+
+<footer class="muted small">
+  MikuOS Web Installer &middot; fastboot over WebUSB via <a href="https://github.com/kdrag0n/fastboot.js" target="_blank" rel="noopener">fastboot.js</a> (MIT) &middot; <span id="year"></span>
+  &middot; Not affiliated with HiBy or Crypton Future Media.
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

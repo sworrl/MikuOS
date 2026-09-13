@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="headset_plugged_in">Headphones Connected · CS43131 DAC Active</string>
+    <string name="headset_plugged_out">Headphones Disconnected · Audio Paused</string>
+    <string name="hiby_click_to_close">Tap anywhere to dismiss</string>
+</resources>

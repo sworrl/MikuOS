@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">M500 Hardware &amp; DAC</string>
+    <string name="hardware_settings_title">M500 Hardware &amp; DAC Settings</string>
+    <string name="hardware_settings_summary">Cirrus Logic CS43198 DAC, Filters, Gain, Fn Pocket Lock, Pulsar RGB &amp; USB DAC</string>
+    <string name="pulsar_settings_title">Pulsar RGB LED Engine</string>
+    <string name="pulsar_settings_summary">TrueColor PWM, Chroma Spectrum Wave, BPM rhythm pulses &amp; battery gauge</string>
+    <string name="fn_settings_title">Hardware Fn Switch &amp; Pocket Lock</string>
+    <string name="fn_settings_summary">Digitizer hardware inhibit, volume wheel retention, physical key lock</string>
+    <!-- Miku status-badge widget descriptions (widget picker) -->
+    <string name="widget_desc_battery">Miku battery badge — level &amp; charge</string>
+    <string name="widget_desc_signal">Miku signal badge — Wi-Fi &amp; cellular</string>
+    <string name="widget_desc_clock">Miku clock badge</string>
+    <string name="widget_desc_bpm">Miku now-playing / BPM badge</string>
+    <string name="widget_desc_weather">Miku weather badge</string>
+    <string name="widget_desc_thermal">Miku thermal badge — CPU &amp; battery temp</string>
+    <string name="widget_desc_volume">Miku volume badge</string>
+    <string name="widget_desc_bpm_tapper">Miku tap-tempo orb — tap to find the BPM</string>
+    <string name="widget_desc_bpm_combo">Miku BPM combo — live tempo + tap-tempo orb</string>
+</resources>

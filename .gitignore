@@ -1,0 +1,31 @@
+# Build outputs
+**/build/
+**/.gradle/
+**/.cxx/
+local.properties
+.idea/
+*.iml
+
+# Signing material - never commit keys
+*.keystore
+*.jks
+*.pk8
+*.pem
+*.p12
+keystore.properties
+
+# Local secrets (see the .example files)
+arco.properties
+*.conf
+!tools/rsync/rsyncd.conf
+
+# Built artifacts - releases live on GitHub Releases
+*.apk
+*.apk.idsig
+*.img
+*.so
+
+# Vendor blobs pulled from the device
+libqcomfm_jni.so
+
+.DS_Store

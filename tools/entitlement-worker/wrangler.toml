@@ -1,0 +1,29 @@
+# Miku Music remote-entitlement Worker.
+# Deploy steps + curl tests: README.md in this directory. NOT deployed by the build pipeline.
+name = "miku-entitlement"
+main = "src/index.ts"
+compatibility_date = "2024-09-01"
+workers_dev = true
+
+# Custom hostname (Cloudflare-proxied zone). Comment out to use the *.workers.dev URL while testing.
+# routes = [{ pattern = "mikusan.falcontechnix.com", custom_domain = true }]
+
+[vars]
+# Comma-separated device IDs (the 64-hex SHA-256 the app shows under Settings → License → Device ID)
+# that are the OWNER's own units. They ALWAYS get a signed ALLOW no matter what KV says — this is
+# the server half of the "can't brick your own device" guarantee. Fill in after the first check-in
+# (the id also appears in KV under `seen:<id>`).
+OWNER_EXEMPT_DEVICE_IDS = ""
+# Verdict lifetimes (ms). A DENY that has expired on the device no longer counts — the device must
+# hear a fresh signed DENY to keep the chain alive, so an abandoned Worker can never lock anyone out.
+ALLOW_TTL_MS = "2592000000"   # 30 days
+DENY_TTL_MS  = "1209600000"   # 14 days
+
+[[kv_namespaces]]
+binding = "ENTITLEMENT_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"          # wrangler kv namespace create ENTITLEMENT_KV
+preview_id = "REPLACE_WITH_PREVIEW_ID"       # wrangler kv namespace create ENTITLEMENT_KV --preview
+
+# Secrets (never in this file):
+#   wrangler secret put ENTITLEMENT_HMAC_SECRET   # == local.properties miku.entitlement.hmac
+#   wrangler secret put ADMIN_TOKEN               # bearer token for /admin/*

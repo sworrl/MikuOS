@@ -1,0 +1,16 @@
+{
+  "name": "miku-entitlement-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Signed allow/disallow entitlement endpoint for Miku Music (HiBy M500 / MikuOS)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "typescript": "^5.6.2",
+    "wrangler": "^3.78.0"
+  }
+}

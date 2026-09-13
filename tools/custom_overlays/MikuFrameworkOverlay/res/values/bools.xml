@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Never wake the screen on charger plug/unplug. The M500's charger input can flap
+         (weak USB hosts brown out under charge current -> re-qualify blips), and stock
+         behavior strobed the screen awake on every blip (WAKE_REASON_PLUGGED_IN). A DAP
+         gains nothing from plug-wake; the Pulsar LED / lockscreen already show charge state. -->
+    <bool name="config_unplugTurnsOnScreen">false</bool>
+</resources>

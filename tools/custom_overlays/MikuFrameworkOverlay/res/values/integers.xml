@@ -1,0 +1,4 @@
+<resources>
+    <!-- 2 = Gestural navigation -->
+    <integer name="config_navBarInteractionMode">2</integer>
+</resources>
