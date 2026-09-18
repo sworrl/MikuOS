@@ -15,7 +15,15 @@
 #           tools/sync-library.sh --force    # full re-scan of every file
 set -euo pipefail
 export PATH="$PATH:$HOME/Android/Sdk/platform-tools"
-: "${ANDROID_SERIAL:=10.7.7.3:5555}"; export ANDROID_SERIAL
+# Sync host is not hardcoded: source the gitignored env (tools/m500-sync.env; see
+# tools/m500-sync.env.example), then derive the adb-over-Wi-Fi serial from SYNC_HOST.
+# An explicit ANDROID_SERIAL still wins; it stays empty when nothing is configured, and
+# the reachability check below then skips gracefully instead of targeting a personal IP.
+ENV_FILE="${M500_SYNC_ENV:-$(cd "$(dirname "$0")" && pwd)/m500-sync.env}"
+# shellcheck disable=SC1090
+[ -f "$ENV_FILE" ] && . "$ENV_FILE"
+ADB_TCP_PORT="${ADB_TCP_PORT:-5555}"
+: "${ANDROID_SERIAL:=${SYNC_HOST:+${SYNC_HOST}:${ADB_TCP_PORT}}}"; export ANDROID_SERIAL
 REPO="$(cd "$(dirname "$0")/.." && pwd)"; LIB="$REPO/library"; TOOLS="$REPO/tools"
 DEV=/sdcard/MikuLibrary
 # Feed both widget packages: the in-place mod (com.hiby.widget) and the

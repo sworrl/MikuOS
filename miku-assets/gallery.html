@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>M500 x SeeAudio Yume — Spot Check Review Gallery</title>
+  <style>
+    :root {
+      --bg-color: #0b0f14;
+      --card-bg: #141b24;
+      --text-color: #e2e8f0;
+      --accent-miku: #39c5bb;
+      --accent-pink: #e03177;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-color);
+      color: var(--text-color);
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+    }
+    header {
+      text-align: center;
+      max-width: 900px;
+    }
+    h1 {
+      font-size: 2.2rem;
+      color: var(--accent-miku);
+      margin-bottom: 0.5rem;
+    }
+    p {
+      color: #94a3b8;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    .specs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      width: 100%;
+      max-width: 1100px;
+      margin-top: 1rem;
+    }
+    .spec-card {
+      background: var(--card-bg);
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .spec-card h3 {
+      color: var(--accent-pink);
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+    .spec-card ul {
+      list-style-type: square;
+      padding-left: 1.2rem;
+      color: #cbd5e1;
+      font-size: 0.9rem;
+    }
+    .spec-card li { margin-bottom: 0.3rem; }
+    .gallery {
+      display: flex;
+      flex-direction: column;
+      gap: 3rem;
+      width: 100%;
+      max-width: 1200px;
+    }
+    .item {
+      background: var(--card-bg);
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .item-header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .item-header h2 {
+      font-size: 1.3rem;
+      color: var(--accent-miku);
+    }
+    .tag {
+      background: rgba(57, 197, 187, 0.15);
+      color: var(--accent-miku);
+      padding: 0.3rem 0.8rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+    .img-wrapper {
+      position: relative;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 400px;
+      cursor: zoom-in;
+    }
+    .img-wrapper img {
+      max-width: 100%;
+      max-height: 85vh;
+      object-fit: contain;
+      display: block;
+      transition: transform 0.2s ease;
+    }
+    .img-wrapper.zoomed img {
+      transform: scale(1.6);
+      cursor: zoom-out;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>HiBy M500 &times; SeeAudio Yume — Spot Check</h1>
+    <p>Inspecting physical hardware details, button layouts, port alignments, UI screencaps, and right-angle plug adapter.</p>
+    
+    <div class="specs-grid">
+      <div class="spec-card">
+        <h3>Hardware Controls</h3>
+        <ul>
+          <li>Diamond knurled silicone teal case</li>
+          <li>Top-right knurled silver volume dial</li>
+          <li>Blue LED status bar indicator</li>
+          <li>Pink [power], White [prev/play/next], Pink [.fn]</li>
+        </ul>
+      </div>
+      <div class="spec-card">
+        <h3>Adapter & IEMs</h3>
+        <ul>
+          <li>90&deg; right-angle balanced 4.4mm plug</li>
+          <li>Cyan anodized barrel & knurled magenta ring</li>
+          <li>Heavy black twisted audiophile cable</li>
+          <li>SeeAudio Yume: faceted cyan faceplate, '01' numeral & magenta collar accent</li>
+        </ul>
+      </div>
+      <div class="spec-card">
+        <h3>Live UI Screencaps</h3>
+        <ul>
+          <li>TID beach wallpaper + floating music bar</li>
+          <li>Chibi Miku desktop screen widget</li>
+          <li>HiByMusic & Spotify app shortcuts</li>
+          <li>MIKU DBS-90 cassette tape visualizer mode</li>
+        </ul>
+      </div>
+    </div>
+  </header>
+
+  <main class="gallery">
+    <div class="item">
+      <div class="item-header">
+        <h2>1. Handheld Portrait Mode (Live Android UI Screencap)</h2>
+        <span class="tag">m500_portrait_spotcheck.jpg</span>
+      </div>
+      <div class="img-wrapper" onclick="this.classList.toggle('zoomed')">
+        <img src="miku_renders/m500_portrait_spotcheck.jpg" alt="M500 Handheld Portrait Spotcheck">
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="item-header">
+        <h2>2. Cassette Tape Mode Hero (Solid Black Background)</h2>
+        <span class="tag">m500_iem_hero_black.jpg</span>
+      </div>
+      <div class="img-wrapper" onclick="this.classList.toggle('zoomed')">
+        <img src="miku_renders/m500_iem_hero_black.jpg" alt="M500 Tape Hero Black">
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="item-header">
+        <h2>3. Cassette Tape Mode Hero (Solid White Background)</h2>
+        <span class="tag">m500_iem_hero_white.jpg</span>
+      </div>
+      <div class="img-wrapper" onclick="this.classList.toggle('zoomed')">
+        <img src="miku_renders/m500_iem_hero_white.jpg" alt="M500 Tape Hero White">
+      </div>
+    </div>
+  </main>
+</body>
+</html>

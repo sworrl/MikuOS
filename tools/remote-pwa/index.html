@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#071a1d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Miku Remote</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root {
+    --teal: #39C5BB;
+    --teal-bright: #7FE6DE;
+    --pink: #FF5FA2;
+    --ground: #04161A;
+    --surface: #0C2B2E;
+    --surface-2: #071B20;
+    --muted: #89ACA7;
+    --text: #F1FAF9;
+    --danger: #FF4081;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--ground); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior: none; }
+  body { display: flex; flex-direction: column; min-height: 100dvh;
+    padding: max(12px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    background: radial-gradient(120% 60% at 50% -10%, rgba(57,197,187,.25), transparent 60%),
+                radial-gradient(80% 40% at 100% 100%, rgba(255,95,162,.14), transparent 60%), var(--ground); }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  button:disabled { opacity: .35; cursor: default; }
+  .hidden { display: none !important; }
+
+  /* header */
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .5px; }
+  .brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+  .brand .dot.adv { background: #FFD600; }
+  .brand .dot.on { background: var(--teal); box-shadow: 0 0 12px var(--teal); }
+  .pill { font-size: 11px; font-weight: 700; color: var(--teal-bright); background: rgba(57,197,187,.16);
+    border: 1px solid rgba(127,230,222,.35); padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+  .pill.pink { color: var(--pink); background: rgba(255,95,162,.14); border-color: rgba(255,95,162,.4); }
+
+  main { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 18px; padding: 14px 0; }
+
+  /* art + text */
+  .art { position: relative; width: min(62vw, 260px); aspect-ratio: 1; margin: 0 auto; border-radius: 50%;
+    background: conic-gradient(from 0deg, #0d3a3e, #1b6b6a, #0d3a3e, #2a8f8b, #0d3a3e);
+    box-shadow: 0 20px 50px rgba(0,0,0,.5), inset 0 0 0 2px rgba(127,230,222,.25); display: grid; place-items: center; }
+  .art::after { content: ""; width: 26%; aspect-ratio: 1; border-radius: 50%; background: var(--surface-2);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.08); }
+  .art.spin { animation: spin 4s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .quality { position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 800;
+    color: #04161A; background: var(--teal); padding: 4px 10px; border-radius: 999px; letter-spacing: .5px; white-space: nowrap; }
+  .quality:empty { display: none; }
+  .meta { text-align: center; min-height: 68px; }
+  .title { font-size: 20px; font-weight: 800; line-height: 1.2; margin: 0 0 4px; word-break: break-word; }
+  .artist { font-size: 15px; color: var(--teal-bright); margin: 0; }
+  .album { font-size: 12.5px; color: var(--muted); margin: 4px 0 0; }
+
+  /* seek */
+  .seek { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  .seek span:last-child { text-align: right; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 34px; background: transparent; margin: 0; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px;
+    background: linear-gradient(90deg, var(--teal) var(--fill, 0%), rgba(255,255,255,.12) var(--fill, 0%)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+    margin-top: -8px; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+  input[type=range]::-moz-range-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,.12); }
+  input[type=range]::-moz-range-progress { height: 6px; border-radius: 999px; background: var(--teal); }
+  input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; border-radius: 50%; background: #fff; }
+
+  /* transport */
+  .transport { display: flex; align-items: center; justify-content: center; gap: 22px; }
+  .transport button { width: 68px; height: 68px; border-radius: 50%; background: var(--surface); display: grid; place-items: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08); transition: transform .08s; }
+  .transport button:active { transform: scale(.92); }
+  .transport button.play { width: 92px; height: 92px; background: linear-gradient(160deg, var(--teal), #1c8f88); color: #04161A;
+    box-shadow: 0 14px 34px rgba(57,197,187,.4); }
+  .transport svg { width: 30px; height: 30px; fill: currentColor; }
+  .transport .play svg { width: 40px; height: 40px; }
+
+  .secondary { display: flex; justify-content: center; gap: 18px; }
+  .secondary button { width: 56px; height: 56px; border-radius: 16px; background: rgba(255,255,255,.06); display: grid; place-items: center;
+    border: 1px solid rgba(255,255,255,.06); position: relative; }
+  .secondary button.on { color: var(--teal-bright); border-color: rgba(127,230,222,.5); background: rgba(57,197,187,.16); }
+  .secondary button.like.on { color: var(--pink); border-color: rgba(255,95,162,.5); background: rgba(255,95,162,.14); }
+  .secondary button.like.on svg { filter: drop-shadow(0 0 8px rgba(255,95,162,.6)); }
+  .secondary svg { width: 26px; height: 26px; fill: currentColor; }
+  .secondary .badge { position: absolute; right: 6px; top: 5px; font-size: 9px; font-weight: 800; }
+
+  .volume { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; gap: 6px; }
+  .volume button { height: 40px; display: grid; place-items: center; color: var(--muted); }
+  .volume svg { width: 22px; height: 22px; fill: currentColor; }
+  .volume .val { font-size: 12px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+
+  footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); }
+  footer .links button { color: var(--muted); text-decoration: underline; padding: 6px 4px; }
+  footer .links button.danger { color: var(--danger); }
+
+  /* connect screen + modals */
+  .connect { text-align: center; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+  .connect h1 { font-size: 26px; margin: 0; }
+  .connect p { margin: 0; color: var(--muted); max-width: 34ch; line-height: 1.45; }
+  .big { width: 100%; max-width: 360px; height: 60px; border-radius: var(--radius); font-size: 17px; font-weight: 800; color: #04161A;
+    background: linear-gradient(160deg, var(--teal), #1c8f88); box-shadow: 0 14px 34px rgba(57,197,187,.35); }
+  .big.ghost { color: var(--teal-bright); background: rgba(57,197,187,.14); box-shadow: none; border: 1px solid rgba(127,230,222,.35); }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(8px); display: grid; place-items: end center; padding: 16px; z-index: 10; }
+  .sheet { width: 100%; max-width: 420px; background: var(--surface-2); border: 1px solid rgba(127,230,222,.25); border-radius: 24px; padding: 22px;
+    box-shadow: 0 -10px 50px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 14px; }
+  .sheet h2 { margin: 0; font-size: 18px; }
+  .sheet p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.45; }
+  .code { width: 100%; font-size: 34px; letter-spacing: 10px; text-align: center; font-weight: 800; padding: 12px; border-radius: 14px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(127,230,222,.35); color: var(--teal-bright); outline: none; font-variant-numeric: tabular-nums; }
+  .code:focus { border-color: var(--teal); }
+  .field { width: 100%; font-size: 15px; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.1); color: var(--text); outline: none; }
+  .err { color: var(--danger); font-size: 13px; min-height: 18px; }
+  .row { display: flex; gap: 10px; }
+  .row .big { height: 52px; font-size: 15px; }
+  .toast { position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); opacity: 0;
+    background: var(--surface); color: var(--text); padding: 10px 16px; border-radius: 999px; font-size: 13px; border: 1px solid rgba(127,230,222,.3);
+    transition: .2s; pointer-events: none; z-index: 20; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .option { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13.5px; }
+  .option small { display: block; color: var(--muted); font-size: 12px; }
+  .switch { width: 46px; height: 26px; border-radius: 999px; background: rgba(255,255,255,.14); position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .15s; }
+  .switch.on { background: var(--teal); }
+  .switch.on::after { left: 23px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot" id="dot"></span><span>Miku Remote</span></div>
+  <span class="pill" id="pill">not connected</span>
+</header>
+
+<!-- Connect screen -->
+<main id="connectView" class="connect">
+  <div class="art" aria-hidden="true"></div>
+  <h1>Miku M500</h1>
+  <p>Turn on <b>Settings → Phone Remote</b> on the M500, then connect. Chrome or Edge on Android, Windows, macOS, ChromeOS or Linux.</p>
+  <button class="big" id="btnConnect">Connect over Bluetooth</button>
+  <button class="big ghost hidden" id="btnReconnect">Reconnect to last M500</button>
+  <p id="connectHint" class="err"></p>
+</main>
+
+<!-- Player screen -->
+<main id="playerView" class="hidden">
+  <div class="art" id="art"><span class="quality" id="quality"></span></div>
+  <div class="meta">
+    <p class="title" id="title">—</p>
+    <p class="artist" id="artist"></p>
+    <p class="album" id="album"></p>
+  </div>
+
+  <div class="seek">
+    <span id="tPos">0:00</span>
+    <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Seek">
+    <span id="tDur">0:00</span>
+  </div>
+
+  <div class="transport">
+    <button id="btnPrev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+    <button id="btnPlay" class="play" aria-label="Play/Pause"><svg id="icoPlay" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+    <button id="btnNext" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6h2v12h-2z"/></svg></button>
+  </div>
+
+  <div class="secondary">
+    <button id="btnShuffle" aria-label="Shuffle"><svg viewBox="0 0 24 24"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg></button>
+    <button id="btnLike" class="like" aria-label="Like"><svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></button>
+    <button id="btnRepeat" aria-label="Repeat"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg><span class="badge" id="repeatBadge"></span></button>
+  </div>
+
+  <div class="volume">
+    <button id="btnVolDown" aria-label="Volume down"><svg viewBox="0 0 24 24"><path d="M7 9v6h4l5 5V4l-5 5H7z"/></svg></button>
+    <input type="range" id="vol" min="0" max="100" value="0" step="1" aria-label="Volume">
+    <span class="val" id="volVal">—</span>
+  </div>
+</main>
+
+<footer>
+  <span id="deviceLine">—</span>
+  <span class="links">
+    <button id="btnOptions">options</button>
+    <button id="btnDisconnect" class="hidden">disconnect</button>
+  </span>
+</footer>
+
+<!-- Pair sheet -->
+<div class="modal hidden" id="pairModal">
+  <div class="sheet">
+    <h2>Enter the pairing code</h2>
+    <p>It's on the M500 under <b>Settings → Phone Remote</b>. Codes are single-use; a new one appears after each pairing.</p>
+    <input class="code" id="codeInput" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" autocomplete="one-time-code">
+    <input class="field" id="labelInput" maxlength="40" placeholder="Name this phone (optional)">
+    <div class="err" id="pairErr"></div>
+    <div class="row">
+      <button class="big ghost" id="btnPairCancel">Cancel</button>
+      <button class="big" id="btnPairGo">Pair</button>
+    </div>
+  </div>
+</div>
+
+<!-- Options sheet -->
+<div class="modal hidden" id="optionsModal">
+  <div class="sheet">
+    <h2>Options</h2>
+    <div class="option">
+      <div>Lock-screen controls<small>Shows this track on your phone's lock screen and routes its media keys to the M500. Plays a silent loop to keep the session alive.</small></div>
+      <div class="switch" id="swMediaSession" role="switch" aria-checked="false" tabindex="0"></div>
+    </div>
+    <div class="option">
+      <div>Keep screen awake<small>While this page is open.</small></div>
+      <div class="switch" id="swWakeLock" role="switch" aria-checked="false" tabindex="0"></div>
+    </div>
+    <div class="option">
+      <div>Forget this M500<small>Removes the saved pairing token from this phone. Use “Forget” on the M500 too to fully revoke it.</small></div>
+      <button class="big ghost" style="width:auto;height:44px;padding:0 14px;font-size:13px" id="btnForget">Forget</button>
+    </div>
+    <div class="row"><button class="big ghost" id="btnOptionsClose">Close</button></div>
+    <p style="font-size:11px">Miku Remote · BLE GATT · Falcon Technix</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

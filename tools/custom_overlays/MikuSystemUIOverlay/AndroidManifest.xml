@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MikuOS SystemUI overlay: kills the stock volume dialog (our launcher modal replaces it)
+     and rewords the HiBy headset / Fn strings. Static, baked into /product/overlay.
+     NOTE: <application android:hasCode="false"/> is REQUIRED — without it PackageManager
+     refuses the APK ("<manifest> does not contain an <application>"), which is exactly
+     why the 2026-08-21 image never registered this overlay. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.miku.systemui.overlay"
+    android:versionCode="2"
+    android:versionName="1.1">
+    <application android:hasCode="false" android:label="MikuOS SystemUI Overlay" />
+    <overlay
+        android:targetPackage="com.android.systemui"
+        android:priority="999"
+        android:isStatic="true" />
+</manifest>

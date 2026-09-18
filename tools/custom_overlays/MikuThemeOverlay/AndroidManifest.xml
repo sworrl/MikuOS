@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MikuOS system theme overlay: retints the stock SystemUI modals that were still
+     default AOSP (power menu / global actions, volume dialog, notification guts, QS
+     user switcher) to the Miku dark-teal palette. Non-static so it can be toggled at
+     runtime (cmd overlay enable) as well as baked into /product/overlay. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.miku.theme.overlay"
+    android:versionCode="1"
+    android:versionName="1.0">
+    <application android:hasCode="false" />
+    <!-- Static: auto-applies from /product/overlay (a read-only overlay dir is trusted by
+         location, so no runtime `cmd overlay enable` and no platform-sig match is required —
+         same delivery as the working MikuSystemUIOverlay). Rootless shell cannot toggle a
+         SystemUI overlay, so baking is the only reliable apply path on an un-rooted boot. -->
+    <overlay
+        android:targetPackage="com.android.systemui"
+        android:priority="1000"
+        android:isStatic="true" />
+</manifest>

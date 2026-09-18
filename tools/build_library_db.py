@@ -10,37 +10,48 @@ Emits, into <outdir> (default: repo library/):
   - library.json  compact, for the web UI
 Run via tools/sync-library.sh; this file only does the parse+build.
 """
-import base64, csv, json, re, sqlite3, sys, os
+import base64
+import csv
+import json
+import os
+import re
+import sqlite3
+import sys
+
 
 def parse_meta(path):
     rows = {}
     pat = re.compile(
         r'_data=(?P<data>.*?), title=(?P<title>.*?), artist=(?P<artist>.*?), '
         r'album=(?P<album>.*?), duration=(?P<duration>.*?), mime_type=(?P<mime>.*?), '
-        r'track=(?P<track>.*?), _size=(?P<size>\d+)\s*$')
-    for line in open(path, encoding='utf-8', errors='ignore'):
-        m = pat.search(line)
-        if not m:
-            continue
-        d = m.groupdict()
-        def nz(x): return None if x in ('null', '', None) else x
-        rows[d['data']] = {
-            'path': d['data'],
-            'title': nz(d['title']) or os.path.basename(d['data']),
-            'artist': nz(d['artist']),
-            'album': nz(d['album']),
-            'durationMs': int(d['duration']) if d['duration'].isdigit() else 0,
-            'mime': nz(d['mime']),
-            'track': int(d['track']) if (d['track'] or '').isdigit() else None,
-            'size': int(d['size']),
-        }
+        r'track=(?P<track>.*?), _size=(?P<size>\d+)\s*$'
+    )
+    if not os.path.exists(path):
+        return rows
+    with open(path, encoding='utf-8', errors='ignore') as f:
+        for line in f:
+            m = pat.search(line)
+            if not m:
+                continue
+            d = m.groupdict()
+            def nz(x): return None if x in ('null', '', None) else x
+            rows[d['data']] = {
+                'path': d['data'],
+                'title': nz(d['title']) or os.path.basename(d['data']),
+                'artist': nz(d['artist']),
+                'album': nz(d['album']),
+                'durationMs': int(d['duration']) if d['duration'].isdigit() else 0,
+                'mime': nz(d['mime']),
+                'track': int(d['track']) if (d['track'] or '').isdigit() else None,
+                'size': int(d['size']),
+            }
     return rows
 
 def parse_flac_header(b64):
     """Return (sampleRate, bits, channels, totalSamples) from a FLAC header, or None."""
     try:
         raw = base64.b64decode(b64)
-    except Exception:
+    except (ValueError, TypeError):
         return None
     i = raw.find(b'fLaC')
     if i < 0 or len(raw) < i + 8 + 18:
@@ -58,15 +69,14 @@ def parse_headers(path):
     out = {}
     if not os.path.exists(path):
         return out
-    for line in open(path, encoding='utf-8', errors='ignore'):
-        if line.startswith('###'):
-            continue
-        if '\t' not in line:
-            continue
-        p, b64 = line.rstrip('\n').split('\t', 1)
-        r = parse_flac_header(b64)
-        if r:
-            out[p] = r
+    with open(path, encoding='utf-8', errors='ignore') as f:
+        for line in f:
+            if line.startswith('###') or '\t' not in line:
+                continue
+            p, b64 = line.rstrip('\n').split('\t', 1)
+            r = parse_flac_header(b64)
+            if r:
+                out[p] = r
     return out
 
 def load_prev(outdir):
@@ -75,9 +85,10 @@ def load_prev(outdir):
     pj = os.path.join(outdir, 'library.json')
     if os.path.exists(pj):
         try:
-            for t in json.load(open(pj, encoding='utf-8'))['tracks']:
-                prev[t['path']] = (t.get('sampleRate', 0), t.get('bits', 0), t.get('channels', 0))
-        except Exception:
+            with open(pj, encoding='utf-8') as f:
+                for t in json.load(f).get('tracks', []):
+                    prev[t['path']] = (t.get('sampleRate', 0), t.get('bits', 0), t.get('channels', 0))
+        except (json.JSONDecodeError, OSError):
             pass
     return prev
 
@@ -131,15 +142,19 @@ def build(meta_txt, headers_txt, outdir):
     cols = ['path', 'title', 'artist', 'album', 'track', 'sampleRate', 'bits',
             'channels', 'durationSec', 'size', 'sizeMB', 'bitrateKbps', 'mime',
             'hires', 'analyzed', 'badge', 'studioSQ', 'fmt']
-    con.execute('CREATE TABLE tracks (%s)' % ','.join(
+    col_defs = ','.join(
         c + (' INTEGER' if c in ('track', 'sampleRate', 'bits', 'channels', 'size',
                                  'bitrateKbps', 'hires', 'analyzed', 'studioSQ') else
-             ' REAL' if c in ('durationSec', 'sizeMB') else ' TEXT') for c in cols))
-    con.executemany('INSERT INTO tracks VALUES (%s)' % ','.join('?' * len(cols)),
+             ' REAL' if c in ('durationSec', 'sizeMB') else ' TEXT') for c in cols
+    )
+    con.execute(f'CREATE TABLE tracks ({col_defs})')
+    placeholders = ','.join('?' * len(cols))
+    con.executemany(f'INSERT INTO tracks VALUES ({placeholders})',
                     [[r.get(c) for c in cols] for r in recs])
     con.execute('CREATE INDEX idx_artist ON tracks(artist)')
     con.execute('CREATE INDEX idx_hires ON tracks(hires)')
-    con.commit(); con.close()
+    con.commit()
+    con.close()
     # CSV
     with open(os.path.join(outdir, 'library.csv'), 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction='ignore')
@@ -170,8 +185,8 @@ def build(meta_txt, headers_txt, outdir):
         f.write('window.LIB=')
         json.dump(payload, f, ensure_ascii=False)
         f.write(';')
-    print('tracks: %d  analyzed: %d  hi-res: %d  non-hires: %d  (%.1f GB total, %.1f GB non-hires)'
-          % (tot, an, hr, len(nonhr), summary['sizeTotalGB'], summary['sizeNonHiresGB']))
+    print(f"tracks: {tot}  analyzed: {an}  hi-res: {hr}  non-hires: {len(nonhr)}  "
+          f"({summary['sizeTotalGB']:.1f} GB total, {summary['sizeNonHiresGB']:.1f} GB non-hires)")
     return summary
 
 if __name__ == '__main__':

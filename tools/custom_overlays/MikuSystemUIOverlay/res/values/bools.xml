@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kill the stock AOSP SystemUI volume dialog. VolumeUI.start() does
+     `if (enable_volume_ui || enable_safety_warning) mVolumeComponent.register()`.
+     Forcing enable_volume_ui=false (and enable_safety_warning stays false) means the volume
+     dialog is never registered, so no stock modal overlays the MikuOS launcher volume modal.
+     Volume KEYS still work (handled by PhoneWindowManager, independent of this). -->
+<resources>
+    <bool name="enable_volume_ui">false</bool>
+    <bool name="enable_safety_warning">false</bool>
+</resources>

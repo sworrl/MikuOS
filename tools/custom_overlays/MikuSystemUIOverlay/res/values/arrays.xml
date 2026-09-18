@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="fn_function_title">
+        <item>Hardware Key Lock Engaged</item>
+        <item>Voice Recorder Active</item>
+        <item>Vertical Display Inverted</item>
+        <item>Speaker Output Muted</item>
+        <item>Touchscreen Digitizer Locked</item>
+    </string-array>
+</resources>

@@ -1,0 +1,8 @@
+No Halloween-themed Miku artwork exists anywhere in this repository as of this
+cataloging pass (checked: miku-assets/official-device, miku-assets/miku_renders
+[+banners], miku-assets/reference_favorites, miku-assets/online, and every
+drawable in miku-player-kotlin/app and mikuos-launcher). This theme has NO
+wallpaper asset yet. Source or commission new art (jack-o-lantern, witch hat,
+autumn/orange-violet palette) before enabling this theme for real use. Until
+then MikuThemeRegistry.kt points its wallpaper resource at the Default
+wallpaper as a functional fallback so the app still builds/runs.

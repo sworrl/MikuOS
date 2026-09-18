@@ -1,24 +1,120 @@
-# ── The Kotlin player is its own git repo (miku-player-kotlin/.git, full history) ──
-# Push it separately; this backup repo covers everything else.
-/miku-player-kotlin/
+# ─────────────────────────────────────────────────────────────────────────────
+#  MikuOS — what never goes in the repo.
+#
+#  Three rules, in order of how badly you do not want to get them wrong:
+#    1. Nothing that can sign a build.
+#    2. Nothing of HiBy's, Qualcomm's, Google's or anyone else's.
+#    3. Nothing a clean checkout can rebuild for itself.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Build outputs & toolchains (regenerable)
+# ── 1. Signing material ──────────────────────────────────────────────────────
+# The Falcon Technix platform key IS the trust anchor of a MikuOS build. Anyone
+# holding it can sign something the OS will treat as a platform app. It is not in
+# this repo, it never will be, and these patterns exist so it cannot get here by
+# accident.
+*.jks
+*.keystore
+*.pk8
+*.pem
+*.p12
+*.key
+*.der
+*.crt
+keystore.properties
+mikuos/signing/
+tools/*.pk8
+tools/*.pem
+tools/*.keystore
+miku_m500_private.key
+
+# ── 2. Not ours to redistribute ──────────────────────────────────────────────
+# 16GB of decompiled HiBy firmware and extracted stock apps. It is their code, it
+# is 16GB, and one of those trees holds a live third-party private key.
+m500-system-archive/
+**/decompiled_vendor_software/
+**/extracted_fs/
+**/smali*/
+**/jadx_sources/
+
+# Third-party APKs: Spotify, Tidal, Qobuz, Deezer, Apple Music, Chrome, Signal,
+# Telegram, Magisk, GApps. Ours to install, not ours to hand out.
+mikuos-optional-apks/
+mikuos/build/optional_apks/
+mikuos/build/preloaded_apks/
+mikuos/build/gapps_dl/
+*.apk
+*.apks
+*.apk.idsig
+
+# HiBy's own artwork, audio and boot media, pulled off the device.
+miku-assets/hiby-extracted/
+miku-assets/vendor-media/
+mikuos/build/boot_voice/
+mikuos/build/audio/
+
+# ── 3. Build output ──────────────────────────────────────────────────────────
+# Partition images. 5GB each, produced by build_mikuos_super.sh from stock
+# firmware you supply yourself.
+*.img
+*.img.gz
+*.sparse
+mikuos/out/
+mikuos_system_build/
+mikuos/gsi/
+
+# Gradle, Android, Go
 **/build/
 **/.gradle/
-/tools/gradle-8.7/
+**/.cxx/
+**/.kotlin/
+tools/gradle-*/
 local.properties
 .idea/
 *.iml
+mikuos/web-flasher/mikuos-flasher
+mikuos/web-flasher/mikuos-web-flasher
+mikuos/web-flasher/miku-web-flasher
+
+# The Kotlin apps are their own repo: github.com/sworrl/MikuMusic
+miku-player-kotlin/
+m500-hardware-settings/
+
+# Big prebuilt tooling. apktool and baksmali are upstream releases, fetch them.
+tools/apktool.jar
+tools/baksmali.jar
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# ── Personal ─────────────────────────────────────────────────────────────────
+# Network configs hold PSKs and addressing. Ingest config holds a personal host.
+# The library database is a listing of one person's music collection.
+*.conf
+!tools/rsync/rsyncd.conf
+mikuos-dev-wifi.conf
+tools/m500-sync.env
+*.env
+!*.env.example
+library/library.db
+library/*.csv
+library/*.json
+device-dumps/
+crash-logs/
+
+# ── Agent / editor scratch ───────────────────────────────────────────────────
+.claude/
+.aider*
+.cursor/
+*.bak
+*.bak-*
+*.orig
+*.rej
+*~
+
+# ── OS noise ─────────────────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
 
-# Binary APKs — rebuildable from the decompiled trees + stock APKs; keep releases on GitHub
-# Releases instead of in history
-*.apk
-*.apk.idsig
-*.apks
-
-# Signing material — never commit keys
-*.keystore
-*.jks
-*.pk8
-*.pem
+# Reference art pulled off the internet. Fine to keep on a workstation, not ours
+# to republish. The renders under miku_renders/ and themes/ are generated for this
+# project and do ship.
+miku-assets/online/
