@@ -58,6 +58,7 @@ code, not a reason to install a root daemon.
 - [Hard-won platform facts](#hard-won-platform-facts)
 - [Repo structure](#repo-structure)
 - [The device](#the-device)
+- [What we keep from HiBy and what we replace](#what-we-keep-from-hiby-and-what-we-replace)
 - [Known limitations](#known-limitations)
 - [Contributing](#contributing)
 - [Legal](#legal)
@@ -310,7 +311,7 @@ shown, and when AE has not converged it says so instead of printing a number.
 The player opened in about 30 seconds and scrolled badly. Fixing it turned up one finding that
 dwarfed the rest.
 
-**Install release builds, not debug.** On a Snapdragon 665 the debuggable build costs more than
+**Install release builds, not debug.** On this SoC the debuggable build costs more than
 every app-level optimization put together: JIT only, no AOT, lock verification on, no R8. Same code,
 same device, release instead of debug took launch from 5,692ms to 1,029ms and scrolling from 82%
 janky frames to 8%, P50 from 69 to 117ms down to 32ms.
@@ -466,11 +467,14 @@ system UI, settings and hardware apps.
 
 ## The device
 
-HiBy Digital M500 x Hatsune Miku edition, product `khaje`. Snapdragon 665, Android 14 QSSI base,
+HiBy Digital M500 x Hatsune Miku edition, fastboot product `khaje`. Qualcomm SM6225 `bengal`
+(Snapdragon 680), six cores, Android 14 base `UKQ1.241213.001`, kernel
+`5.15.153-android13-8`, security patch 2025-09-03,
 3.2 inch 720x1280 portrait panel at 270dpi. Dual Cirrus Logic CS43198 in the "MIKU DAC"
 configuration, 3.5mm single ended and 4.4mm balanced, plus USB DAC output. Physical power, volume
 wheel, play/pause, next, previous and Fn on the right edge. No ambient light sensor, no pstore.
-Stock kernel is 5.15.153 and that is the one to stay on.
+Stock kernel 5.15.153 is the one to stay on; see the 5.15.209 row in
+[What is verified](#what-is-verified).
 
 Audio behavior is driven by `vendor.audio.hiby.*` global settings: digital filter, DRE, gain,
 high-power mode. Only init can set them, which is why the LED fix needs a reflash rather than a
@@ -480,6 +484,49 @@ setting.
 activation most of the way and pick "move number later" when it asks about a number, then ignore it.
 It can be uninstalled afterward. Reboot and data attaches. Do not port a number in, because that
 converts a data-only SIM to a full plan. The APN is baked into the image.
+
+---
+
+## What we keep from HiBy and what we replace
+
+MikuOS is not built from AOSP source. It is HiBy's own Android 14 for this device with the parts we
+care about taken out and rebuilt, so most of what runs on the M500 is still theirs.
+
+**HiBy's latest release is v1.20** (`eng.HiBy.20260427.123904`, an incremental update), on top of
+the v1.00 base (`eng.HiBy.20260228.173244`). The v1.20 delta is 55.3MB and touches three images:
+`boot.img`, `init_boot.img` and `vbmeta.img`. It is a boot-chain update. Everything in `system`,
+`vendor`, `product` and `system_ext` is unchanged from v1.00, which is the base MikuOS builds on.
+
+### Unchanged, and deliberately so
+
+| Part | Why it stays |
+|---|---|
+| `vendor`, `vendor_boot`, `vendor_dlkm`, `odm`, `dtbo` | Qualcomm's and Cirrus Logic's audio HAL and DSP live here. This is the part that makes the M500 sound the way it does, and there is no reason to touch it |
+| Kernel `5.15.153-android13-8` (GKI) | Stock. 5.15.209 was tried and disqualified: `mp2731` never qualifies the charger input, so the device drains on the cable |
+| The bootloader | Not modified. Unlocking is the user's own step |
+| Android 14 `UKQ1.241213.001` framework | Re-signed to your key, not replaced. The AOSP behavior underneath is stock |
+| HiBy's framework hooks | Several of them are load-bearing for us: `Settings.Global button_lock` is what makes the root-free Fn pocket lock work, `hiby_volume_dialog_enable` gates their volume HUD, and the `vendor.audio.hiby.*` properties drive filter, DRE, gain and high-power mode |
+
+### Replaced
+
+| Part | Stock | MikuOS |
+|---|---|---|
+| Signing keys | Public AOSP test keys, which every Android developer already has | A platform key set you generate. This is the whole security model |
+| Player | HiBy Music | Miku Music, a native Kotlin and Compose app |
+| Home screen | HiBy's launcher, not properly replaceable | `com.miku.launcher` |
+| System UI | Stock | `com.miku.systemui`, including gesture navigation as an accessibility service |
+| Settings | Stock plus HiBy's | `com.miku.settings` and `com.m500.hardware` |
+| Audio path | Mixed and resampled through Android's mixer, so a 44.1kHz file does not reach the DACs at 44.1kHz | DIRECT output at the file's native rate, 24-bit packed |
+| Root | Magisk, in every previous attempt at this | None. Platform-signed apps hold the permissions outright |
+| Pulsar LED | Vendor init pins `led_pattern 1` and nothing updates it once HiBy Music is gone, so it sits solid blue | `miku_led.rc`, baked into vendor |
+| Auto-brightness | None, because there is no ambient light sensor | The camera used as a light meter |
+| APN | No Google Fi entry | `h2g2` baked in for 310240 and 310260 |
+
+### What this means if you are deciding whether to flash
+
+You keep HiBy's audio hardware behavior exactly. You lose HiBy's apps and their OTA updates, since
+a MikuOS image will not accept HiBy's delta packages. Going back means flashing HiBy's stock
+firmware, which you should keep a copy of before you start.
 
 ---
 
