@@ -189,9 +189,13 @@ digit code.
 
 <p align="center">
   <img src="docs/screenshots/09-launcher-home.png" width="30%" alt="Launcher home with clock and weather tile">
-  <img src="docs/screenshots/08-bpm-game.png" width="30%" alt="BPM game note highway">
-  <img src="docs/screenshots/04-library.png" width="30%" alt="Library view">
+  <img src="docs/screenshots/14-lockscreen.png" width="30%" alt="Lockscreen: clock, hourly forecast strip, transport and a BPM badge reading a dash because the tempo is not known">
+  <img src="docs/screenshots/13-network-observatory.png" width="30%" alt="Network observatory: link rate, signal, channel and the scan list">
 </p>
+
+Network names, addresses and the town are blurred in these captures. `tools/blur_pii.py` is the
+helper that does it, so the same regions can be stripped again from a fresh screenshot rather than
+being redacted by hand.
 
 **Weather and location.** Open-Meteo for forecast, with real AQI. The interesting part is location.
 The M500 has no Google location stack worth relying on, so the launcher does its own Wi-Fi
