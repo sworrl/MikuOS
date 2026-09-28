@@ -86,7 +86,8 @@ Legend: ✅ confirmed on a real M500 · ⚠️ implemented, not proven · ❌ tr
 | Camera used as an ambient light sensor | ✅ | See below. The device has no ALS at all |
 | Custom LED behavior | ✅ | `miku_led.rc` baked into vendor, needs a reflash to take |
 | Last.fm scrobbling | ✅ | Browser token flow, per-user session key. App key lives in `local.properties`, never the repo |
-| Wi-Fi positioning without Google location | ✅ | BeaconDB then Apple WPS, with travelling-AP exclusion |
+| GPS as the primary position source | ⚠️ | Single-shot, timed out, cached two hours. The path is verified falling back correctly indoors; an actual satellite fix still needs testing outdoors |
+| Wi-Fi positioning without Google location | ✅ | BeaconDB then Apple WPS, with travelling-AP exclusion. Now the fallback rather than the primary |
 | Automatic time zone while travelling | ✅ | Taken from the weather position, since NITZ needs a carrier registration this SIM is denied. Verified correcting America/Denver to America/New_York on-device |
 | WireGuard client in the launcher | ⚠️ | Implemented, the VPS-relay path for CGNAT is the untested part |
 | Bluetooth LDAC push | ⚠️ | Codec enforcement is implemented, unproven until an LDAC sink is on hand |
@@ -211,8 +212,18 @@ helper that does it, so the same regions can be stripped again from a fresh scre
 being redacted by hand.
 
 **Weather and location.** Open-Meteo for forecast, with real AQI. The interesting part is location.
-The M500 has no Google location stack worth relying on, so the launcher does its own Wi-Fi
-positioning: it scans, then asks BeaconDB and falls back to Apple's WPS, both keyless.
+
+The device has real GNSS hardware and for a long time nothing used it. The launcher only ever read
+`getLastKnownLocation`, which is a passive read of a cache something else has to fill, and nothing
+on this device fills it: no maps app, no navigation, nothing subscribing. `dumpsys location`
+reported zero fixes across ten hours. So the launcher now asks the satellites itself, as a single
+bounded shot rather than a subscription, because GPS was pulled out of this launcher once already
+for flattening the battery. One fix, a hard timeout, cached for two hours, and the radio goes back
+to sleep either way.
+
+A fix needs sky and this is a pocket player, so when GPS comes back empty the launcher falls through
+to its own Wi-Fi positioning: it scans, then asks BeaconDB and falls back to Apple's WPS, both
+keyless.
 
 That naive version was wrong in a way worth writing down. It kept reporting the author's old address
 from across the country, and it was right to, because the access points it could hear travelled with
