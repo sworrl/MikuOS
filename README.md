@@ -87,6 +87,7 @@ Legend: ✅ confirmed on a real M500 · ⚠️ implemented, not proven · ❌ tr
 | Custom LED behavior | ✅ | `miku_led.rc` baked into vendor, needs a reflash to take |
 | Last.fm scrobbling | ✅ | Browser token flow, per-user session key. App key lives in `local.properties`, never the repo |
 | Wi-Fi positioning without Google location | ✅ | BeaconDB then Apple WPS, with travelling-AP exclusion |
+| Automatic time zone while travelling | ✅ | Taken from the weather position, since NITZ needs a carrier registration this SIM is denied. Verified correcting America/Denver to America/New_York on-device |
 | WireGuard client in the launcher | ⚠️ | Implemented, the VPS-relay path for CGNAT is the untested part |
 | Bluetooth LDAC push | ⚠️ | Codec enforcement is implemented, unproven until an LDAC sink is on hand |
 | Web installer (WebUSB fastboot) | ⚠️ | Hosted at `mikuos.falcontechnix.com` in bring-your-own-images mode. `EXPECTED_PRODUCTS` still unconfirmed |
@@ -220,6 +221,14 @@ locator now keeps a list of SSIDs that move and excludes them from the fix.
 
 **The BPM game.** Tap along to the beat of whatever is playing, against a note highway that takes
 its colors from the album art. It keeps a crowd meter and it will heckle you.
+
+**The clock follows you.** The system time zone used to sit wherever it was last set, because
+Android's automatic time zone is driven by NITZ and NITZ needs a carrier registration this
+data-only SIM is usually denied. The launcher already asks Open-Meteo with `timezone=auto` for the
+weather, and Open-Meteo already answers with the IANA zone for those coordinates, so that value now
+sets the system zone. It applies from the cached reading as well as a fresh one, so a cold boot
+does not wait for the network to know what time it is. `settings put global miku_auto_timezone 0`
+pins the zone if you would rather set it by hand.
 
 **Observatories.** Network and battery screens that show measured values. The battery one reads the
 CellWise CW2015 fuel gauge and the MP2731 PMIC.
