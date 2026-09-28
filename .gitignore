@@ -118,3 +118,7 @@ Thumbs.db
 # to republish. The renders under miku_renders/ and themes/ are generated for this
 # project and do ship.
 miku-assets/online/
+
+# Overlay build intermediates. The signed APK is a build artifact too; the source of truth is
+# res/ + AndroidManifest.xml plus tools/custom_overlays/build_framework_overlay.sh.
+tools/custom_overlays/**/out/

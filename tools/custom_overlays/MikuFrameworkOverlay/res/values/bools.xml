@@ -5,4 +5,15 @@
          behavior strobed the screen awake on every blip (WAKE_REASON_PLUGGED_IN). A DAP
          gains nothing from plug-wake; the Pulsar LED / lockscreen already show charge state. -->
     <bool name="config_unplugTurnsOnScreen">false</bool>
+
+    <!-- NO STOCK NAVIGATION BAR (2026-09-27).
+         MikuOS's navigation IS the accessibility service's home pill: it follows the finger and
+         shifts colour with the album art. AOSP SystemUI was ALSO drawing its own NavigationBar0
+         (41px, bottom, gravity BOTTOM) plus a SecondaryHomeHandle0, so there were two handles on
+         screen and the bland one was not ours and did nothing we wanted.
+
+         Hiding it per-app does not work: `insetsController.hide(navigationBars())` only affects
+         that app's window while SystemUI keeps drawing the bar for everything else. The bar exists
+         because the framework says the device has one, so this is where it is switched off. -->
+    <bool name="config_showNavigationBar">false</bool>
 </resources>

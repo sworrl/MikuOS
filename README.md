@@ -11,6 +11,11 @@
   <img alt="Status" src="https://img.shields.io/badge/status-daily%20driver-B388FF">
 </p>
 
+> **Work in progress, and help is wanted.** This is one person and one device. Issues and pull
+> requests are welcome. The [What is verified](#what-is-verified) table below is the honest line
+> between what has been confirmed on hardware and what has not, and the things that would help
+> most are listed under [Contributing](#contributing).
+
 MikuOS replaces the software on a HiBy Digital M500 x Hatsune Miku DAP. Home screen, system UI,
 navigation, settings, hardware controls and [Miku Music](https://github.com/sworrl/MikuMusic) are
 ours, re-signed with a platform key you generate yourself, so they run with platform permissions on
@@ -26,6 +31,12 @@ and the fix is to replace the software rather than patch around it.
 with the same platform key as the framework they run beside, so they simply HAVE the permissions
 instead of asking a root daemon for them. A `su` failure in this codebase is treated as a bug in the
 code, not a reason to install a root daemon.
+
+<p align="center">
+  <img src="docs/screenshots/09-launcher-home.png" width="30%" alt="MikuOS launcher: clock, weather with real AQI and sun times, DAC and battery tiles">
+  <img src="docs/screenshots/07-hardware-observatory.png" width="30%" alt="Hardware observatory: CS43198 x2, NOS filter, high gain, DRE, real per-core CPU clocks">
+  <img src="docs/screenshots/08-bpm-game-played.png" width="30%" alt="The BPM rhythm game mid-run: note highway, locked tempo, crowd meter">
+</p>
 
 ---
 
@@ -239,6 +250,31 @@ setting.
 - **The web installer has never been hosted**, and its `EXPECTED_PRODUCTS` list needs confirming
   against `fastboot getvar product` before anyone trusts it.
 - **Stock firmware is not included** and will not be. Bring your own.
+
+---
+
+## Contributing
+
+**This is a work in progress and help is genuinely welcome.** Open an issue or a pull request.
+
+What would help most, roughly in order:
+
+- **Another M500.** Everything here is verified on exactly one device, which is the single biggest
+  limit on the project.
+- **An LDAC sink**, so the Bluetooth codec path can be proven or disproven instead of sitting at
+  "implemented, unverified".
+- **A route to the FM tuner** that works inside SELinux, or a definitive answer that there is none.
+- **Hosting and testing the web installer**, including a real `fastboot getvar product`.
+- **Anywhere a number on screen is not measured.** A report of one is as useful as a patch.
+
+One house rule, and it is not negotiable: **never display a value you did not measure.** No
+placeholder percentages, no bit depth inferred from a file extension, no BPM guessed from a title.
+If the data is not there, show a dash and say why. Several passes of this codebase have been spent
+removing exactly that kind of thing.
+
+Beyond that: match the surrounding code, comment the WHY rather than the what, and if you work out
+a non-obvious platform behavior, write down what the platform actually does so the next person does
+not have to rediscover it.
 
 ---
 
