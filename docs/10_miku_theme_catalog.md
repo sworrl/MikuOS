@@ -38,7 +38,12 @@ touched. All work is new files: this catalog, `miku-assets/themes/`, and
 
 ## 1. Full image catalog
 
-### 1.1 `miku-assets/official-device/` — original HiBy device art
+### 1.1 `miku-assets/official-device/` — original HiBy device art (REMOVED 2026-09-27)
+
+> These files were deleted from the repo on 2026-09-27. They were HiBy Digital's artwork extracted
+> from a stock M500 and there is no license to redistribute them. Nothing in the build referenced
+> them; only this catalog did. The descriptions below are kept as a record of what was examined,
+> not as an index of files you will find in the tree. See [ATTRIBUTIONS.md](../ATTRIBUTIONS.md).
 
 | File | Description | Best use | Maps to requested theme |
 |---|---|---|---|
