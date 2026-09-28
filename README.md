@@ -558,7 +558,7 @@ device covers the copy on the device. It does not cover handing copies to whoeve
 and gating our code to M500 hardware does not change that. The intended end state is that the build
 pulls those assets from the stock firmware you already own and the repos ship only art we made.
 Until that is done, the honest statement is that they are in here and they should not be. If you are
-HiBy or Crypton and want something removed, open an issue or email agent.jearl@gmail.com and it
+HiBy or Crypton and want something removed, open an issue or email github@falcontechnix.com and it
 comes out.
 
 HiBy Digital's firmware, bootloader and audio HAL are theirs and are not redistributed here, which
