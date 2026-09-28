@@ -63,6 +63,7 @@ code, not a reason to install a root daemon.
 - [Contributing](#contributing)
 - [Legal](#legal)
 - [Attributions](ATTRIBUTIONS.md)
+- [Full source OS roadmap](docs/11_full_source_os_roadmap.md)
 
 ---
 
@@ -89,8 +90,8 @@ Legend: ✅ confirmed on a real M500 · ⚠️ implemented, not proven · ❌ tr
 | WireGuard client in the launcher | ⚠️ | Implemented, the VPS-relay path for CGNAT is the untested part |
 | Bluetooth LDAC push | ⚠️ | Codec enforcement is implemented, unproven until an LDAC sink is on hand |
 | Web installer (WebUSB fastboot) | ⚠️ | Hosted at `mikuos.falcontechnix.com` in bring-your-own-images mode. `EXPECTED_PRODUCTS` still unconfirmed |
-| Full AOSP-from-source build | ⚠️ | Device tree and lunch combo exist, the sync is RAM-constrained and unfinished |
-| Reading the DAC state back from kernel sysfs | ❌ | Current builds report `KERNEL SYSFS NOT READABLE BY THIS PROCESS` and honestly show a dash |
+| Full AOSP-from-source build | ❌ | The tree and `device/hiby/m500` exist and the lunch target is defined, but `out/` is empty: this has NEVER produced an image. What ships is the stock image re-keyed. Plan, costs and timeline in [the roadmap](docs/11_full_source_os_roadmap.md) |
+| Reading the DAC state back | ✅ | Not from sysfs, which SELinux denies to `platform_app`. From `vendor.audio.hiby.*`, which is the namespace the vendor's own audio HAL reads and writes. The panel names which source answered |
 | GSI (generic system image) | ❌ | Vendor mandates six legacy HIDL services Android 14 dropped. Abandoned for a stock-QSSI base |
 | FM tuner | ❌ | Has never worked on-device. SELinux keys `/dev/radio0` on the package name, not the signature |
 | Kernel 5.15.209 | ❌ | A/B proven to break charging: `mp2731` never qualifies the input and the device drains on the cable. Stock 5.15.153 stays |
@@ -146,9 +147,20 @@ The player is the reason the rest of it exists. It is a native Kotlin and Compos
 of HiBy's.
 
 <p align="center">
-  <img src="docs/screenshots/01-now-playing-hires.png" width="30%" alt="Now playing, 24-bit 192kHz, wavy scrubber and album-derived palette">
-  <img src="docs/screenshots/03-tape-mode.png" width="30%" alt="Tape mode: a cassette drawn to the IEC 60094-7 mechanical spec">
+  <img src="docs/screenshots/03-tape-mode.png" width="30%" alt="Tape mode: a cassette drawn to the IEC 60094-7 mechanical spec, 24-bit 96kHz, handwritten masking tape label">
+  <img src="docs/screenshots/15-tape-mode-alt.png" width="30%" alt="The same view on a different track: the tape lands somewhere else, at a different angle, on a different shell">
   <img src="docs/screenshots/02-fullscreen-visualizer.png" width="30%" alt="Fullscreen libprojectM visualizer">
+</p>
+
+Those first two are the same screen on two different tracks. The masking tape's position, angle,
+paper, torn edges and grime are rolled per track from the track id, so the strip lands somewhere
+plausible rather than in the same spot every time. The two drive holes are drawn last, over the top
+of it, because they are holes through the shell and nothing can sit on them.
+
+<p align="center">
+  <img src="docs/screenshots/01-now-playing-hires.png" width="30%" alt="Now playing at 24-bit 192kHz with the wavy scrubber and an album-derived palette">
+  <img src="docs/screenshots/04-library.png" width="30%" alt="Library stats: 17048 tracks, 415 artists, 1777 albums, 98 percent FLAC">
+  <img src="docs/screenshots/05-artists.png" width="30%" alt="Artist list with per-artist format badges">
 </p>
 
 **Library.** Around 17,000 tracks and 415 artists on the author's card. The library is cached in a
@@ -540,9 +552,6 @@ firmware, which you should keep a copy of before you start.
 - **FM has never worked.** The UI opens and the tuner does not. SELinux keys `/dev/radio0` access on
   the package name, so the fix is to repackage the tuner as `com.caf.fmradio` and platform-sign it.
   Not done yet.
-- **The DAC state readout is currently unavailable.** The hardware screen reports that it cannot read
-  the kernel sysfs node and shows a dash rather than inventing a value, which is the correct
-  behavior for a broken readout but it is still a broken readout.
 - **There are two different part numbers on screen.** The settings entry says CS43131 and the
   hardware screen says CS43198. One of them is wrong and it has not been chased down.
 - **No AOSP-from-source build yet.** The device tree exists, the sync is unfinished.
