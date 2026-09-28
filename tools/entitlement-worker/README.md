@@ -68,7 +68,7 @@ Then in `miku-player-kotlin/local.properties` (gitignored):
 ```
 miku.entitlement.url=https://mikusan.falcontechnix.com     # or the *.workers.dev URL
 miku.entitlement.hmac=<SECRET from above>
-miku.entitlement.contact=Justin@FalconTechnix.com
+miku.entitlement.contact=github@falcontechnix.com
 ```
 
 Rebuild; Settings → License & Entitlement now shows "Configured: yes". Flip the toggle on, tap
@@ -91,7 +91,7 @@ curl -s -X POST $BASE/v1/check -H 'content-type: application/json' \
 
 # deny it, check again, then clear
 curl -s -X PUT $BASE/admin/devices/$ID -H "authorization: Bearer $ADMIN" \
-  -H 'content-type: application/json' -d '{"status":"deny","note":"test revoke — contact Justin@FalconTechnix.com"}' | jq .
+  -H 'content-type: application/json' -d '{"status":"deny","note":"test revoke — contact github@falcontechnix.com"}' | jq .
 curl -s "$BASE/v1/status?deviceId=$ID&nonce=$NONCE" | jq .verdict     # "DISALLOW"
 curl -s $BASE/admin/devices -H "authorization: Bearer $ADMIN" | jq .
 curl -s -X DELETE $BASE/admin/devices/$ID -H "authorization: Bearer $ADMIN" | jq .
