@@ -32,7 +32,7 @@ REKEY_NOOP="${REKEY_NOOP:-0}"
 # device, byte-identical to the build output, and `dumpsys package com.caf.fmradio` still
 # listed the OLD five permissions and never granted it, through two reboots. The permission
 # the vendor jar needs was simply not there as far as PMS was concerned.
-MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.6}"
+MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.12}"
 DEVICE_IDENTITY="m500_mikuOS-v${MIKUOS_VERSION}"
 RESIGN_SH="$SCRIPT_DIR/resign_system.sh"
 APKSIGNER="${APKSIGNER:-$(ls ~/Android/Sdk/build-tools/*/apksigner 2>/dev/null | tail -1)}"
@@ -70,7 +70,7 @@ cd "$REPO_DIR/miku-player-kotlin"
 if [ "${SKIP_GRADLE:-0}" = "1" ]; then
     echo "  (SKIP_GRADLE=1: using existing build/outputs APKs)"
 else
-    ./gradlew :mikuos-launcher:assembleRelease :app:assembleRelease :mikuos-settings:assembleRelease :mikuos-systemui:assembleRelease :fmradio:assembleRelease
+    ./gradlew :mikuos-launcher:assembleRelease :app:assembleRelease :mikuos-settings:assembleRelease :mikuos-systemui:assembleRelease :fmradio:assembleRelease :hardware-settings:assembleRelease
 fi
 
 # Resolve versioned APK names (e.g. MikuOS_Launcher-v0.1.0.apk); newest wins.
@@ -179,6 +179,23 @@ echo "[3/6] Configuring system_ext.img..."
 # tuner. Same package name + platform signature = same SELinux vendor_fm_app domain,
 # so it keeps /dev/radio0 tuner access (which our com.miku.player build could never
 # get). Drop the stale oat so ART recompiles our APK; keep app/FM2/lib (vendor FM JNI).
+# Broadcast station catalogue: 47,826 US/CA/MX stations with transmitter coordinates, ERP,
+# HAAT and call-sign dates, built by tools/radiodb from FCC public-record data. Injected as a
+# data file rather than an APK asset so it can be refreshed without rebuilding the app, and so
+# the launcher can read it too. Logos are deliberately NOT in here: they are trademarks and
+# this image is published, so the device fetches and caches them per-device at runtime.
+STATIONS_DB="$REPO_DIR/mikuos/data/stations.sqlite"
+if [ -f "$STATIONS_DB" ]; then
+    echo "  -> injecting station catalogue ($(( $(stat -c%s "$STATIONS_DB") / 1048576 )) MB)"
+    debugfs -w -R "mkdir etc/miku" "$OUTPUT_DIR/system_ext.img" >/dev/null 2>&1 || true
+    label "$OUTPUT_DIR/system_ext.img" "etc/miku" "u:object_r:system_file:s0"
+    dfput "$OUTPUT_DIR/system_ext.img" "$STATIONS_DB" "etc/miku/stations.sqlite" \
+        && label "$OUTPUT_DIR/system_ext.img" "etc/miku/stations.sqlite" "u:object_r:system_file:s0" \
+        || echo "  !! station catalogue injection failed"
+else
+    echo "  -> no station catalogue at $STATIONS_DB (run tools/radiodb/fetch_sources.sh)"
+fi
+
 if [ -n "$FMRADIO_APK" ] && [ -f "$FMRADIO_APK" ]; then
     echo "  -> injecting Miku FM ($FMRADIO_APK) over stock FM2"
     debugfs -w -R "rm app/FM2/oat/arm64/FM2.odex" "$OUTPUT_DIR/system_ext.img" 2>/dev/null || true
@@ -697,10 +714,18 @@ persist.service.debuggable=1
 ro.debuggable=1
 ro.adb.secure=0
 service.adb.root=1
-# Wireless adb (dev copy): persist.adb.tcp.port makes adbd ALSO listen on TCP 5555
-# while keeping the USB interface. Reach it with adb connect IP:5555 on LAN.
-# The host key is pre-authorized so no on-screen prompt.
+# Wireless adb, so pulling the USB cable does not end the session.
+#
+# BOTH keys are set deliberately. adbd reads service.adb.tcp.port, and persist.adb.tcp.port is
+# the one that survives across boots; which of the two a given build honours has moved around
+# between AOSP releases, and setting both costs one line and removes the question. adbd keeps
+# the USB interface at the same time, so the device is reachable either way and swapping
+# between them mid-session costs nothing.
+#
+# The host key is pre-authorized (see the /adb_keys bake), so a wireless connection does not
+# sit waiting on an on-screen "Allow USB debugging" prompt nobody is there to tap.
 persist.adb.tcp.port=5555
+service.adb.tcp.port=5555
 
 # ========================================================
 # MikuOS Boot Experience (welcome-voice + locale defaults)
@@ -966,6 +991,16 @@ on property:sys.boot_completed=1
     # no-ops - "activates but never adjusts", found 2026-09-10).
     exec_background - system system -- /system/bin/appops set com.m500.hardware WRITE_SETTINGS allow
     exec_background - system system -- /system/bin/appops set --uid com.m500.hardware CAMERA allow
+    # MikuLocationFusion. Android gates reading Wi-Fi scan results on a LOCATION permission, so
+    # without these the fused position has no Wi-Fi source and no passive GNSS either, and it
+    # publishes nothing at all - silently, because the failure is a caught SecurityException.
+    exec_background - system system -- /system/bin/pm grant com.m500.hardware android.permission.ACCESS_FINE_LOCATION
+    exec_background - system system -- /system/bin/pm grant com.m500.hardware android.permission.ACCESS_COARSE_LOCATION
+    # Background location is the one that actually matters for a daemon: without it Android
+    # returns an empty scan list rather than refusing, so Wi-Fi positioning reads zero APs.
+    exec_background - system system -- /system/bin/pm grant com.m500.hardware android.permission.ACCESS_BACKGROUND_LOCATION
+    exec_background - system system -- /system/bin/appops set com.m500.hardware FINE_LOCATION allow
+    exec_background - system system -- /system/bin/appops set com.m500.hardware COARSE_LOCATION allow
     # SYSTEM_ALERT_WINDOW appop = A14 while-in-use exemption; without it a
     # camera-type FGS cannot start from BOOT_COMPLETED (throws SecurityException).
     exec_background - system system -- /system/bin/appops set com.m500.hardware SYSTEM_ALERT_WINDOW allow

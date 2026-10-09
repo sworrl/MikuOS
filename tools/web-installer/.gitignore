@@ -1,0 +1,8 @@
+
+# The control channel's shared secret. It can drive a flash on a real device; it is minted
+# locally by control_server.py on first run and must never be published.
+.control-secret
+
+# Generated release artefacts (manifest + the images a release dir is filled with).
+release.json
+release/

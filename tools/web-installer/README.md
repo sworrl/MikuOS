@@ -12,10 +12,16 @@ tools/web-installer/
   js/config.js                device constants, guard rails, partition sequences
   js/flasher.js               flash engine: image sources, SHA-256, 64 MiB sparse chunking, plan, resume
   js/app.js                   UI controller
+  js/control.js               operator control agent: inert unless the page is opened with a
+                              #control= token on localhost (see CONTROL.md)
   js/vendor/fastboot.min.mjs  kdrag0n/fastboot.js 1.1.3 (MIT), unmodified; + LICENSE + NOTICE
   release.example.json        manifest format reference (placeholders)
   make_release_manifest.py    hashes mikuos/out + firmware images -> release.json (+ release dir)
   serve.py                    local dev server WITH Range support (python -m http.server lacks it)
+  control_server.py           serve.py + a signed control channel, so a flash can be driven and
+                              watched from a terminal while the real UI does the work
+  mikuctl                     the terminal end of that channel
+  CONTROL.md                  how the control channel works and why it is signed
 ```
 
 No build step. Static files only.
@@ -142,11 +148,23 @@ the *Advanced: local files* panel on the Connect step to pick `release.json` and
 straight from disk (sizes must match; hashes are still verified). On Linux add a udev rule for
 `18d1:d00d` and make sure no `fastboot` CLI process is running - two clients wedge the gadget.
 
+To drive a flash from a terminal instead of clicking - which is how the installer gets tested
+against hardware repeatedly - use `control_server.py` in place of `serve.py` and talk to it with
+`mikuctl`. It is the same code path as the buttons, signed end to end, and refuses to run from
+anywhere but localhost. CONTROL.md has the detail.
+
+```bash
+python3 tools/web-installer/control_server.py --images mikuos/out/web-release --port 8901
+# open the printed #control= URL in Chrome, click Connect once, then:
+tools/web-installer/mikuctl --base http://127.0.0.1:8901 flash install_keepdata
+```
+
 Sanity checks you can run without hardware:
 
 ```bash
 node --check tools/web-installer/js/flasher.js      # (as ESM: copy to .mjs or use --input-type=module)
-python3 -m py_compile tools/web-installer/make_release_manifest.py tools/web-installer/serve.py
+python3 -m py_compile tools/web-installer/make_release_manifest.py tools/web-installer/serve.py \
+    tools/web-installer/control_server.py
 ```
 
 ## Recovery cheat-sheet (also on the page)

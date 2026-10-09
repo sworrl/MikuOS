@@ -5,6 +5,12 @@ import {
   Flasher, UrlSource, FileSource, validateManifest, resolveImageUrl,
   buildPlan, actionAvailability, fmtBytes, StallError,
 } from "./flasher.js";
+import { attachControl } from "./control.js";
+
+// Set at the bottom of this file, and only when the page was opened with a #control= token.
+// Every reference below is optional-chained, so without one this file behaves identically to
+// how it did before the control channel existed.
+let control = null;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -39,6 +45,7 @@ function log(level, msg) {
   logEl().appendChild(line);
   logEl().scrollTop = logEl().scrollHeight;
   if (level === "error") console.error(msg); else console.log(`[${level}] ${msg}`);
+  control?.emit({ kind: "log", level, msg });
 }
 $("#log-clear")?.addEventListener("click", () => (logEl().innerHTML = ""));
 $("#log-copy")?.addEventListener("click", async () => {
@@ -87,9 +94,9 @@ function checkRequirements() {
 // ----------------------------------------------------------------------------
 // Manifest
 // ----------------------------------------------------------------------------
-async function loadManifest() {
+async function loadManifest(explicitUrl) {
   const params = new URLSearchParams(location.search);
-  const url = params.get("manifest") || CONFIG.MANIFEST_URL;
+  const url = explicitUrl || params.get("manifest") || CONFIG.MANIFEST_URL;
   state.manifestUrl = new URL(url, location.href).href;
   const box = $("#manifest-status");
   try {
@@ -379,6 +386,8 @@ async function startRun() {
         const el = stepEl(s.index);
         el.className = status;
         el.querySelector(".fs-status").textContent = status;
+        control?.emit({ kind: "step", index: s.index, status,
+                        name: s.partition ?? s.label });
       },
       onProgress: (s, p) => {
         const el = stepEl(s.index);
@@ -388,6 +397,7 @@ async function startRun() {
           ? `chunk ${p.chunk}/${p.chunks} - ${fmtBytes(p.bytesSent)} / ${fmtBytes(p.bytesTotal)} (${pct.toFixed(1)}%)`
           : `${fmtBytes(p.bytesSent)} / ${fmtBytes(p.bytesTotal)} (${pct.toFixed(0)}%)`;
         $("#overall").textContent = overallText(t0);
+        control?.emitProgress(s, p);
       },
     });
     const secs = Math.round((Date.now() - t0) / 1000);
@@ -405,6 +415,10 @@ async function startRun() {
       log("warn", "RECOVERY: 1) unplug USB, 2) hold POWER ~10 s until the device is fully off, 3) re-enter fastboot (adb is gone, so use the key combo or let the bootloader fall back to fastboot), 4) plug in, 5) click 'Reconnect & Resume'. Do NOT reboot into Android with a half-written super.");
     }
     $("#btn-resume").hidden = false;
+    // finish() is only reached on success, so without this a watching operator would wait
+    // forever for a verdict that never comes.
+    control?.emit({ kind: "finished", ok: false, action: state.action,
+                    error: e.message, resume: state.resume });
   } finally {
     state.running = false;
     setRunningUi(false);
@@ -445,6 +459,7 @@ $("#btn-resume").addEventListener("click", async () => {
 // Step 5: done
 // ----------------------------------------------------------------------------
 function finish(ok) {
+  control?.emit({ kind: "finished", ok, action: state.action });
   showStep(5);
   const a = ACTIONS[state.action];
   $("#done-title").textContent = ok ? `${a.title}: complete` : `${a.title}: failed`;
@@ -491,3 +506,49 @@ checkRequirements();
 loadManifest();
 showStep(1);
 log("info", `MikuOS Web Installer ready. fastboot.js ${navigator.usb ? "(WebUSB ok)" : "(no WebUSB)"}`);
+
+// ----------------------------------------------------------------------------
+// Operator control channel (inert without a #control= token - see js/control.js)
+//
+// Each hook is the same entry point the corresponding button uses. Where a control is a
+// checkbox or a radio, the hook sets it and dispatches the event the page already listens
+// for, so the remote operator and a local click take exactly the same path and the screen
+// always shows the true state. Bootloader unlock is intentionally absent: it wipes the
+// device and needs someone physically there.
+// ----------------------------------------------------------------------------
+control = attachControl({
+  state,
+  log,
+  showStep,
+  connect,
+  refreshInfo,
+  renderFlashList,
+  loadManifest,
+  startRun,
+  setCheckbox(sel, on) {
+    const el = $(sel);
+    if (!el) throw new Error(`no such control ${sel}`);
+    if (el.checked === !!on) return;
+    el.checked = !!on;
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  },
+  selectActionRemote(key) {
+    if (!ACTIONS[key]) throw new Error(`unknown action ${key}; known: ${Object.keys(ACTIONS).join(", ")}`);
+    const radio = $(`#actions input[value="${key}"]`);
+    if (!radio) throw new Error("the action list has not been rendered yet; load a manifest first");
+    if (radio.disabled) throw new Error(`${key} is unavailable in this release (missing images)`);
+    radio.checked = true;
+    selectAction(key);
+  },
+  abort() {
+    state.flasher.abortRequested = true;
+    log("warn", "Abort requested by the operator; stopping after the current chunk.");
+  },
+  resume() {
+    $("#btn-resume").click();
+  },
+  async rebootBootloader() {
+    await state.flasher._lock(() => state.fb.runCommand("reboot-bootloader"));
+    log("info", "reboot-bootloader sent; reconnect when it re-enumerates.");
+  },
+});

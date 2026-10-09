@@ -146,3 +146,16 @@ li.failed .fs-status { color: var(--bad); }
 .recovery { margin-top: 2rem; }
 .recovery h3 { margin-top: 1rem; }
 footer { text-align: center; padding: 1.5rem; border-top: 1px solid var(--line); }
+
+/* Operator control channel strip. Only ever present when the page was opened with a
+   #control= token (see js/control.js); the public installer never creates this element. */
+.control-banner {
+  position: sticky; top: 0; z-index: 50;
+  padding: 6px 14px;
+  font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .04em; text-transform: uppercase;
+  border-bottom: 1px solid rgba(0, 0, 0, .25);
+}
+.control-banner.ok        { background: #0d3b3a; color: #39c5bb; }
+.control-banner.connecting{ background: #2a2b17; color: #e6d75f; }
+.control-banner.bad       { background: #3b1020; color: #ff8fb8; }

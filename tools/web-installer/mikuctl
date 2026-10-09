@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""Drive the MikuOS web installer from a terminal, over the signed control channel.
+
+The browser tab does the USB work - it has to, WebUSB lives nowhere else - and this talks to
+the control server that tab is polling. Everything the page logs comes back here, so a flash
+can be driven and watched from the shell while the real installer UI shows it happening.
+
+    ./mikuctl ping                      is the tab there, and what does it think it can do
+    ./mikuctl status                    device, manifest, plan, progress, last log lines
+    ./mikuctl watch                     follow the page's log as it happens
+    ./mikuctl connect                   attach to the device (needs one prior click, once)
+    ./mikuctl refresh                   re-read getvar and the guard rails
+    ./mikuctl manifest URL              point the page at a release manifest
+    ./mikuctl plan install_keepdata     choose the action and build the plan
+    ./mikuctl plan install_clean --confirm WIPE
+    ./mikuctl start                     run it
+    ./mikuctl start --confirm WIPE      run a data-destroying plan
+    ./mikuctl abort                     stop after the current chunk
+    ./mikuctl resume                    continue after a USB wedge and power-cycle
+    ./mikuctl flash install_keepdata    connect, refresh, plan, start, then follow the log
+
+Nothing here can unlock a bootloader: that wipes the device and wants a hand on it.
+"""
+import argparse
+import base64
+import hashlib
+import hmac
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PROTO = "MIKUOSCTL1"
+CMD_PROTO = "MIKUOSCMD1"
+DEFAULT_BASE = os.environ.get("MIKUCTL_BASE", "http://127.0.0.1:8000")
+DEFAULT_SECRET = os.environ.get("MIKUCTL_SECRET_FILE", os.path.join(HERE, ".control-secret"))
+
+LEVEL_COLOUR = {"error": "\033[31m", "warn": "\033[33m", "ok": "\033[32m", "info": "\033[0m"}
+RESET = "\033[0m"
+
+
+def secret_bytes(path: str) -> bytes:
+    if not os.path.exists(path):
+        sys.exit(f"no control secret at {path}. Start control_server.py first - it mints one.")
+    with open(path, "rb") as f:
+        return base64.urlsafe_b64decode(f.read().strip())
+
+
+class Client:
+    def __init__(self, base: str, secret: bytes):
+        self.base = base.rstrip("/")
+        self.secret = secret
+
+    def _headers(self, method: str, path: str, body: bytes) -> dict:
+        ts = str(int(time.time()))
+        nonce = os.urandom(12).hex()
+        canon = "\n".join([PROTO, method.upper(), path, ts, nonce,
+                           hashlib.sha256(body).hexdigest()]).encode()
+        return {"X-Miku-Ts": ts, "X-Miku-Nonce": nonce,
+                "X-Miku-Sig": hmac.new(self.secret, canon, hashlib.sha256).hexdigest()}
+
+    def call(self, method: str, path_q: str, body=None, timeout: float = 40.0):
+        path = path_q.split("?")[0]
+        raw = json.dumps(body).encode() if body is not None else b""
+        headers = self._headers(method, path, raw)
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(self.base + path_q, data=raw or None,
+                                     headers=headers, method=method.upper())
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                text = res.read().decode()
+                self._verify_reply(path, res.headers, text)
+                return json.loads(text) if text else {}
+        except urllib.error.HTTPError as e:
+            text = e.read().decode()
+            try:
+                msg = json.loads(text).get("error", text)
+            except json.JSONDecodeError:
+                msg = text
+            sys.exit(f"control server refused {method} {path}: HTTP {e.code} {msg}")
+        except urllib.error.URLError as e:
+            sys.exit(f"cannot reach the control server at {self.base}: {e.reason}\n"
+                     f"Start it with: python3 {os.path.join(HERE, 'control_server.py')}")
+
+    def _verify_reply(self, path: str, headers, text: str):
+        """The replies tell us what a real device reported, so they get checked too."""
+        canon = "\n".join([PROTO, "RESPONSE", path, headers.get("X-Miku-Ts", ""),
+                           headers.get("X-Miku-Nonce", ""),
+                           hashlib.sha256(text.encode()).hexdigest()]).encode()
+        want = hmac.new(self.secret, canon, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(want, headers.get("X-Miku-Sig", "")):
+            sys.exit("the server's reply is not signed with this secret. Wrong secret file, or "
+                     "something else is answering on that port.")
+
+    # --- commands ---------------------------------------------------------
+    def send(self, cmd: str, args: dict = None, confirm: str = "") -> dict:
+        seq = self.call("GET", "/api/v1/state?tail=0")["next_seq"]
+        env = {"v": 1, "seq": seq, "issued": int(time.time() * 1000),
+               "nonce": os.urandom(12).hex(), "cmd": cmd, "args": args or {}}
+        if confirm:
+            env["confirm"] = confirm
+        payload = json.dumps(env, sort_keys=True, separators=(",", ":")).encode()
+        sig = hmac.new(self.secret, CMD_PROTO.encode() + b"\n" + payload,
+                       hashlib.sha256).hexdigest()
+        self.call("POST", "/api/v1/enqueue",
+                  {"seq": seq, "payload_b64": base64.b64encode(payload).decode(), "sig": sig})
+        return self.await_result(seq)
+
+    def await_result(self, seq: int, timeout: float = 120.0) -> dict:
+        """A command is acted on in the browser, so the answer comes back out of band."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            st = self.call("GET", "/api/v1/state?tail=0")
+            res = st.get("results", {}).get(str(seq))
+            if res:
+                return res
+            if st.get("agent") is None:
+                sys.exit("no installer tab is attached. Open the #control= URL that "
+                         "control_server.py printed, in a Chromium browser.")
+            time.sleep(0.4)
+        sys.exit(f"command #{seq} was queued but the tab never reported back within "
+                 f"{int(timeout)}s. Is it still open?")
+
+
+def print_result(res: dict):
+    if res.get("ok"):
+        out = res.get("out")
+        if isinstance(out, dict) and "step" in out:
+            print_snapshot(out)
+        elif out:
+            print(json.dumps(out, indent=2))
+        else:
+            print(f"{res['cmd']}: ok")
+    else:
+        sys.exit(f"{res['cmd']}: {res.get('error')}")
+
+
+def print_snapshot(s: dict):
+    if not s:
+        print("no snapshot yet")
+        return
+    dev = s.get("device") or {}
+    print(f"step {s.get('step')}  "
+          f"{'connected' if s.get('connected') else 'NOT connected'}  "
+          f"guards {'pass' if s.get('product_ok') else 'BLOCKED'}"
+          f"{'  RUNNING' if s.get('running') else ''}")
+    if dev:
+        print(f"  device   product={dev.get('product')} serial={dev.get('serialno')} "
+              f"slot={dev.get('current-slot')} unlocked={dev.get('unlocked')} "
+              f"battery={dev.get('battery-voltage')}")
+        print(f"           super={dev.get('partition-size:super')} "
+              f"max-download={dev.get('max-download-size')}")
+    m = s.get("manifest")
+    if m:
+        print(f"  manifest {m.get('name')} {m.get('version')} built {m.get('build_date')} "
+              f"({len(m.get('images') or {})} images)")
+    probs = s.get("manifest_problems") or []
+    for p in probs:
+        print(f"    manifest problem: {p}")
+    if s.get("action"):
+        print(f"  action   {s['action']}{' +root' if s.get('with_root') else ''}, "
+              f"{len(s.get('plan') or [])} steps")
+    for idx, pr in sorted((s.get("progress") or {}).items(), key=lambda kv: int(kv[0])):
+        bar = "#" * int(pr["pct"] / 5) + "." * (20 - int(pr["pct"] / 5))
+        chunk = f" chunk {pr['chunk']}/{pr['chunks']}" if pr.get("chunks", 1) > 1 else ""
+        print(f"  [{bar}] {pr['pct']:5.1f}%  {pr['partition']}{chunk}")
+    if s.get("resume"):
+        print(f"  resume   step {s['resume']['stepIndex'] + 1}, chunk {s['resume']['chunkIndex'] + 1}")
+    if s.get("last_error"):
+        print(f"  error    {s['last_error']}")
+
+
+def print_events(events, colour: bool):
+    for ev in events:
+        t = time.strftime("%H:%M:%S", time.localtime(ev.get("at", 0) / 1000))
+        kind = ev.get("kind")
+        if kind == "log":
+            c = LEVEL_COLOUR.get(ev.get("level"), "") if colour else ""
+            r = RESET if colour and c else ""
+            print(f"{t} {c}{ev.get('msg')}{r}")
+        elif kind == "step":
+            print(f"{t} -- {ev.get('name')}: {ev.get('status')}")
+        elif kind == "finished":
+            print(f"{t} == run {'completed' if ev.get('ok') else 'FAILED'} ({ev.get('action')})")
+        elif kind == "refused":
+            print(f"{t} !! command #{ev.get('seq')} refused: {ev.get('why')}")
+
+
+def watch(c: Client, colour: bool, until_finished: bool = False):
+    seen = 0
+    last_pct = {}
+    while True:
+        st = c.call("GET", "/api/v1/state?tail=400")
+        events = st.get("events", [])
+        fresh = events[seen:] if seen <= len(events) else events
+        seen = len(events)
+        print_events(fresh, colour)
+        for idx, pr in (st.get("snapshot", {}).get("progress") or {}).items():
+            # One line per 5% so a 10-minute super flash does not scroll the log away.
+            step = int(pr["pct"] // 5)
+            if last_pct.get(idx) != step:
+                last_pct[idx] = step
+                print(f"         {pr['partition']}: {pr['pct']:5.1f}%  "
+                      f"({pr['sent']}/{pr['total']})")
+        if until_finished and any(e.get("kind") == "finished" for e in fresh):
+            return 0 if all(e.get("ok") for e in fresh if e.get("kind") == "finished") else 1
+        sys.stdout.flush()
+        time.sleep(1.0)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--base", default=DEFAULT_BASE)
+    ap.add_argument("--secret-file", default=DEFAULT_SECRET)
+    ap.add_argument("--no-colour", action="store_true")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("ping")
+    sub.add_parser("status")
+    sub.add_parser("watch")
+    sub.add_parser("connect")
+    sub.add_parser("refresh")
+    sub.add_parser("abort")
+    sub.add_parser("resume")
+    sub.add_parser("reboot-bootloader")
+    sub.add_parser("events")
+
+    p = sub.add_parser("manifest"); p.add_argument("url")
+    p = sub.add_parser("plan")
+    p.add_argument("action")
+    p.add_argument("--root", action="store_true", help="flash the Magisk-patched init_boot")
+    p.add_argument("--confirm", default="", help='required ("WIPE") for data-destroying actions')
+    p = sub.add_parser("start"); p.add_argument("--confirm", default="")
+    p = sub.add_parser("step"); p.add_argument("n", type=int)
+    p = sub.add_parser("override")
+    p.add_argument("--dev", choices=["on", "off"])
+    p.add_argument("--battery", choices=["on", "off"])
+    p = sub.add_parser("flash", help="connect, refresh, plan, start, then follow the log")
+    p.add_argument("action")
+    p.add_argument("--root", action="store_true")
+    p.add_argument("--confirm", default="")
+
+    args = ap.parse_args()
+    c = Client(args.base, secret_bytes(args.secret_file))
+    colour = sys.stdout.isatty() and not args.no_colour
+
+    if args.cmd == "ping":
+        print(json.dumps(c.call("GET", "/api/v1/ping"), indent=2))
+        print_result(c.send("ping"))
+        return 0
+    if args.cmd == "status":
+        st = c.call("GET", "/api/v1/state?tail=15")
+        age = st.get("agent_age_s")
+        print(f"tab: {st.get('agent') or 'NOT attached'}"
+              + (f" (last heard {age}s ago)" if age is not None else ""))
+        print_snapshot(st.get("snapshot") or {})
+        ev = st.get("events") or []
+        if ev:
+            print("  --- last log lines ---")
+            print_events(ev, colour)
+        return 0
+    if args.cmd == "events":
+        print_events(c.call("GET", "/api/v1/state?tail=400").get("events", []), colour)
+        return 0
+    if args.cmd == "watch":
+        return watch(c, colour)
+
+    simple = {"connect": "connect", "refresh": "refresh_info", "abort": "abort",
+              "resume": "resume", "reboot-bootloader": "reboot_bootloader"}
+    if args.cmd in simple:
+        print_result(c.send(simple[args.cmd]))
+        return 0
+    if args.cmd == "manifest":
+        print_result(c.send("load_manifest", {"url": args.url}))
+        return 0
+    if args.cmd == "step":
+        print_result(c.send("goto_step", {"step": args.n}))
+        return 0
+    if args.cmd == "override":
+        a = {}
+        if args.dev:
+            a["dev"] = args.dev == "on"
+        if args.battery:
+            a["battery"] = args.battery == "on"
+        if not a:
+            sys.exit("override needs --dev and/or --battery")
+        print_result(c.send("set_override", a))
+        return 0
+    if args.cmd == "plan":
+        print_result(c.send("select_action",
+                            {"action": args.action, "with_root": args.root},
+                            confirm=args.confirm))
+        return 0
+    if args.cmd == "start":
+        print_result(c.send("start", confirm=args.confirm))
+        return watch(c, colour, until_finished=True)
+    if args.cmd == "flash":
+        for step in ("connect", "refresh_info"):
+            res = c.send(step)
+            if not res.get("ok"):
+                sys.exit(f"{step}: {res.get('error')}")
+            if (res.get("out") or {}).get("needs_user_gesture"):
+                sys.exit("the browser needs one click on Connect before it will hand over the "
+                         "device. Do that once, then re-run this.")
+        snap = c.send("status")["out"]
+        if not snap.get("product_ok"):
+            sys.exit("guard rails are blocking this device. Run ./mikuctl status to see which, "
+                     "and fix it rather than overriding unless you know why.")
+        print_result(c.send("select_action", {"action": args.action, "with_root": args.root},
+                            confirm=args.confirm))
+        print_result(c.send("start", confirm=args.confirm))
+        return watch(c, colour, until_finished=True)
+    return 2
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

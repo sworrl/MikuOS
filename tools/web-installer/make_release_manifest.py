@@ -118,6 +118,10 @@ def main() -> int:
     ap.add_argument("--with-rooted", action="store_true", help="include init_boot_rooted (enables the Root button)")
     ap.add_argument("--with-stock", action="store_true", help="include stock_super + vbmeta_stock + vbmeta_system_stock (enables Rollback to stock). Mind HiBy's copyright before hosting these publicly.")
     ap.add_argument("--with-userdata", action="store_true", help="include userdata_formatted.img (flashed after erase userdata on clean installs)")
+    ap.add_argument("--repo", help="tree the default image paths resolve against. Defaults to this "
+                                   "script's own repo, which is right when the installer lives "
+                                   "beside the build; point it at the m500 working tree when the "
+                                   "images are built there and published from here.")
     ap.add_argument("--img", action="append", default=[], metavar="KEY=PATH", help="override an image path (repeatable)")
     ap.add_argument("--chunk-mib", type=int, default=DEFAULT_CHUNK // (1024 * 1024), help=f"data MiB per streamed chunk (default {DEFAULT_CHUNK // (1024 * 1024)}; must be < 64)")
     ap.add_argument("--allow-wrong-super-size", action="store_true", help="do not fail when mikuos_system_bundle is not exactly the M500 super size")
@@ -128,7 +132,7 @@ def main() -> int:
         print(f"error: --chunk-mib must be 1..{DEFAULT_CHUNK // (1024 * 1024)} (64 MiB payload cap minus header room)", file=sys.stderr)
         return 2
 
-    paths = default_paths(repo_root())
+    paths = default_paths(os.path.abspath(args.repo) if args.repo else repo_root())
     for ov in args.img:
         if "=" not in ov:
             print(f"error: --img expects KEY=PATH, got {ov}", file=sys.stderr)
