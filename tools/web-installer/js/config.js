@@ -14,8 +14,9 @@ export const CONFIG = {
   // ---------------------------------------------------------------------------
   EXPECTED_PRODUCTS: ["khaje"],
 
-  // Real `super` partition size on M500_MIKU_4G (fastboot getvar partition-size:super).
-  // The MikuOS bundle is built to exactly this size; a mismatch means wrong image or wrong device.
+  // Real `super` partition size (fastboot getvar partition-size:super). The MikuOS bundle is
+  // built to exactly this size; a mismatch means wrong image or wrong device.
+  // CONFIRMED on hardware 2026-10-09: the bootloader reports 0x1402A0000 = 5371461632.
   EXPECTED_SUPER_SIZE: 5371461632,
 
   // The M500's USB gadget wedges (device-side, needs a physical power-cycle) when super is

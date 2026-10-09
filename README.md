@@ -490,6 +490,7 @@ Things this project had to find out the expensive way, written down so nobody ha
 | The `RADIO_TUNER` capture is not the tuner audio on wired output | The HAL opens it as usecase 20 `audio-record` with no FM calibration (`ACDB: No calibration found`). Captures at the strongest and deadest frequency are indistinguishable and ignore every mute, while RSSI moves 0 to 19. Do not plot it |
 | `FmReceiver` will not re-enable on the same object after a `disable()` | `FmTransceiver` wants its state machine back at Turned_Off and does not reliably get there, so the second power-on returns false. Build a fresh receiver per power cycle |
 | There is no FM transmit API on this device | `FmReceiverJNI` has a `setTxPowerLevelNative`, but `qcom.fmradio.jar` ships no `FmTransmitter` class to reach it. Both FM paths are receive-only |
+| The M500's bootloader reports `product: khaje` and `partition-size:super: 0x1402A0000` | 5371461632 bytes. Both are the guard rails the web installer refuses to flash without, and both were re-read off the device on 2026-10-09 |
 | FM reaches the DAC through an ADSP loopback on every output but Bluetooth | So the `AudioRecord`-to-`AudioTrack` bridge is A2DP-only. Running it as well is not louder, it is an echo one capture buffer behind |
 
 ---
