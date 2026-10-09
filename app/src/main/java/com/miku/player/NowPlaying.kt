@@ -208,12 +208,24 @@ fun NowPlayingScreen(
     var showViz by remember { mutableStateOf(true) }
     var currentPresetIndex by remember { mutableStateOf(PlayerPreferences.loadProjectMPreset(ctx)) }
     val presets = ProjectMPreset.entries
+    // A saved ordinal can point at a locked preset (earned once, then /data wiped, or the value
+    // predates the gate). Fall back rather than handing the reward over for free.
+    if (MikuUnlocksReader.locked(ctx, MikuUnlocksReader.PROJECTM_PRESET_GATES, currentPresetIndex)) {
+        currentPresetIndex = 0
+    }
     val currentPreset = presets[currentPresetIndex.coerceIn(0, presets.size - 1)]
 
-    // ---- Visualizer engine: native projectM or the GLES2 "Miku Shaders" (visualizer/) ----
-    var engine by remember { mutableStateOf(VizEngine.fromKey(PlayerPreferences.loadVizEngine(ctx))) }
+    // ---- Visualiser engine ----
+    // ONE engine: projectM. The second GLES2 renderer ("Miku Shaders") and its toggle are gone; the
+    // Miku look ships as our own .milk presets inside projectM instead. The GLES2 path survives ONLY
+    // as an automatic fallback for a build where libprojectM did not load, so the visualiser is
+    // never simply blank; it is not selectable and has no settings.
+    val engine = VizEngine.PROJECTM
     var shaderPresetIdx by remember { mutableStateOf(PlayerPreferences.loadShaderPreset(ctx)) }
     val shaderPresets = ShaderPreset.entries
+    if (MikuUnlocksReader.locked(ctx, MikuUnlocksReader.SHADER_PRESET_GATES, shaderPresetIdx)) {
+        shaderPresetIdx = 0
+    }
     val shaderPreset = shaderPresets[shaderPresetIdx.coerceIn(0, shaderPresets.size - 1)]
     // projectM only when the user chose it AND the native lib actually loaded; else the shader engine.
     val effectiveEngine = if (engine == VizEngine.PROJECTM && ProjectMNative.available) VizEngine.PROJECTM else VizEngine.SHADER
@@ -289,23 +301,20 @@ fun NowPlayingScreen(
     // shader engine just rotates the GLSL preset list (and remembers it).
     fun nextPreset() {
         if (effectiveEngine == VizEngine.SHADER) {
-            shaderPresetIdx = (shaderPresetIdx + 1) % shaderPresets.size
+            shaderPresetIdx = MikuUnlocksReader.nextUnlocked(
+                ctx, MikuUnlocksReader.SHADER_PRESET_GATES, shaderPresetIdx, shaderPresets.size)
             PlayerPreferences.saveShaderPreset(ctx, shaderPresetIdx)
             presetToast = shaderPresets[shaderPresetIdx].title
         } else { ProjectMNative.requestNext(); showPresetName("Next ▸") }
     }
     fun prevPreset() {
         if (effectiveEngine == VizEngine.SHADER) {
-            shaderPresetIdx = (shaderPresetIdx - 1 + shaderPresets.size) % shaderPresets.size
+            shaderPresetIdx = MikuUnlocksReader.nextUnlocked(
+                ctx, MikuUnlocksReader.SHADER_PRESET_GATES,
+                shaderPresetIdx - 2 + shaderPresets.size * 2, shaderPresets.size)
             PlayerPreferences.saveShaderPreset(ctx, shaderPresetIdx)
             presetToast = shaderPresets[shaderPresetIdx].title
         } else { ProjectMNative.requestPrev(); showPresetName("◂ Prev") }
-    }
-    fun toggleEngine() {
-        val next = if (engine == VizEngine.PROJECTM) VizEngine.SHADER else VizEngine.PROJECTM
-        engine = next
-        PlayerPreferences.saveVizEngine(ctx, next.key)
-        presetToast = if (next == VizEngine.PROJECTM && !ProjectMNative.available) "projectM unavailable · Miku Shaders" else next.title
     }
     LaunchedEffect(presetToast) { if (presetToast.isNotEmpty()) { delay(2000); presetToast = "" } }
     LaunchedEffect(showOverlayControls, pinControls) { if (showOverlayControls && !pinControls) { delay(4500); showOverlayControls = false } }
@@ -447,6 +456,25 @@ fun NowPlayingScreen(
                 }
             }
 
+            // Attribution. The fullscreen visualiser is projectM's work, so it says projectM and the
+            // REAL version read out of the loaded library (ProjectMNative.projectMCredit), not our
+            // app version and not a hardcoded string. Always on while the projectM engine is
+            // driving, tiny and low-contrast so it never competes with the visual.
+            if (effectiveEngine == VizEngine.PROJECTM && ProjectMNative.projectMCredit.isNotEmpty()) {
+                Text(
+                    text = ProjectMNative.projectMCredit,
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .navigationBarsPadding()
+                        .padding(start = 12.dp, bottom = 6.dp)
+                )
+            }
+
             // Top-right floating chips: pin + engine + exit (always available, tiny, glassy — minimal vis blocking).
             androidx.compose.animation.AnimatedVisibility(
                 visible = showOverlayControls || pinControls,
@@ -457,9 +485,6 @@ fun NowPlayingScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     GlassIcon(if (pinControls) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                         "Pin controls", if (pinControls) MikuGold else Color.White) { pinControls = !pinControls }
-                    Spacer(Modifier.width(8.dp))
-                    GlassIcon(Icons.Default.AutoAwesome, "Visualizer engine: ${effectiveEngine.title}",
-                        if (effectiveEngine == VizEngine.SHADER) accent2 else MikuGold) { toggleEngine() }
                     Spacer(Modifier.width(8.dp))
                     GlassIcon(Icons.Default.FullscreenExit, "Exit fullscreen", MikuTealBright) { isFullscreenVisualizer = false }
                 }
@@ -1014,7 +1039,7 @@ fun NowPlayingScreen(
                             Icon(Icons.Default.MusicNote, null, tint = Muted.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
                             Spacer(Modifier.height(8.dp))
                             Text("End of Queue", color = Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text("Add more songs from Songs or Albums tab", color = Muted.copy(alpha = 0.7f), fontSize = 12.sp)
+                            Text("Add more songs from Songs or Albums tab", color = Muted.copy(alpha = 0.85f), fontSize = 12.sp)
                         }
                     }
                 } else {
@@ -1289,7 +1314,7 @@ fun MikuConnectModal(context: android.content.Context, onClose: () -> Unit) {
             ) {
                 Text(
                     if (serverUp) "Port $port · server running" else "Port $port · server not running",
-                    color = MikuTeal.copy(alpha = 0.7f),
+                    color = MikuTeal.copy(alpha = 0.75f),
                     fontSize = 10.5.sp,
                     fontFamily = AudiowideFont
                 )
@@ -1465,23 +1490,46 @@ fun TieredRainbowHeart(
     onLongPress: (() -> Unit)? = null
 ) {
     val ctx = LocalContext.current
-    var phase by remember { mutableStateOf(0f) }
-    var beat by remember { mutableStateOf(0f) }
-    LaunchedEffect(liked) {
-        if (!liked) return@LaunchedEffect
+    // PERF (scroll jank, 2026-09-17) — this was the single most expensive thing a liked list row
+    // did. `phase`/`beat` tick at 60 Hz for as long as the heart is liked and on screen, and the
+    // heartbeat scale below USED to be computed in this composable's body
+    // (`val pulse = ...; .scale(pulse)`). That made `beat` a COMPOSITION-phase read, so every
+    // liked heart recomposed 60 times a second — and with a heart on every liked artist/album/
+    // track row plus the docked now-playing bar, a screenful of liked rows meant several hundred
+    // full recompositions per second (each one re-allocating the Canvas lambda and re-running its
+    // ~20 path/gradient draw ops) on the same main thread the list scrolls on.
+    //
+    // Both values are now read ONLY from the layer/draw phase: `beat` inside graphicsLayer{} and
+    // `phase` inside the Canvas draw lambda. The animation is pixel-identical; it just no longer
+    // recomposes anything. They're also float states now, so the 60 Hz ticks stop boxing a Float
+    // per frame per heart.
+    val phase = remember { mutableFloatStateOf(0f) }
+    val beat = remember { mutableFloatStateOf(0f) }
+    // PERF (2026-09-19): the pulse is for the big Now Playing heart only. A liked heart in a LIST
+    // ROW used to run this 60 Hz loop too, and each tick re-recorded that row's graphics layer
+    // and its Canvas: a screen with six liked artists was six layer re-records per frame, forever,
+    // whether or not anything else was happening. That is a permanent tax on scrolling for an
+    // animation nobody is looking at while they scroll. Small hearts are static now; the liked
+    // state still reads as filled + glowing, it just does not beat.
+    val animated = liked && size >= 36.dp
+    LaunchedEffect(animated) {
+        if (!animated) return@LaunchedEffect
         while (true) {
             if (IdleController.screenActive) {
-                phase = (phase + 2.4f) % 360f; beat = (beat + 0.014f) % 1f
+                phase.floatValue = (phase.floatValue + 2.4f) % 360f
+                beat.floatValue = (beat.floatValue + 0.014f) % 1f
                 delay(16)
             } else delay(500)
         }
     }
-    val pulse = if (liked) 1f + 0.065f * heartbeat(beat) else 1f
     val label = when (tier) { LikeTier.TRACK -> "song"; LikeTier.ALBUM -> "album"; LikeTier.ARTIST -> "artist" }
     Box(
         Modifier
             .size(size)
-            .scale(pulse)
+            .graphicsLayer {
+                val pulse = if (animated) 1f + 0.065f * heartbeat(beat.floatValue) else 1f
+                scaleX = pulse; scaleY = pulse
+            }
             .semantics { contentDescription = "${if (liked) "Unlike" else "Like"} $label"; role = Role.Checkbox; toggleableState = ToggleableState(liked) }
             .combinedClickable(
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
@@ -1502,20 +1550,23 @@ fun TieredRainbowHeart(
             val w = this.size.width
             val h = this.size.height
             val p = heartPath(w, h)
+            // Draw-phase read (see the note at the top of this function): ticking `phase` now
+            // invalidates only this Canvas's drawing, never composition.
+            val ph = phase.floatValue
 
             if (liked) {
-                // 1. 3D Physical Drop Shadow underneath the heart
-                val shadowPath = heartPath(w, h)
+                // 1. 3D Physical Drop Shadow underneath the heart — same geometry as `p`, which
+                //    used to be built a second time from scratch on every single frame.
                 drawContext.canvas.save()
                 drawContext.canvas.translate(0f, 3.5f)
-                drawPath(shadowPath, Color(0x99000000))
+                drawPath(p, Color(0x99000000))
                 drawContext.canvas.restore()
 
                 // 2. Ambient Chromatic Bloom / Aura behind the heart
                 drawCircle(
                     brush = Brush.radialGradient(
                         listOf(
-                            Color.hsv((phase + 120f) % 360f, 0.9f, 1f, 0.45f),
+                            Color.hsv((ph + 120f) % 360f, 0.9f, 1f, 0.45f),
                             Color.Transparent
                         ),
                         center = Offset(w * 0.5f, h * 0.45f),
@@ -1525,9 +1576,9 @@ fun TieredRainbowHeart(
 
                 // 3. Dynamic Rotating Rainbow Chromatic Core
                 val cols = when (tier) {
-                    LikeTier.TRACK -> (0..6).map { Color.hsv(((it * 52) + phase) % 360f, 0.88f, 1f) }
-                    LikeTier.ALBUM -> (0..6).map { Color.hsv(((it * 52) + phase * 1.4f + 40f) % 360f, 0.80f, 0.98f) }
-                    LikeTier.ARTIST -> (0..7).map { Color.hsv(((it * 46) + phase * 0.7f + 200f) % 360f, 0.92f, 1f) }
+                    LikeTier.TRACK -> (0..6).map { Color.hsv(((it * 52) + ph) % 360f, 0.88f, 1f) }
+                    LikeTier.ALBUM -> (0..6).map { Color.hsv(((it * 52) + ph * 1.4f + 40f) % 360f, 0.80f, 0.98f) }
+                    LikeTier.ARTIST -> (0..7).map { Color.hsv(((it * 46) + ph * 0.7f + 200f) % 360f, 0.92f, 1f) }
                 }
                 val brush = when (tier) {
                     LikeTier.TRACK -> Brush.linearGradient(cols, Offset(0f, h), Offset(w, 0f))
@@ -1612,11 +1663,10 @@ fun TieredRainbowHeart(
                 }
             } else {
                 // 3D Debossed Engraved Cavity when unliked
-                // Top inset shadow
-                val insetShadowPath = heartPath(w, h)
+                // Top inset shadow — reuses `p` instead of rebuilding the identical path.
                 drawContext.canvas.save()
                 drawContext.canvas.translate(0f, 1.8f)
-                drawPath(insetShadowPath, Color(0x95000000))
+                drawPath(p, Color(0x95000000))
                 drawContext.canvas.restore()
 
                 // Soft teal halo so the un-liked heart still reads as a heart against the
@@ -1682,6 +1732,9 @@ fun NowPlayingHeart(track: Track, size: androidx.compose.ui.unit.Dp = 42.dp) {
     val ctx = LocalContext.current
     var count by remember(track.id) { mutableStateOf(LikeStore.heartCount(ctx, track.id)) }
     var earnable by remember(track.id) { mutableStateOf(MikuPlayQualifier.isHeartable(track.id)) }
+    // Reading the state lists here is what makes the heart follow an album like without a poll.
+    val origin = LikeStore.likeOrigin(ctx, track)
+    val likedNow = origin == LikeStore.LikeOrigin.TRACK || origin == LikeStore.LikeOrigin.ALBUM
     // Cheap 1s poll (same cadence as the progress bar) keeps earnable/count fresh across the play.
     LaunchedEffect(track.id) {
         while (true) {
@@ -1691,18 +1744,25 @@ fun NowPlayingHeart(track: Track, size: androidx.compose.ui.unit.Dp = 42.dp) {
         }
     }
     TieredRainbowHeart(
-        tier = LikeTier.TRACK,
-        liked = count > 0,
+        // Inherited from the album shows the ALBUM ring, so "liked because the album is" is
+        // distinguishable at a glance from "liked on its own" without a second control.
+        tier = if (origin == LikeStore.LikeOrigin.ALBUM) LikeTier.ALBUM else LikeTier.TRACK,
+        liked = likedNow,
         size = size,
         earnable = earnable,
         badgeCount = count,
         onToggle = {
-            // Always allowed — like anytime. The play fraction is recorded as a WEIGHT, not a gate.
-            count = LikeStore.heart(ctx, track); earnable = MikuPlayQualifier.isHeartable(track.id)
+            // Toggles the EFFECTIVE state. Un-hearting a track the album covers records a refusal
+            // rather than doing nothing; hearting one promotes it to a like of its own.
+            LikeStore.toggleEffective(ctx, track)
+            count = LikeStore.heartCount(ctx, track.id); earnable = MikuPlayQualifier.isHeartable(track.id)
         },
         onLongPress = {
-            LikeStore.clearHearts(ctx, track); count = 0; earnable = MikuPlayQualifier.isHeartable(track.id)
-            android.widget.Toast.makeText(ctx, "Hearts cleared", android.widget.Toast.LENGTH_SHORT).show()
+            LikeStore.clearOverride(ctx, track)
+            count = LikeStore.heartCount(ctx, track.id); earnable = MikuPlayQualifier.isHeartable(track.id)
+            val msg = if (LikeStore.isAlbumLiked(track.artist.ifBlank { track.albumArtist }, track.album, ctx))
+                "Following the album again" else "Hearts cleared"
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
         }
     )
 }

@@ -235,25 +235,6 @@ object QuickSettingsModel {
             )
         )
 
-        // 7. Pulsar Dual-Die RGB
-        val isPulsarActive = PulsarLight.getMode(ctx) != PulsarLight.Mode.OFF
-        list.add(
-            QsTile(
-                id = "pulsar_light",
-                label = "Pulsar RGB",
-                subtitle = PulsarLight.getMode(ctx).label,
-                icon = Icons.Default.Lightbulb,
-                isActive = isPulsarActive,
-                onClick = {
-                    val all = PulsarLight.Mode.values()
-                    val cur = PulsarLight.getMode(ctx)
-                    val next = all[(cur.ordinal + 1) % all.size]
-                    PulsarLight.setMode(ctx, next)
-                    onRefresh()
-                },
-                onLongClick = { openMikuSettings(ctx, "pulsar") }
-            )
-        )
 
         // 8. Wireless ADB — the port shown is the one adbd is really bound to (service.adb.tcp.port)
         val adbPort = WirelessAdbManager.currentPort()

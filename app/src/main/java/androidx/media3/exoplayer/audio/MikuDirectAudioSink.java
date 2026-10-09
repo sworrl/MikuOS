@@ -762,14 +762,58 @@ public final class MikuDirectAudioSink implements AudioSink {
     // opens a DIRECT thread at the file's native rate — the client buffer on a DIRECT output is
     // negotiated up to the HAL's own size anyway, and ~99ms is ample on the mixer fallback
     // (BT/A2DP), where DIRECT is refused and this track mixes normally.
-    if (outputMode == OUTPUT_MODE_PCM) {
+    // NOT OVER BLUETOOTH. The comment above says ~99ms is "ample on the mixer fallback (BT/A2DP)".
+    // That was an assumption and it is wrong: an A2DP output has to feed an encoder and a radio
+    // link on top of the mixer, and a 99ms client buffer underruns on it constantly. Reported
+    // 2026-09-27 as Bose Ultra Open earbuds sounding, in the owner's words, really bad. DIRECT is
+    // refused on an A2DP route anyway, so shrinking the buffer there buys nothing and costs the
+    // whole point of the device. On Bluetooth, Media3's own buffer stands.
+    boolean btRoute = isBluetoothRoute();
+    if (outputMode == OUTPUT_MODE_PCM && btRoute && audioDebugLoggingEnabled()) {
+      android.util.Log.i(TAG, "BITPERFECT cfg: Bluetooth route - keeping Media3's buffer (" + bufferSize + " B)");
+    }
+    if (outputMode == OUTPUT_MODE_PCM && !btRoute) {
+      // Tell the tap what the TV should configure its own AudioTrack as. Done here rather than
+      // at write time so the format is known before the first buffer arrives.
+      // outputFormat is scoped to a narrower block above, so derive the channel count from what
+      // is in scope here. getPcmFrameSize(encoding, 1) is the bytes one sample of one channel
+      // occupies, and the frame size is that times the channel count, so the division recovers
+      // the channels exactly without assuming stereo.
+      int castBytesPerSample = Util.getPcmFrameSize(outputEncoding, 1);
+      if (outputPcmFrameSize != C.LENGTH_UNSET && castBytesPerSample > 0) {
+        int castChannels = outputPcmFrameSize / castBytesPerSample;
+        if (castChannels > 0) {
+          com.miku.player.cast.MikuCastTap.onFormat(
+              outputSampleRate, castBytesPerSample, castChannels, outputEncoding);
+        }
+      }
+
       long deepBufferPromotionBytes = (long) outputPcmFrameSize * outputSampleRate / 10;
       if (bufferSize >= deepBufferPromotionBytes) {
-        bufferSize =
-            max(
-                getAudioTrackMinBufferSize(outputSampleRate, outputChannelConfig, outputEncoding),
-                (int) deepBufferPromotionBytes - outputPcmFrameSize);
+        // Ask for JUST under the promotion threshold. The old code clamped this with
+        // max(getAudioTrackMinBufferSize(), ...) — and on this device the platform minimum
+        // (52056 B @ 48 kHz/24-bit-packed ≈ 181 ms) is nearly DOUBLE the 100 ms threshold
+        // (28800 B), so the clamp always won and deep buffer was promoted every single time.
+        // Measured: flags=0xA00 (deep buffer) and the track landed on a 192 kHz MIXER while the
+        // file was 48 kHz — i.e. resampled, never bit-perfect. We now request the small buffer
+        // even though it is below the reported minimum; buildAudioTrackWithRetry() falls back to
+        // the platform minimum if AudioTrack refuses it, so the worst case is today's behaviour.
+        int bitPerfectBufferSize = (int) deepBufferPromotionBytes - outputPcmFrameSize;
+        if (bitPerfectBufferSize > 0) {
+          bufferSize = bitPerfectBufferSize;
+        }
       }
+      if (audioDebugLoggingEnabled()) android.util.Log.i(
+          TAG,
+          "BITPERFECT cfg: mode=PCM rate=" + outputSampleRate
+              + " enc=" + outputEncoding
+              + " frameSize=" + outputPcmFrameSize
+              + " bufferSize=" + bufferSize
+              + " deepBufferThreshold=" + deepBufferPromotionBytes
+              + " minBuf=" + getAudioTrackMinBufferSize(outputSampleRate, outputChannelConfig, outputEncoding)
+              + " underThreshold=" + (bufferSize < deepBufferPromotionBytes));
+    } else if (audioDebugLoggingEnabled() && outputMode != OUTPUT_MODE_PCM) {
+      android.util.Log.i(TAG, "BITPERFECT cfg: mode=" + outputMode + " (NOT PCM - buffer trick skipped)");
     }
     offloadDisabledUntilNextConfiguration = false;
     Configuration pendingConfiguration =
@@ -820,6 +864,19 @@ public final class MikuDirectAudioSink implements AudioSink {
       Api31.setLogSessionIdOnAudioTrack(audioTrack, playerId);
     }
     audioSessionId = audioTrack.getAudioSessionId();
+
+    // Publish the format the platform GRANTED to the OS surfaces that show it (launcher status
+    // bar chip, lockscreen badge, anatomical observatory pill). Read back from the AudioTrack
+    // rather than reported from the Configuration we asked for: the request can be refused (see
+    // the platform-minimum buffer fallback above) and the policy can land the track at a rate the
+    // file is not in, and the chip has to say what is actually on the wire. Settings.Global key
+    // miku_now_playing_format had no writer anywhere in the tree before this, so all three
+    // surfaces rendered their "not published" state permanently.
+    com.miku.player.MikuNowPlayingFormat.onTrackInitialized(
+        context,
+        audioTrack,
+        configuration.inputFormat != null ? configuration.inputFormat.sampleRate : 0,
+        isBluetoothRoute());
     audioTrackPositionTracker.setAudioTrack(
         audioTrack,
         /* isPassthrough= */ configuration.outputMode == OUTPUT_MODE_PASSTHROUGH,
@@ -1027,10 +1084,93 @@ public final class MikuDirectAudioSink implements AudioSink {
     return false;
   }
 
+  /**
+   * Per-track audio diagnostics, OFF by default so the hot path writes nothing.
+   *
+   * Turn on live with:   adb shell settings put global miku_audio_debug_log 1
+   * Turn off with:       adb shell settings put global miku_audio_debug_log 0
+   * Takes effect on the next track change (this is read in configure(), not per buffer).
+   * Prints the buffer-size decision that determines whether playback is bit-perfect:
+   * requested bufferSize vs the deep-buffer promotion threshold vs the platform minimum.
+   */
+  /**
+   * Is audio currently going out over Bluetooth?
+   *
+   * Asked at configure time, from the devices the platform reports as OUTPUTS, so it covers
+   * classic A2DP and LE Audio both. Failing closed (returning false) would re-introduce the short
+   * buffer on a BT route, so anything unexpected here answers "treat it as Bluetooth" instead:
+   * the cost of being wrong that way is one track that is merely not bit-perfect on a wired
+   * route, against garbled audio on a wireless one.
+   */
+  private boolean isBluetoothRoute() {
+    if (context == null) return false;
+    try {
+      android.media.AudioManager am =
+          (android.media.AudioManager) context.getSystemService(android.content.Context.AUDIO_SERVICE);
+      if (am == null) return false;
+      android.media.AudioDeviceInfo[] outs = am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS);
+      if (outs == null) return false;
+      for (android.media.AudioDeviceInfo d : outs) {
+        int t = d.getType();
+        if (t == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+            || t == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+            || (android.os.Build.VERSION.SDK_INT >= 31
+                && (t == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
+                    || t == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER))
+            || (android.os.Build.VERSION.SDK_INT >= 33
+                && t == android.media.AudioDeviceInfo.TYPE_BLE_BROADCAST)) {
+          // A connected BT output does not prove it is the ACTIVE one, but on this device a
+          // connected pair of buds is always the route the user means, and the wired jack and BT
+          // are not used at the same time.
+          return true;
+        }
+      }
+      return false;
+    } catch (Throwable t) {
+      return false;
+    }
+  }
+
+  private boolean audioDebugLoggingEnabled() {
+    if (context == null) return false;   // the sink can be built without a Context
+    try {
+      return android.provider.Settings.Global.getInt(
+              context.getContentResolver(), "miku_audio_debug_log", 0)
+          == 1;
+    } catch (Throwable t) {
+      return false;
+    }
+  }
+
   private AudioTrack buildAudioTrackWithRetry() throws InitializationException {
     try {
       return buildAudioTrack(checkNotNull(configuration));
     } catch (InitializationException initialFailure) {
+      // BIT-PERFECT FALLBACK: we deliberately request a buffer below the platform minimum so the
+      // framework does not promote the track to deep buffer (which forces the mixer path and
+      // kills bit-perfect output). If AudioTrack refuses that size, fall back to the reported
+      // minimum — playback then works exactly as it did before this change.
+      if (configuration.outputMode == OUTPUT_MODE_PCM) {
+        int platformMin =
+            getAudioTrackMinBufferSize(
+                configuration.outputSampleRate,
+                configuration.outputChannelConfig,
+                configuration.outputEncoding);
+        if (platformMin > configuration.bufferSize) {
+          Configuration minConfiguration = configuration.copyWithBufferSize(platformMin);
+          try {
+            AudioTrack audioTrack = buildAudioTrack(minConfiguration);
+            configuration = minConfiguration;
+            // Deliberately NOT gated on the debug flag: this fires only when bit-perfect output
+            // could not be obtained, which is exactly the case someone needs to see after the fact.
+            android.util.Log.w(
+                TAG, "BITPERFECT: small buffer refused, fell back to platform min " + platformMin);
+            return audioTrack;
+          } catch (InitializationException minFailure) {
+            initialFailure.addSuppressed(minFailure);
+          }
+        }
+      }
       // Retry with a smaller buffer size.
       if (configuration.bufferSize > AUDIO_TRACK_SMALLER_BUFFER_RETRY_SIZE) {
         Configuration retryConfiguration =
@@ -1183,6 +1323,29 @@ public final class MikuDirectAudioSink implements AudioSink {
               audioTrack, buffer, bytesRemaining, avSyncPresentationTimeUs);
     } else {
       bytesWrittenOrError = writeNonBlockingV21(audioTrack, buffer, bytesRemaining);
+    }
+
+    // Tee the PCM to the TV, if one is listening. This is deliberately the LAST point before the
+    // samples reach AudioTrack: they are the file's own samples at its own rate, having bypassed
+    // the mixer via the DIRECT path, so what the TV receives is bit-perfect. Capturing with
+    // AudioPlaybackCapture instead would tap after the mixer and hand the TV 48kHz of resampled
+    // audio. MikuCastTap.offer is a no-op when nothing is connected and never blocks; it also
+    // restores the buffer position, because AudioTrack has already consumed from it above and the
+    // caller still inspects it.
+    //
+    // Position arithmetic matters here. AudioTrack.write CONSUMES from the buffer, so by this
+    // line the position has already advanced past the bytes it took. Reading from the current
+    // position would tee the NEXT, unwritten audio instead of what was just played. Rewind by
+    // exactly the number of bytes written, tee that span, then restore the position the caller
+    // expects to find.
+    if (com.miku.player.cast.MikuCastTap.isEnabled() && bytesWrittenOrError > 0) {
+      int afterWrite = buffer.position();
+      int teeFrom = afterWrite - bytesWrittenOrError;
+      if (teeFrom >= 0) {
+        buffer.position(teeFrom);
+        com.miku.player.cast.MikuCastTap.offer(buffer, bytesWrittenOrError);
+        buffer.position(afterWrite);
+      }
     }
 
     lastFeedElapsedRealtimeMs = SystemClock.elapsedRealtime();
@@ -1428,13 +1591,44 @@ public final class MikuDirectAudioSink implements AudioSink {
   }
 
   private void setVolumeInternal() {
+    registerCastMute();
+    // While a TV is mirroring, the local output is silenced but DECODING CONTINUES. That
+    // distinction is the whole trick: pausing would stop the decoder and there would be nothing
+    // left to send, so the local AudioTrack is simply run at zero gain instead.
+    //
+    // This is also why the tee is unaffected. AudioTrack gain is applied downstream of the write,
+    // so the buffer handed to write() is still full-scale, and the TV receives the file's own
+    // samples rather than a silenced copy. Muting here costs the TV nothing.
+    float effective = com.miku.player.cast.MikuCastTap.isEnabled() ? 0f : volume;
     if (!isAudioTrackInitialized()) {
       // Do nothing.
     } else if (Util.SDK_INT >= 21) {
-      setVolumeInternalV21(audioTrack, volume);
+      setVolumeInternalV21(audioTrack, effective);
     } else {
-      setVolumeInternalV3(audioTrack, volume);
+      setVolumeInternalV3(audioTrack, effective);
     }
+  }
+
+  /**
+   * Re-apply the gain after the cast state changes, so muting and unmuting take effect on a track
+   * that is already running rather than only on the next configure().
+   */
+  public void onCastStateChanged() {
+    setVolumeInternal();
+  }
+
+  private boolean castMuteRegistered;
+
+  /**
+   * Register for cast start/stop so the mute lands on a track that is already playing. Guarded
+   * because setVolumeInternal runs on every volume change and a method reference allocates.
+   */
+  private void registerCastMute() {
+    if (castMuteRegistered) {
+      return;
+    }
+    castMuteRegistered = true;
+    com.miku.player.cast.MikuCastTap.setStateListener(this::onCastStateChanged);
   }
 
   @Override

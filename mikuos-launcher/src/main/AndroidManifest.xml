@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:tools="http://schemas.android.com/tools" xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Keeps the system zone following the device when it travels. NITZ cannot do this
+         on a data-only SIM whose PS registration is denied, so the zone comes from the
+         weather fix instead. See MikuTimeZoneSync. Signature|privileged, held because
+         the launcher is platform-signed. -->
+    <uses-permission android:name="android.permission.SET_TIME_ZONE" />
+
+    <!-- Startup tuning does what a root shell used to: set an app op and grant a runtime
+         permission. Both are signature|privileged and are held because the launcher is
+         platform-signed. Without these declared the reflective calls in MikuSystemTuning throw
+         SecurityException, which is exactly what they did before they were added. -->
+    <!-- WIFI_MODE_FULL_HIGH_PERF wifi locks need this; see MikuSystemTuning.holdWifiLock. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.MANAGE_APP_OPS_MODES" />
+    <uses-permission android:name="android.permission.GRANT_RUNTIME_PERMISSIONS" />
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
     <uses-permission android:name="android.permission.STATUS_BAR" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
@@ -57,7 +71,8 @@
         android:label="MikuOS Launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.M500Hardware">
+        android:theme="@style/Theme.M500Hardware"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <activity
             android:name=".MikuLauncherActivity"
@@ -151,6 +166,28 @@
 
         <!-- Bench/dev WiFi provisioning over adb (see MikuDevWifiReceiver). Gated behind
              WRITE_SECURE_SETTINGS: only shell/system can send it. -->
+
+
+        <!-- Index what the ingress relay just pushed. The relay fires this as its last step,
+             because adb push writes straight to the card and MediaStore never hears about it.
+             See MikuIngestScanReceiver and tools/ingress-relay/relay.py. -->
+        <receiver
+            android:name=".ingest.MikuIngestScanReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.miku.launcher.action.INGEST_SCAN" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Force a fresh position without opening the weather screen. See MikuLocationReceiver. -->
+        <receiver
+            android:name=".weather.MikuLocationReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.miku.launcher.action.REFRESH_LOCATION" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".network.MikuDevWifiReceiver"
             android:exported="true"

@@ -63,6 +63,8 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
     var csDsdComp by remember { mutableStateOf<Int?>(null) }
     var csOutput by remember { mutableStateOf<CirrusLogicManager.OutputMode?>(null) }
     var csBalance by remember { mutableStateOf<Float?>(null) }
+    // Pulsar: whether the diode can be driven AT ALL on this unit (probed, not assumed).
+    var pulsarDrivable by remember { mutableStateOf<Boolean?>(null) }
 
     // Fn Switch & Pocket Lock
     var fnMode by remember {
@@ -72,15 +74,13 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
         mutableStateOf(Settings.Global.getInt(ctx.contentResolver, "m500_fn_allow_volume_wheel", 0) == 1)
     }
 
-    // Pulsar RGB
-    var pulsarEnabled by remember { mutableStateOf(PulsarLight.isEnabled(ctx)) }
-    var pulsarMode by remember { mutableStateOf(PulsarLight.getMode(ctx)) }
-    var pulsarBrightness by remember { mutableStateOf(PulsarLight.getBrightness(ctx).toFloat()) }
 
     // USB DAC
     var usbDacActive by remember { mutableStateOf(UsbDacManager.isActive(ctx)) }
-    var usbDacRate by remember { mutableStateOf(UsbDacManager.getSampleRate(ctx)) }
-    var usbDacBits by remember { mutableStateOf(UsbDacManager.getBitDepth(ctx)) }
+    // Nullable: null = the user has never picked a rate/depth. The non-null getters fall back to
+    // 192000 / 32, and these chips were rendering that build default as a highlighted selection.
+    var usbDacRate by remember { mutableStateOf<Int?>(UsbDacManager.getSampleRateOrNull(ctx)) }
+    var usbDacBits by remember { mutableStateOf<Int?>(UsbDacManager.getBitDepthOrNull(ctx)) }
 
     // CPU Performance
     var cpuGovernorOn by remember { mutableStateOf(CpuPerformance.isEnabled(ctx)) }
@@ -99,22 +99,15 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
             } catch (e: Throwable) {
                 Log.e("SettingsOverlayCheck", "Failed to query settings resources", e)
             }
-            try {
-                Log.i("PulsarTest", "Testing setSystemProperty for LED...")
-                val resLed = PulsarLight.setSystemProperty("vendor.audio.hiby.hw.led", "on")
-                val resQuality = PulsarLight.setSystemProperty("vendor.audio.hiby.hw.sample_quality", "mqb")
-                Log.i("PulsarTest", "Result: led=$resLed, quality=$resQuality")
-            } catch (e: Throwable) {
-                Log.e("PulsarTest", "Error testing setSystemProperty", e)
-            }
             sysfsReachable = CirrusLogicManager.isSysfsReachable()
             csFilter = CirrusLogicManager.getDigitalFilter(ctx)
             csGain = CirrusLogicManager.getGainMode(ctx)
-            csDre = CirrusLogicManager.isDreEnabled(ctx)
             csTurbo = CirrusLogicManager.isHighPowerEnabled(ctx)
             csDsdComp = CirrusLogicManager.getDsdGainCompensate(ctx)
             csOutput = CirrusLogicManager.getOutputMode(ctx)
-            csBalance = CirrusLogicManager.getBalance(ctx).toFloat()
+            // getBalance() substitutes 0 when nothing is readable, which the UI then printed as
+            // "Center" on an enabled slider. Only show a position when a real source reported one.
+            csBalance = CirrusLogicManager.getBalanceOrNull(ctx)?.toFloat()
         }
     }
 
@@ -371,73 +364,6 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            // Section 3: Pulsar RGB Audiophile Engine
-            item {
-                HwSettingsSection("Pulsar RGB LED Engine")
-
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(HwSurface1)
-                        .border(1.dp, HwMikuTeal.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
-                        .padding(14.dp)
-                ) {
-                    HwSettingsToggleRow(
-                        title = "Pulsar RGB Master Control",
-                        subtitle = "Controls front RGB notification indicator and TrueColor PWM",
-                        checked = pulsarEnabled
-                    ) { enabled ->
-                        pulsarEnabled = enabled
-                        scope.launch { PulsarLight.setEnabled(ctx, enabled) }
-                    }
-
-                    if (pulsarEnabled) {
-                        Spacer(Modifier.height(12.dp))
-                        Text("LIGHTING MODE", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(8.dp))
-
-                        PulsarLight.Mode.values().filter { it != PulsarLight.Mode.OFF }.forEach { mode ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        pulsarMode = mode
-                                        scope.launch { PulsarLight.setMode(ctx, mode) }
-                                    }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = pulsarMode == mode,
-                                    onClick = {
-                                        pulsarMode = mode
-                                        scope.launch { PulsarLight.setMode(ctx, mode) }
-                                    },
-                                    colors = RadioButtonDefaults.colors(selectedColor = HwMikuTeal, unselectedColor = HwMuted)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Column {
-                                    Text(mode.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(mode.description, color = HwMuted, fontSize = 11.sp)
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-                        Text("PEAK BRIGHTNESS (${(pulsarBrightness / 255f * 100).toInt()}%)", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Slider(
-                            value = pulsarBrightness,
-                            onValueChange = {
-                                pulsarBrightness = it
-                                scope.launch { PulsarLight.setBrightness(ctx, it.toInt()) }
-                            },
-                            valueRange = 10f..255f,
-                            colors = SliderDefaults.colors(thumbColor = HwMikuTeal, activeTrackColor = HwMikuTeal, inactiveTrackColor = HwSurface2)
-                        )
-                    }
-                }
-            }
 
             // Section 4: USB DAC UAC2 Bit-Perfect Subsystem
             item {
@@ -456,10 +382,13 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                         subtitle = if (usbDacActive) "uac2 is in the live USB gadget config (sys.usb.state)" else "Exposes the M500 as a USB Audio Class 2 DAC to a PC/Mac",
                         checked = usbDacActive
                     ) { enabled ->
-                        usbDacActive = enabled
                         scope.launch {
                             UsbDacManager.setUsbDacMode(ctx, enabled)
-                            if (enabled) {
+                            // Was "usbDacActive = enabled" straight off the tap. The setprop path
+                            // needs su and normally fails, so the row reported UAC2 composed when
+                            // the gadget had not changed. isActive() reads sys.usb.state.
+                            usbDacActive = withContext(Dispatchers.IO) { UsbDacManager.isActive(ctx) }
+                            if (usbDacActive) {
                                 val intent = android.content.Intent(ctx, UsbDacActivity::class.java).apply {
                                     flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                                 }
@@ -469,7 +398,10 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                     }
 
                     Spacer(Modifier.height(10.dp))
-                    Text("SAMPLE RATE", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (usbDacRate == null) "SAMPLE RATE  ·  NOT SET (gadget would use ${UsbDacManager.DEFAULT_SAMPLE_RATE / 1000}k)" else "SAMPLE RATE",
+                        color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold
+                    )
                     Spacer(Modifier.height(6.dp))
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -482,7 +414,9 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                                     .background(if (usbDacRate == rate) HwMikuTeal else HwSurface2)
                                     .clickable {
                                         usbDacRate = rate
-                                        scope.launch { UsbDacManager.configureParams(ctx, rate, usbDacBits) }
+                                        scope.launch {
+                                            UsbDacManager.configureParams(ctx, rate, usbDacBits ?: UsbDacManager.DEFAULT_BIT_DEPTH)
+                                        }
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -492,7 +426,10 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                     }
 
                     Spacer(Modifier.height(10.dp))
-                    Text("BIT DEPTH", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (usbDacBits == null) "BIT DEPTH  ·  NOT SET (gadget would use ${UsbDacManager.DEFAULT_BIT_DEPTH}-bit)" else "BIT DEPTH",
+                        color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold
+                    )
                     Spacer(Modifier.height(6.dp))
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -505,7 +442,9 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                                     .background(if (usbDacBits == bits) HwMikuTeal else HwSurface2)
                                     .clickable {
                                         usbDacBits = bits
-                                        scope.launch { UsbDacManager.configureParams(ctx, usbDacRate, bits) }
+                                        scope.launch {
+                                            UsbDacManager.configureParams(ctx, usbDacRate ?: UsbDacManager.DEFAULT_SAMPLE_RATE, bits)
+                                        }
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -528,17 +467,22 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                         .border(1.dp, HwMikuTeal.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
                         .padding(14.dp)
                 ) {
+                    // Was optimistic: the switch was set from the tap and never re-checked, while
+                    // CpuPerformance.setEnabled() returns immediately when there is no su (the
+                    // normal state here) - so the row claimed the cores were pinned when the
+                    // governor had not moved. Now re-read from cpu0/cpufreq/scaling_governor.
                     HwSettingsToggleRow(
                         title = "Peak Clock Performance Governor",
-                        subtitle = "Locks CPU cores at peak clock frequency to eliminate buffer underruns during DSD256 decoding",
+                        subtitle = "Sets every CPU core's scaling_governor to \"performance\". Needs root on this build; the switch follows the governor the kernel actually reports.",
                         checked = cpuGovernorOn
                     ) { enabled ->
-                        cpuGovernorOn = enabled
-                        scope.launch { CpuPerformance.setEnabled(ctx, enabled) }
+                        scope.launch {
+                            CpuPerformance.setEnabled(ctx, enabled)
+                            cpuGovernorOn = withContext(Dispatchers.IO) { CpuPerformance.isEnabled(ctx) }
+                        }
                     }
                 }
             }
-
             item { Spacer(Modifier.height(24.dp)) }
         }
     }

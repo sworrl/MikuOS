@@ -78,6 +78,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -181,6 +182,15 @@ class MikuLauncherActivity : ComponentActivity() {
 
     companion object {
         var requestedRecentsOpen by mutableStateOf(false)
+        /** Set by an `open_ingest` launch extra (Miku Music's Ingress button) → opens the ingest observatory. */
+        var requestedIngestOpen by mutableStateOf(false)
+
+        /** Set by an `open_bpm` launch extra (Miku Music's BPM game button) → opens the BPM observatory. */
+        var requestedBpmOpen by mutableStateOf(false)
+        /** Set when the HOME intent re-arrives while we're already on top (gesture-pill swipe up): dismiss overlays. */
+        var requestedHome by mutableStateOf(false)
+        /** Set by an `open_battery` launch extra (Miku Music Settings → Battery & Power Core). */
+        var requestedBatteryOpen by mutableStateOf(false)
     }
 
     private fun hideSystemBars() {
@@ -215,6 +225,15 @@ class MikuLauncherActivity : ComponentActivity() {
         if (intent?.getBooleanExtra("open_recents", false) == true) {
             requestedRecentsOpen = true
         }
+        if (intent?.getBooleanExtra("open_ingest", false) == true) {
+            requestedIngestOpen = true
+        }
+        if (intent?.getBooleanExtra("open_bpm", false) == true) {
+            requestedBpmOpen = true
+        }
+        if (intent?.getBooleanExtra("open_battery", false) == true) {
+            requestedBatteryOpen = true
+        }
 
         // Asynchronously initialize background system services, ADB & network daemons without blocking UI
         Thread {
@@ -226,30 +245,17 @@ class MikuLauncherActivity : ComponentActivity() {
                 android.provider.Settings.Global.putInt(contentResolver, "adb_wifi_enabled", 1)
             } catch (_: Throwable) {}
 
-            // Acquire high performance WiFi Lock so Ingress and Wireless ADB never drop when USB is disconnected
-            try {
-                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-                val wifiLock = wm?.createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "MikuIngressLock")
-                wifiLock?.acquire()
-            } catch (_: Throwable) {}
+            // The high-perf Wi-Fi lock moved into MikuSystemTuning. It used to be acquired here
+            // into a local val that went straight out of scope, and WifiLock releases on finalize,
+            // so the lock was dropped by the next GC and dumpsys showed none held.
 
-            RootShell.execFast(
-                "settings put global adb_enabled 1; " +
-                "settings put global development_settings_enabled 1; " +
-                "settings put global adb_wifi_enabled 1; " +
-                "settings put global wifi_sleep_policy 2; " +
-                "settings put global stay_on_while_plugged_in 3; " +
-                "setprop persist.adb.tcp.port 5555; " +
-                "setprop service.adb.tcp.port 5555; " +
-                "setprop persist.sys.usb.config mtp,adb; " +
-                "setprop persist.service.adb.enable 1; " +
-                "appops set com.miku.launcher SYSTEM_ALERT_WINDOW allow; " +
-                "appops set com.miku.player SYSTEM_ALERT_WINDOW allow; " +
-                "appops set com.miku.systemui SYSTEM_ALERT_WINDOW allow; " +
-                "settings put secure default_input_method com.android.inputmethod.latin/.LatinIME; " +
-                "settings put secure enabled_input_methods com.android.inputmethod.latin/.LatinIME; " +
-                "stop adbd 2>/dev/null; start adbd 2>/dev/null"
-            )
+            // Startup tuning, via platform APIs rather than a root shell. This was a 19-command
+            // string handed to RootShell.execFast, and since MikuOS has no root it failed on every
+            // single launch and applied none of it. adb_wifi_enabled was in there, which is how the
+            // ingest relay reaches this device, so the sync could never have worked. See
+            // MikuSystemTuning for what carried over and what cannot (the setprop lines and the
+            // adbd restart are not ours to make, and are dropped rather than faked).
+            MikuSystemTuning.apply(applicationContext)
 
             // Initialize Real-Time Network Telemetry & Auto-Rejoin Daemon (Protected)
             try {
@@ -286,9 +292,8 @@ class MikuLauncherActivity : ComponentActivity() {
                     }
                 }
                 com.miku.launcher.bpm.MikuBpmEngine.startListening(applicationContext)
-                com.miku.launcher.PulsarLight.startBpmSync(applicationContext)
             } catch (t: Throwable) {
-                android.util.Log.e("MikuLauncher", "BPM Pulsar engine start failed", t)
+                android.util.Log.e("MikuLauncher", "BPM engine start failed", t)
             }
 
             // Play MikuOS Welcome Jingle (once per boot, gate-controlled by user toggle)
@@ -303,10 +308,7 @@ class MikuLauncherActivity : ComponentActivity() {
                 android.util.Log.e("MikuLauncher", "Library engine start failed", t)
             }
 
-            // Auto-provision Google Fi / T-Mobile APNs for 4G LTE Auto-Connect
-            try {
-                com.miku.launcher.network.GoogleFiApnManager.autoProvisionIfGoogleFi(applicationContext)
-            } catch (_: Throwable) {}
+
 
             // Start System-Level USB Audio & Host Controller Service
             try {
@@ -320,7 +322,15 @@ class MikuLauncherActivity : ComponentActivity() {
         }.start()
 
         setContent {
-            MikuLauncherScreen()
+            // One semantics node for the whole launcher when the only accessibility service is our
+            // own navigation. Compose rebuilt and re-walked the full tree on every layout pass for
+            // it, for content it never reads. Full tree comes back with a real screen reader on.
+            val navOnly = androidx.compose.runtime.remember { com.miku.launcher.ui.MikuSemanticsGate.onlyMikuNavEnabled(this) }
+            androidx.compose.foundation.layout.Box(
+                if (navOnly) androidx.compose.ui.Modifier.clearAndSetSemantics {} else androidx.compose.ui.Modifier
+            ) {
+                MikuLauncherScreen()
+            }
         }
     }
 
@@ -408,6 +418,19 @@ class MikuLauncherActivity : ComponentActivity() {
         if (intent.getBooleanExtra("open_recents", false)) {
             requestedRecentsOpen = true
         }
+        if (intent.getBooleanExtra("open_ingest", false)) {
+            requestedIngestOpen = true
+        }
+        if (intent.getBooleanExtra("open_bpm", false)) {
+            requestedBpmOpen = true
+        }
+        if (intent.getBooleanExtra("open_battery", false)) {
+            requestedBatteryOpen = true
+        }
+        // Pixel behaviour: the home gesture while the app drawer / recents are open closes them.
+        if (intent.hasCategory(Intent.CATEGORY_HOME) && !intent.getBooleanExtra("open_recents", false)) {
+            requestedHome = true
+        }
     }
 }
 
@@ -451,6 +474,28 @@ fun MikuLauncherScreen() {
             recentTasks = loadRecentTasks(ctx, allApps)
             isRecentsOpen = true
             MikuLauncherActivity.requestedRecentsOpen = false
+        }
+    }
+
+    LaunchedEffect(MikuLauncherActivity.requestedIngestOpen) {
+        if (MikuLauncherActivity.requestedIngestOpen) {
+            isFsIngestModalOpen = true
+            MikuLauncherActivity.requestedIngestOpen = false
+        }
+    }
+
+    LaunchedEffect(MikuLauncherActivity.requestedBatteryOpen) {
+        if (MikuLauncherActivity.requestedBatteryOpen) {
+            isBatteryObservatoryOpen = true
+            MikuLauncherActivity.requestedBatteryOpen = false
+        }
+    }
+
+    LaunchedEffect(MikuLauncherActivity.requestedHome) {
+        if (MikuLauncherActivity.requestedHome) {
+            isAllAppsOpen = false
+            isRecentsOpen = false
+            MikuLauncherActivity.requestedHome = false
         }
     }
 
@@ -515,6 +560,13 @@ fun MikuLauncherScreen() {
     }
 
     var isBpmObservatoryOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(MikuLauncherActivity.requestedBpmOpen) {
+        if (MikuLauncherActivity.requestedBpmOpen) {
+            isBpmObservatoryOpen = true
+            MikuLauncherActivity.requestedBpmOpen = false
+        }
+    }
     var isThermalObservatoryOpen by remember { mutableStateOf(false) }
 
     var customWallpaperUri by remember {
@@ -973,153 +1025,29 @@ fun MikuLauncherScreen() {
             Box(Modifier.fillMaxWidth().graphicsLayer()) {
                 com.miku.launcher.ui.MikuStatusBar(state = statusBarState, onClockClick = { launchClockApp(ctx) })
             }
-            // ============================================================
-            // THE QUILT — the badge patchwork directly under the top bar (both always visible).
-            // Long-press-drag a badge to rearrange; size / density / rows / backdrop live in the
-            // home long-press menu → "Quilt & badges". The hearts clock stays here as a patch.
-            // ============================================================
-            val networkState by com.miku.launcher.network.MikuNetworkService.state.collectAsState()
-            val weatherState by com.miku.launcher.weather.MikuWeatherService.state.collectAsState()
-            val npBpm by com.miku.launcher.bpm.MikuBpmEngine.state.collectAsState()
-            val quiltBadges = listOf(
-                QuiltBadge("clock", "Hearts clock") {
-                    Box(
-                        Modifier.clickable(
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                            indication = null
-                        ) { launchClockApp(ctx) }
-                    ) { CyberPlasmaGlowClock(time = currentTime, date = currentDate) }
-                },
-                // Full-width Miku weather TILE (Open-Meteo + optional Windy, real AQI, 6h strip,
-                // 3-day row). Self-contained: owns its engine + detail sheet, no launcher state.
-                QuiltBadge("wxtile", "Weather tile") {
-                    com.miku.launcher.widget.MikuWeatherTile(onOpenObservatory = { isWeatherObservatoryOpen = true })
-                },
-                QuiltBadge("gps", "GPS") {
-                    MikuCyberWeatherGpsBadge(
-                        weather = weatherState.weather,
-                        gps = weatherState.gps,
-                        onWeatherClick = { isWeatherObservatoryOpen = true },
-                        onGpsClick = { isGpsModalOpen = true },
-                        modifier = Modifier.width(176.dp)
-                    )
-                },
-                QuiltBadge("network", "Wi-Fi & LTE") {
-                    ConnectedRfNetworkCapsule(
-                        wifi = networkState.wifi,
-                        cell = networkState.cellular,
-                        radioStateKnown = networkState.lastUpdated != 0L,
-                        onClick = { isNetworkObservatoryOpen = true }
-                    )
-                },
-                QuiltBadge("nowplaying", "Now playing / BPM") {
-                    Box(
-                        Modifier.then(
-                            if (npAccent.active) Modifier.border(1.2.dp, npAccent.full.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
-                            else Modifier
-                        )
-                    ) {
-                        MikuNowPlayingBadge(
-                            bpm = npBpm.bpm,
-                            isPlaying = isAudioPlaying || npBpm.isPlaying,
-                            beatIntervalMs = npBpm.beatIntervalMs,
-                            onClick = { isBpmObservatoryOpen = true }
-                        )
-                    }
-                },
-                QuiltBadge("dac", "CS43198 DAC") {
-                    CyberBespokeBadge(
-                        onClick = {
-                            try {
-                                val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                }
-                                if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                            } catch (_: Throwable) {}
-                        },
-                        accentColor = Color(0xFF7C4DFF),
-                        gradient = listOf(Color(0x447C4DFF), Color(0xFF0A0418)),
-                        shape = DacChipShape
-                    ) {
-                        Box(Modifier.size(5.5.dp).clip(CircleShape).background(Color(0xFF7C4DFF)))
-                        Spacer(Modifier.width(3.5.dp))
-                        Text("CS43198", color = Color(0xFFB388FF), fontSize = 11.5.sp, fontWeight = FontWeight.Black, fontFamily = AudiowideFont, maxLines = 1)
-                    }
-                },
-                QuiltBadge("ingest", "FS ingestion") {
-                    com.miku.launcher.ingest.MikuIngestionBadge(onClick = { isFsIngestModalOpen = true })
-                },
-                QuiltBadge("library", "Library") {
-                    com.miku.launcher.track.MikuLibraryTrackBadge(onClick = { isFsIngestModalOpen = true })
-                },
-                QuiltBadge("brain", "Brain") {
-                    CyberBespokeBadge(
-                        onClick = { isBrainModalOpen = true },
-                        accentColor = Color(0xFF00FF7F),
-                        gradient = listOf(Color(0x3300FF7F), Color(0xFF04150E)),
-                        shape = BrainShieldShape
-                    ) {
-                        Box(Modifier.size(5.5.dp).clip(CircleShape).background(Color(0xFF00FF7F)))
-                        Spacer(Modifier.width(3.5.dp))
-                        Text("BRAIN", color = Color(0xFF00FF7F), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont, maxLines = 1)
-                    }
-                },
-                QuiltBadge("thermal", "Thermal") {
-                    MikuThermalBadge(cpuTempC = cpuTempC, batteryTempC = batteryTempC, onClick = { isThermalObservatoryOpen = true })
-                },
-                QuiltBadge("volume", "Volume") {
-                    com.miku.launcher.volume.CyberVolumeBadge(onClick = { com.miku.launcher.volume.MikuVolumeManager.triggerHud(ctx) })
-                },
-                QuiltBadge("battery", "Battery") {
-                    MikuQuantumBatteryBadge(batteryPct = batteryPct, isCharging = isCharging, onClick = { isBatteryObservatoryOpen = true })
-                },
-                QuiltBadge("control", "MikuOS control") {
-                    Box(Modifier.width(96.dp)) {
-                        CyberBespokeBadge(
-                            onClick = { isCyberQuickSettingsOpen = true },
-                            accentColor = MikuCyan,
-                            gradient = listOf(Color(0x3300E5FF), Color(0xFF041015)),
-                            shape = IngressStreamShape
-                        ) {
-                            Icon(Icons.Default.Tune, contentDescription = "MikuOS control", tint = MikuCyan, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("CONTROL", color = MikuCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont, maxLines = 1)
-                        }
-                    }
-                }
+            MikuLauncherQuiltSection(
+                currentTime = currentTime,
+                currentDate = currentDate,
+                isAudioPlaying = isAudioPlaying,
+                npAccent = npAccent,
+                cpuTempC = cpuTempC,
+                batteryTempC = batteryTempC,
+                batteryPct = batteryPct,
+                isCharging = isCharging,
+                topBarTheme = topBarTheme,
+                quiltConfig = quiltConfig,
+                quiltOrder = quiltOrder,
+                onQuiltOrderChange = { quiltOrder = it; MikuQuiltPrefs.saveOrder(ctx, it) },
+                onOpenWeatherObservatory = { isWeatherObservatoryOpen = true },
+                onOpenGps = { isGpsModalOpen = true },
+                onOpenNetworkObservatory = { isNetworkObservatoryOpen = true },
+                onOpenBpmObservatory = { isBpmObservatoryOpen = true },
+                onOpenFsIngest = { isFsIngestModalOpen = true },
+                onOpenBrain = { isBrainModalOpen = true },
+                onOpenThermal = { isThermalObservatoryOpen = true },
+                onOpenBattery = { isBatteryObservatoryOpen = true },
+                onOpenQuickSettings = { isCyberQuickSettingsOpen = true }
             )
-            Box(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 3.dp).graphicsLayer()) {
-                MikuTopBarBackground(topBarTheme, Modifier.matchParentSize())
-                com.miku.launcher.ui.MikuBadgeQuilt(
-                    badges = quiltBadges,
-                    order = quiltOrder,
-                    onOrderChange = { quiltOrder = it; MikuQuiltPrefs.saveOrder(ctx, it) },
-                    config = quiltConfig
-                )
-            }
-            // Active severe weather warning banner (if any)
-            if (weatherState.weather.severeWarning != null) {
-                Spacer(Modifier.height(3.dp))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                        .clip(CutCornerShape(8.dp))
-                        .background(Brush.horizontalGradient(listOf(com.miku.launcher.ui.MikuIdentity.Coral, Color(0xFFB71C1C))))
-                        .border(1.dp, Color(0xFFFF5252), CutCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = weatherState.weather.severeWarning ?: "",
-                        color = Color.White,
-                        fontSize = MikuDimens.textXs,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = AudiowideFont,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
 
             // ============================================================
             // PAGINATED DESKTOP WORKSPACE
@@ -1160,12 +1088,7 @@ fun MikuLauncherScreen() {
                             }
                             if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
                         },
-                        onOpenPulsarSettings = {
-                            val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                        },
+
                         onOpenFnSettings = {
                             val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1179,632 +1102,116 @@ fun MikuLauncherScreen() {
 
 
 
-            // ============================================================
-            // BOTTOM 3D EMBOSSED DIVA DOCK TRAY
-            // Features spinning rainbow sweep gradient ring, BPM aura pulse,
-            // bottom-aligned bold centerpiece text, and horizontal swipe quick app switching
-            // ============================================================
-            val bpmState by com.miku.launcher.bpm.MikuBpmEngine.state.collectAsState()
-            val isBpmAudioPlaying = hasActiveAudioOutput && (isAudioPlaying || bpmState.isPlaying)
-            val liveBpm = if (bpmState.bpm in 40f..260f) bpmState.bpm else 128f
-            val beatIntervalMs = (60_000f / liveBpm).toInt().coerceIn(240, 1500)
-
-            // Ambient-gated: the dock aura only animates while someone is looking (MikuAmbient).
-            val lowPowerGate by com.miku.launcher.ui.rememberAmbientGate()
-            androidx.compose.runtime.LaunchedEffect(isBpmAudioPlaying) { com.miku.launcher.ui.MikuAmbient.setPlaying(isBpmAudioPlaying) }
-
-            val dockInfiniteTransition = rememberInfiniteTransition(label = "DivaDockAura")
-            val rainbowRotation by dockInfiniteTransition.gatedFloat(lowPowerGate, 
-                initialValue = 0f,
-                targetValue = 360f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = if (isBpmAudioPlaying) 6000 else 16000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart
-                ),
-                label = "DockRainbowRotate"
+            MikuLauncherDivaDock(
+                hasActiveAudioOutput = hasActiveAudioOutput,
+                isAudioPlaying = isAudioPlaying,
+                npAccent = npAccent,
+                onOpenAllApps = { isAllAppsOpen = true },
+                onOpenHardware = { isBrainModalOpen = true },
+                onOpenWeather = { isWeatherObservatoryOpen = true }
             )
-
-            // Subtle BPM background aura glow (ONLY animated when active audio output = true)
-            val bpmAuraAlpha by dockInfiniteTransition.gatedFloat(lowPowerGate, 
-                initialValue = if (isBpmAudioPlaying) 0.35f else 0.18f,
-                targetValue = if (isBpmAudioPlaying) 0.72f else 0.18f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(if (isBpmAudioPlaying) (beatIntervalMs / 2) else 3000, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "DockBpmAura"
-            )
-
-            val rainbowStops = remember {
-                listOf(
-                    Color(0xFF00E5FF), // Cyan
-                    Color(0xFF00FF88), // Mint
-                    com.miku.launcher.ui.MikuIdentity.Gold, // Gold
-                    Color(0xFFFF4081), // Pink
-                    Color(0xFFB388FF), // Purple
-                    Color(0xFF00E5FF)  // Cyan
-                )
-            }
-
-            // Anchor bar: ONE evenly-spaced row of 5 equal cells (Hardware · FM · Miku Music · Settings ·
-            // Weather) — Miku-suite destinations ONLY, no third-party apps. 48dp icons, the Miku anchor one step larger (56dp), 11sp labels on every cell,
-            // nothing absolutely positioned, so nothing can overlap or wrap at 360dp.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, top = 14.dp)
-                    .pointerInput(Unit) {
-                        var totalDragX = 0f
-                        var totalDragY = 0f
-                        detectDragGestures(
-                            onDragStart = { totalDragX = 0f; totalDragY = 0f },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                totalDragX += dragAmount.x
-                                totalDragY += dragAmount.y
-                            },
-                            onDragEnd = {
-                                // Swipe UP on the dock = app drawer. App switching lives on the system pill.
-                                val thresholdPx = 40 * ctx.resources.displayMetrics.density
-                                if (kotlin.math.abs(totalDragY) > kotlin.math.abs(totalDragX) && totalDragY < -thresholdPx) {
-                                    isAllAppsOpen = true
-                                }
-                            }
-                        )
-                    }
-            ) {
-                // Shorter glass tray; the pearl above is drawn OUTSIDE it (no clip on the outer Box).
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                    .clip(RoundedCornerShape(MikuDimens.cornerL))
-                    .background(Brush.verticalGradient(listOf(Color(0xEE0D2630), Color(0xFF06141B))))
-                    .border(
-                        BorderStroke(
-                            1.dp,
-                            Brush.verticalGradient(
-                                listOf(
-                                    CyberGlassBorder.copy(alpha = 0.9f),
-                                    CyberGlassBorder.copy(alpha = 0.25f),
-                                    CyberGlassBorder.copy(alpha = 0.65f)
-                                )
-                            )
-                        ),
-                        RoundedCornerShape(MikuDimens.cornerL)
-                    )
-                    .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 5.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    // Anchor bar is Miku-suite ONLY (no third-party apps). This cell used to
-                    // launch Chrome/Firefox; it now opens the in-launcher Hardware (Anatomical/DAC)
-                    // observatory — the device's real hardware readout, no external dependency.
-                    DockIconItem(
-                        iconRes = R.drawable.ic_miku_monitor_status,
-                        label = "Hardware",
-                        modifier = Modifier.weight(1f),
-                        onClick = { isBrainModalOpen = true }
-                    )
-                    DockIconItem(
-                        iconRes = R.drawable.ic_fm_miku,
-                        label = "FM Radio",
-                        modifier = Modifier.weight(1f),
-                        onClick = { launchMikuFm(ctx) }
-                    )
-                    // Reserved slot for the Miku Pearl (drawn above the tray, see below): keeps the
-                    // even 5-cell spacing and holds the label at the same baseline as the others.
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Spacer(Modifier.size(48.dp))
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "Miku Music",
-                            color = if (isBpmAudioPlaying) MikuNeonPink else MikuCyan,
-                            fontSize = MikuDimens.textXs,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                    DockIconItem(
-                        iconRes = R.drawable.ic_settings_miku,
-                        label = "Settings",
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                        }
-                    )
-                    // Was Files (launched DocumentsUI); now the in-launcher Weather observatory.
-                    DockIconItem(
-                        iconRes = R.drawable.ic_weather_miku,
-                        label = "Weather",
-                        modifier = Modifier.weight(1f),
-                        onClick = { isWeatherObservatoryOpen = true }
-                    )
-                }
-                }
-                // MIKU PEARL: the Miku Music anchor, larger than the dock icons and protruding above the
-                // bar's top edge (drawn after the tray, so it is above it in z-order). Magic-lamp launch.
-                    val mikuMusicInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 24.dp)
-                            .mikuPressScale(
-                                pressedScale = 0.86f,
-                                glowColor = Color(0xFFFF007F),
-                                interactionSource = mikuMusicInteraction
-                            )
-                            .clickable(
-                                interactionSource = mikuMusicInteraction,
-                                indication = null
-                            ) {
-                                try {
-                                    val intent = Intent().apply {
-                                        setClassName("com.miku.player", "com.miku.player.MainActivity")
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-                                    }
-                                    val options = android.app.ActivityOptions.makeCustomAnimation(
-                                        ctx,
-                                        R.anim.magic_lamp_expand,
-                                        R.anim.magic_lamp_fade_out
-                                    )
-                                    ctx.startActivity(intent, options.toBundle())
-                                } catch (_: Throwable) {}
-                            }
-                    ) {
-                        Box(
-                            Modifier
-                                .size(62.dp)
-                                .background(
-                                    Brush.radialGradient(
-                                        listOf(
-                                            if (isBpmAudioPlaying) Color(bpmState.dominantColor).copy(alpha = bpmAuraAlpha) else npAccent.full.copy(alpha = 0.20f),
-                                            Color(0xFFB388FF).copy(alpha = if (isBpmAudioPlaying) 0.25f else 0.08f),
-                                            Color.Transparent
-                                        )
-                                    ),
-                                    CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer { rotationZ = rainbowRotation }
-                                    .border(BorderStroke(2.5.dp, Brush.sweepGradient(colors = rainbowStops)), CircleShape)
-                            )
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_miku_music_brand),
-                                contentDescription = "Miku Music",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(2.5.dp)
-                                    .clip(CircleShape)
-                            )
-                        }
-                    }
-            }
             // Clearance for the OS-wide gesture pill strip (24dp) + breathing room
             Spacer(Modifier.height(28.dp))
         }
 
-        // ============================================================
-        // CYBER NOTIFICATION SHADE & QUICK SETTINGS MODAL
-        // ============================================================
-        AnimatedVisibility(
-            visible = isCyberQuickSettingsOpen,
-            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
-        ) {
-            CyberNotificationShadeModal(
-                onClose = { isCyberQuickSettingsOpen = false },
-                onOpenSettings = {
-                    isCyberQuickSettingsOpen = false
-                    val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                },
-                onOpenAudioSettings = {
-                    isCyberQuickSettingsOpen = false
-                    val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                },
-                batteryPct = batteryPct,
-                isCharging = isCharging,
-                isWifiConnected = isWifiConnected,
-                currentTime = currentTime,
-                currentDate = currentDate
-            )
-        }
-
-        // ============================================================
-        // SYSTEM-WIDE USB HOST CONTROLLER MODAL
-        // ============================================================
-        if (showUsbHostModal) {
-            com.miku.launcher.usb.MikuUsbHostModal(
-                onDismissRequest = { showUsbHostModal = false }
-            )
-        }
-
-        // ============================================================
-        // WALLPAPER & THEME PICKER MODAL (LONG-PRESS DESKTOP)
-        // ============================================================
-        if (isWallpaperPickerOpen) {
-            AlertDialog(
-                onDismissRequest = { isWallpaperPickerOpen = false },
-                containerColor = Color(0xF50A1E26),
-                title = {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Wallpaper & Gallery Picker", color = MikuCyan, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-                        IconButton(onClick = { isWallpaperPickerOpen = false }) {
-                            Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
-                        }
-                    }
-                },
-                text = {
-                    Column(Modifier.fillMaxWidth()) {
-                        // 1. Primary Action: Direct System Gallery Picker
-                        Button(
-                            onClick = {
-                                isWallpaperPickerOpen = false
-                                galleryPicker.launch("image/*")
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MikuCyan.copy(alpha = 0.25f)),
-                            border = BorderStroke(1.5.dp, MikuCyan),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("🖼 Choose From Gallery / Files", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-                        }
-
-                        if (customWallpaperUri != null) {
-                            Spacer(Modifier.height(8.dp))
-                            Button(
-                                onClick = {
-                                    customWallpaperUri = null
-                                    prefs.edit().remove("custom_wallpaper_uri").apply()
-                                    isWallpaperPickerOpen = false
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(38.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MikuNeonPink.copy(alpha = 0.2f)),
-                                border = BorderStroke(1.dp, MikuNeonPink),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("🔄 Reset to Default Miku Artwork", color = MikuNeonPink, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        Spacer(Modifier.height(14.dp))
-                        Text("Or select built-in Hatsune Miku desktop artwork:", color = MikuTextSecondary, fontSize = 11.sp)
-                        Spacer(Modifier.height(8.dp))
-
-                        LazyRow(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            items(wallpapers) { wp ->
-                                val isSelected = (customWallpaperUri == null && currentWallpaperRes == wp.resId)
-                                Column(
-                                    Modifier
-                                        .width(90.dp)
-                                        .clickable {
-                                            customWallpaperUri = null
-                                            prefs.edit().remove("custom_wallpaper_uri").apply()
-                                            currentWallpaperId = wp.id
-                                            prefs.edit().putString("current_wallpaper_id", wp.id).apply()
-                                            // Persist to the theme engine when a built-in theme is chosen.
-                                            if (wp.id.startsWith("theme_")) {
-                                                com.miku.launcher.theme.MikuThemeRegistry.selectTheme(ctx, wp.id.removePrefix("theme_"))
-                                            }
-                                            isWallpaperPickerOpen = false
-                                        },
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Box(
-                                        Modifier
-                                            .size(width = 90.dp, height = 140.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .border(if (isSelected) 2.dp else 1.dp, if (isSelected) MikuCyan else Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                                    ) {
-                                        Image(
-                                            painter = painterResource(id = wp.resId),
-                                            contentDescription = wp.name,
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    }
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = wp.name,
-                                        color = if (isSelected) MikuCyan else Color.White,
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {}
-            )
-        }
-
-
-
-        // ============================================================
-        // ALL-APPS CYBER DRAWER SHEET (SWIPE-UP GESTURE)
-        // ============================================================
-        // Pixel-style drawer SHEET: translated by (1 - progress) * height so it follows the finger
-        // from the home swipe, settles with a spring, scrim fades with progress, grid parallax.
-        run {
-            // Scrim + sheet translation are driven from the Animatable inside draw/layer lambdas
-            // (frame-rate work only, zero recomposition of this screen); the sheet stays composed
-            // even when closed (translated fully off-screen) so opening never pays a first-frame
-            // composition hitch.
-            Box(Modifier.fillMaxSize().graphicsLayer {
-                alpha = 0.6f * drawerSheet.progress.value.coerceIn(0f, 1f)
-            }.background(Color.Black))
-            Box(Modifier.fillMaxSize().graphicsLayer {
-                val pr = drawerSheet.progress.value
-                translationY = (1f - pr) * drawerHeightPx
-                alpha = if (pr <= 0.001f) 0f else 1f
-            }) {
-                CyberAllAppsDrawer(
-                    apps = allApps,
-                    searchQuery = searchQuery,
-                    onSearchChange = { searchQuery = it },
-                    selectedCategory = selectedCategory,
-                    onCategoryChange = { selectedCategory = it },
-                    onLaunchApp = {
-                        isAllAppsOpen = false
-                        launchApp(ctx, it)
-                    },
-                    onAppLongClick = { contextMenuApp = it },
-                    onOpenQuickSettings = {
-                        isAllAppsOpen = false
-                        isCyberQuickSettingsOpen = true
-                    },
-                    onClose = { isAllAppsOpen = false },
-                    sheet = drawerSheet,
-                    revealProgress = { drawerSheet.progress.value }
-                )
-            }
-        }
-
-        // ============================================================
-        // PIXEL-STYLE RECENTS MULTI-TASKING OVERVIEW (SWIPE & HOLD)
-        // ============================================================
-        AnimatedVisibility(
-            visible = isRecentsOpen,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-        ) {
-            CyberRecentsOverview(
-                tasks = recentTasks,
-                onSelectTask = { task ->
-                    isRecentsOpen = false
-                    bringTaskToFront(ctx, task)
-                },
-                onDismissTask = { task ->
-                    dismissTask(ctx, task)
-                    recentTasks = recentTasks.filter { it.taskId != task.taskId }
-                },
-                onClearAll = {
-                    clearAllTasks(ctx, recentTasks)
-                    recentTasks = emptyList()
-                    isRecentsOpen = false
-                },
-                onClose = { isRecentsOpen = false }
-            )
-        }
-
-        // Context Menu Dialog (Long-press App QoL)
-        if (contextMenuApp != null) {
-            val app = contextMenuApp!!
-            CyberAppContextDialog(
-                app = app,
-                isPinnedOnDesktop = pinnedPackages.contains(app.packageName),
-                onDismiss = { contextMenuApp = null },
-                onAppInfo = {
-                    try {
-                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.parse("package:${app.packageName}")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.MODAL))
-                    } catch (_: Throwable) {}
-                },
-                onUninstall = {
-                    try {
-                        val intent = Intent(Intent.ACTION_DELETE).apply {
-                            data = Uri.parse("package:${app.packageName}")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.MODAL))
-                    } catch (_: Throwable) {}
-                },
-                onTogglePinDesktop = {
-                    onTogglePinDesktop(app.packageName)
-                }
-            )
-        }
-
-        // ============================================================
-        // VERBOSE MIKU MONITOR, BRAIN & OBSERVATORY MODALS
-        // ============================================================
-        if (isQuiltOptionsOpen) {
-            com.miku.launcher.ui.MikuQuiltOptionsDialog(
-                config = quiltConfig,
-                onConfigChange = { quiltConfig = it; MikuQuiltPrefs.saveConfig(ctx, it) },
-                backgroundName = topBarTheme.displayName,
-                onCycleBackground = {
-                    val next = topBarTheme.next()
-                    topBarTheme = next
-                    MikuTopBarTheme.save(ctx, next)
-                },
-                onResetOrder = {
-                    MikuQuiltPrefs.resetOrder(ctx)
-                    quiltOrder = MikuQuiltPrefs.loadOrder(ctx, MikuQuiltBadgeIds)
-                },
-                onDismiss = { isQuiltOptionsOpen = false }
-            )
-        }
-        if (isDesktopContextMenuOpen) {
-            com.miku.launcher.menu.MikuHomescreenLongpressMenu(
-                onWallpaperAndStyle = { isWallpaperPickerOpen = true },
-                onQuiltOptions = { isQuiltOptionsOpen = true },
-                onWidgets = {
-                    coroutineScope.launch {
-                        if (pagerState.pageCount > 1) {
-                            pagerState.animateScrollToPage(1)
-                        } else {
-                            val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                        }
-                    }
-                },
-                onHomeSettings = {
-                    val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                },
-                onDismiss = { isDesktopContextMenuOpen = false }
-            )
-        }
-
-        com.miku.launcher.ui.MikuModalHost(visible = isRecentsOpen, onDismiss = { isRecentsOpen = false }) {
-            com.miku.launcher.recents.MikuRecentsOverviewCarousel(
-                tasks = recentTasks,
-                onLaunchTask = { task -> bringTaskToFront(ctx, task) },
-                onDismissTask = { task ->
-                    recentTasks = recentTasks.filter { it.taskId != task.taskId }
-                },
-                onClearAll = {
-                    recentTasks = emptyList()
-                },
-                onDismissRequest = { isRecentsOpen = false }
-            )
-        }
-
-        com.miku.launcher.ui.MikuModalHost(visible = isWeatherObservatoryOpen, onDismiss = { isWeatherObservatoryOpen = false }) {
-            com.miku.launcher.weather.MikuWeatherObservatoryModal(
-                onDismissRequest = { isWeatherObservatoryOpen = false }
-            )
-        }
-        // Live GPS (5 s HIGH_ACCURACY) only while the tactical map is on screen - see
-        // MikuWeatherService.acquireLiveGps (background-forever GPS was the big idle drain).
-        androidx.compose.runtime.DisposableEffect(isGpsModalOpen) {
-            if (isGpsModalOpen) com.miku.launcher.weather.MikuWeatherService.acquireLiveGps(ctx)
-            onDispose { if (isGpsModalOpen) com.miku.launcher.weather.MikuWeatherService.releaseLiveGps(ctx) }
-        }
-        com.miku.launcher.ui.MikuModalHost(visible = isGpsModalOpen, onDismiss = { isGpsModalOpen = false }) {
-            com.miku.launcher.gps.MikuGpsTacticalMapModal(
-                onDismissRequest = { isGpsModalOpen = false }
-            )
-        }
-        com.miku.launcher.ui.MikuModalHost(visible = isBatteryObservatoryOpen, onDismiss = { isBatteryObservatoryOpen = false }) {
-            com.miku.launcher.battery.MikuBatteryObservatoryModal(
-                onDismissRequest = { isBatteryObservatoryOpen = false }
-            )
-        }
-        com.miku.launcher.ui.MikuModalHost(visible = isNetworkObservatoryOpen, onDismiss = { isNetworkObservatoryOpen = false }) {
-            com.miku.launcher.network.MikuNetworkObservatoryModal(
-                onDismissRequest = { isNetworkObservatoryOpen = false }
-            )
-        }
-        com.miku.launcher.ui.MikuModalHost(visible = isBrainModalOpen, onDismiss = { isBrainModalOpen = false }) {
-            com.miku.launcher.observatory.MikuAnatomicalObservatoryModal(
-                onDismissRequest = { isBrainModalOpen = false }
-            )
-        }
-        com.miku.launcher.ui.MikuModalHost(visible = isBpmObservatoryOpen, onDismiss = { isBpmObservatoryOpen = false }) {
-            val bpmState by com.miku.launcher.bpm.MikuBpmEngine.state.collectAsState()
-            com.miku.launcher.bpm.MikuBpmObservatoryModal(
-                onClose = { isBpmObservatoryOpen = false },
-                bpmState = bpmState
-            )
-        }
-        com.miku.launcher.ui.MikuModalHost(visible = isFsIngestModalOpen, onDismiss = { isFsIngestModalOpen = false }) {
-            com.miku.launcher.ingest.MikuFsIngestObservatoryModal(
-                onClose = { isFsIngestModalOpen = false }
-            )
-        }
-        com.miku.launcher.ui.MikuModalHost(visible = isThermalObservatoryOpen, onDismiss = { isThermalObservatoryOpen = false }) {
-            com.miku.launcher.thermal.MikuThermalObservatoryModal(
-                onClose = { isThermalObservatoryOpen = false },
-                cpuTempC = cpuTempC,
-                batteryTempC = batteryTempC
-            )
-        }
-        // The "QUANTUM CHARGING CORE" screen is only truthful while the device is actually charging.
-        // It was mounted on the SAME flag as the battery observatory with no isCharging check, so
-        // tapping the battery badge on battery power put a full-screen CHARGING panel over it.
-        com.miku.launcher.ui.MikuModalHost(visible = isBatteryObservatoryOpen && isCharging, onDismiss = { isBatteryObservatoryOpen = false }) {
-            com.miku.launcher.battery.MikuFullscreenChargingModal(
-                onDismiss = { isBatteryObservatoryOpen = false },
-                batteryPct = batteryPct,
-                isCharging = isCharging
-            )
-        }
-
-        // Floating In-Theme Cyber Volume HUD Overlay (Top-Right Aligned near Physical Roller)
-        com.miku.launcher.volume.MikuCyberVolumeHudOverlay(
-            ctx = ctx,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 92.dp, end = 4.dp)
+        MikuLauncherShadeAndWallpaperModals(
+            isCyberQuickSettingsOpen = isCyberQuickSettingsOpen,
+            onCloseQuickSettings = { isCyberQuickSettingsOpen = false },
+            batteryPct = batteryPct,
+            isCharging = isCharging,
+            isWifiConnected = isWifiConnected,
+            currentTime = currentTime,
+            currentDate = currentDate,
+            showUsbHostModal = showUsbHostModal,
+            onDismissUsbHostModal = { showUsbHostModal = false },
+            isWallpaperPickerOpen = isWallpaperPickerOpen,
+            onCloseWallpaperPicker = { isWallpaperPickerOpen = false },
+            onPickFromGallery = { galleryPicker.launch("image/*") },
+            customWallpaperUri = customWallpaperUri,
+            onCustomWallpaperUriChange = { customWallpaperUri = it },
+            onWallpaperIdChange = { currentWallpaperId = it },
+            prefs = prefs,
+            wallpapers = wallpapers,
+            currentWallpaperRes = currentWallpaperRes
         )
 
-        val lowPowerGate by com.miku.launcher.ui.rememberAmbientGate()
 
-        val infinitePulse = rememberInfiniteTransition(label = "verPulse")
-        val verColor by infinitePulse.gatedColor(lowPowerGate, 
-            initialValue = Color(0x9989ACA7),
-            targetValue = MikuCyan.copy(alpha = 0.85f),
-            animationSpec = infiniteRepeatable(
-                animation = tween(2500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "verColor"
+
+        MikuLauncherDrawerAndRecents(
+            drawerSheet = drawerSheet,
+            drawerHeightPx = drawerHeightPx,
+            allApps = allApps,
+            searchQuery = searchQuery,
+            onSearchChange = { searchQuery = it },
+            selectedCategory = selectedCategory,
+            onCategoryChange = { selectedCategory = it },
+            onCloseAllApps = { isAllAppsOpen = false },
+            onOpenQuickSettings = {
+                isAllAppsOpen = false
+                isCyberQuickSettingsOpen = true
+            },
+            contextMenuApp = contextMenuApp,
+            onContextMenuAppChange = { contextMenuApp = it },
+            isRecentsOpen = isRecentsOpen,
+            onCloseRecents = { isRecentsOpen = false },
+            recentTasks = recentTasks,
+            onRecentTasksChange = { recentTasks = it },
+            pinnedPackages = pinnedPackages,
+            onTogglePinDesktop = onTogglePinDesktop
         )
-        // ============================================================
-        // MIKUOS BESPOKE 4-STEP FAST-BOOT ONBOARDING WIZARD MODAL
-        // ============================================================
-        if (isOnboardingOpen) {
-            com.miku.launcher.onboarding.MikuOnboardingWizardModal(
-                prefs = prefs,
-                onFinish = {
-                    prefs.edit().putBoolean("miku_onboarding_completed", true).apply()
-                    isOnboardingOpen = false
-                }
-            )
-        }
+
+        MikuLauncherObservatoryModals(
+            quiltConfig = quiltConfig,
+            onQuiltConfigChange = { quiltConfig = it; MikuQuiltPrefs.saveConfig(ctx, it) },
+            topBarTheme = topBarTheme,
+            onCycleQuiltBackground = {
+                val next = topBarTheme.next(ctx)
+                topBarTheme = next
+                MikuTopBarTheme.save(ctx, next)
+            },
+            onResetQuiltOrder = {
+                MikuQuiltPrefs.resetOrder(ctx)
+                quiltOrder = MikuQuiltPrefs.loadOrder(ctx, MikuQuiltBadgeIds)
+            },
+            isQuiltOptionsOpen = isQuiltOptionsOpen,
+            onOpenQuiltOptions = { isQuiltOptionsOpen = true },
+            onCloseQuiltOptions = { isQuiltOptionsOpen = false },
+            isDesktopContextMenuOpen = isDesktopContextMenuOpen,
+            onCloseDesktopContextMenu = { isDesktopContextMenuOpen = false },
+            onOpenWallpaperPicker = { isWallpaperPickerOpen = true },
+            coroutineScope = coroutineScope,
+            pagerState = pagerState,
+            isRecentsOpen = isRecentsOpen,
+            onCloseRecents = { isRecentsOpen = false },
+            recentTasks = recentTasks,
+            onRecentTasksChange = { recentTasks = it },
+            isWeatherObservatoryOpen = isWeatherObservatoryOpen,
+            onCloseWeatherObservatory = { isWeatherObservatoryOpen = false },
+            isGpsModalOpen = isGpsModalOpen,
+            onCloseGps = { isGpsModalOpen = false },
+            isBatteryObservatoryOpen = isBatteryObservatoryOpen,
+            onCloseBatteryObservatory = { isBatteryObservatoryOpen = false },
+            isNetworkObservatoryOpen = isNetworkObservatoryOpen,
+            onCloseNetworkObservatory = { isNetworkObservatoryOpen = false },
+            isBrainModalOpen = isBrainModalOpen,
+            onCloseBrain = { isBrainModalOpen = false },
+            isBpmObservatoryOpen = isBpmObservatoryOpen,
+            onCloseBpmObservatory = { isBpmObservatoryOpen = false },
+            isFsIngestModalOpen = isFsIngestModalOpen,
+            onCloseFsIngest = { isFsIngestModalOpen = false },
+            isThermalObservatoryOpen = isThermalObservatoryOpen,
+            onCloseThermal = { isThermalObservatoryOpen = false },
+            cpuTempC = cpuTempC,
+            batteryTempC = batteryTempC,
+            batteryPct = batteryPct,
+            isCharging = isCharging,
+            isOnboardingOpen = isOnboardingOpen,
+            onFinishOnboarding = {
+                prefs.edit().putBoolean("miku_onboarding_completed", true).apply()
+                isOnboardingOpen = false
+            },
+            prefs = prefs
+        )
     }
 }
 
@@ -1859,7 +1266,6 @@ fun MainDesktopPage(
 @Composable
 fun HardwareWidgetsPage(
     onOpenAudioSettings: () -> Unit,
-    onOpenPulsarSettings: () -> Unit,
     onOpenFnSettings: () -> Unit,
     onOpenMonitor: () -> Unit
 ) {
@@ -1868,15 +1274,6 @@ fun HardwareWidgetsPage(
     // be read renders "—" / "unavailable". Nothing here is a literal pretending to be measured.
     val hwFilter = remember { runCatching { CirrusLogicManager.getDigitalFilterOrNull(hwCtx) }.getOrNull() }
     val hwGain = remember { runCatching { CirrusLogicManager.getGainModeOrNull(hwCtx) }.getOrNull() }
-    // "—" when no pattern was ever chosen (getMode() would report its AUDIOPHILE_AUTO fallback).
-    val pulsarModeLabel = remember { runCatching { PulsarLight.getModeOrNull(hwCtx)?.label }.getOrNull() ?: "— (none chosen)" }
-    val pulsarSysfsVisible = remember {
-        listOf("/sys/class/leds/sgm31324-leds", "/sys/class/leds/red", "/sys/class/leds/blue")
-            .any { p -> runCatching { java.io.File(p).let { it.exists() && it.canRead() } }.getOrDefault(false) }
-    }
-    // The RGB indicator is confirmed non-functional on this unit (SELinux-locked nodes, no consumer
-    // LED service), so say that outright rather than only that we cannot read it back.
-    val pulsarReadback = if (pulsarSysfsVisible) "sysfs visible" else "No LED on this unit (nodes not visible)"
     val fnLockLabel = remember {
         try {
             val raw = android.provider.Settings.Global.getString(hwCtx.contentResolver, "button_lock")
@@ -1951,40 +1348,6 @@ fun HardwareWidgetsPage(
                             "${hwFilter?.label ?: "—"} / ${hwGain?.label ?: "—"}",
                             color = MikuCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
-                    }
-                }
-            }
-
-            // 2. SGM31324 Pulsar RGB Lighting Card
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(CyberGlassCard)
-                    .border(1.dp, CyberGlassBorder, RoundedCornerShape(16.dp))
-                    .clickable { onOpenPulsarSettings() }
-                    .padding(14.dp)
-            ) {
-                Column {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("SGM31324 PULSAR RGB LIGHTING", color = MikuNeonPink, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-                        Icon(Icons.Default.Lightbulb, contentDescription = null, tint = MikuNeonPink, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Configured Pattern", color = MikuTextSecondary, fontSize = 11.sp)
-                        // The saved preference — a setting, not a readback of the LED driver.
-                        Text(pulsarModeLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Spacer(Modifier.height(3.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("LED Driver Readback", color = MikuTextSecondary, fontSize = 11.sp)
-                        // No sysfs node is readable from this process on the M500 → honest "unavailable".
-                        Text(pulsarReadback, color = if (pulsarSysfsVisible) MikuNeonPink else MikuTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -2620,6 +1983,7 @@ fun CyberAllAppsDrawer(
         // here and dismisses the drawer past a threshold. Works alongside the back arrow.
         var pullDownAccum by remember { mutableFloatStateOf(0f) }
         val dismissThresholdPx = with(LocalDensity.current) { 90.dp.toPx() }
+        val upFlingDismissPxPerSec = with(LocalDensity.current) { 900.dp.toPx() }
         val latestClose = rememberUpdatedState(onClose)
         val swipeDownDismiss = remember(dismissThresholdPx, sheet) {
             object : NestedScrollConnection {
@@ -2654,6 +2018,16 @@ fun CyberAllAppsDrawer(
                 override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
                     if (sheet != null && (sheet.dragging || sheet.progress.value < 0.999f)) {
                         if (sheet.releasePull(available.y)) latestClose.value()
+                        return available
+                    }
+                    return androidx.compose.ui.unit.Velocity.Zero
+                }
+                // Swipe UP past the end of the grid also dismisses: a fling the grid couldn't consume
+                // (it is already at its bottom) arrives here with its upward velocity intact. The
+                // velocity gate keeps a short list (which never consumes) from closing on a slow nudge.
+                override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                    if (available.y < -upFlingDismissPxPerSec) {
+                        latestClose.value()
                         return available
                     }
                     return androidx.compose.ui.unit.Velocity.Zero
@@ -3222,16 +2596,38 @@ fun bringTaskToFront(ctx: Context, task: RecentTaskItem) {
     }
 }
 
-fun dismissTask(ctx: Context, task: RecentTaskItem) {
-    // 1. Terminate package with root am force-stop (works for Spotify, Google apps, 3rd party apps)
+/**
+ * Actually removes a task and stops its app. Returns true only if the task removal was accepted.
+ *
+ * This used to be `su -c am force-stop` (there is no su on MikuOS — the fork threw and was
+ * swallowed) plus `am.appTasks…finishAndRemoveTask()`, and appTasks only ever contains THIS app's
+ * own tasks, so a third-party card was never removed by either half. The caller then deleted the
+ * card from the list anyway, so the UI showed a dismissal that had not happened.
+ */
+fun dismissTask(ctx: Context, task: RecentTaskItem): Boolean {
+    val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+    var removed = false
     try {
-        Runtime.getRuntime().exec(arrayOf("su", "-c", "am force-stop ${task.packageName}"))
+        am?.appTasks?.firstOrNull { it.taskInfo?.taskId == task.taskId }?.let {
+            it.finishAndRemoveTask()
+            removed = true
+        }
     } catch (_: Throwable) {}
-    // 2. Remove from ActivityManager tasks
-    val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return
-    try {
-        am.appTasks.firstOrNull { it.taskInfo?.taskId == task.taskId }?.finishAndRemoveTask()
-    } catch (_: Throwable) {}
+    if (!removed) {
+        // Platform-signed path (MikuOS is privileged, not rooted): ActivityTaskManager.removeTask.
+        removed = runCatching {
+            val atmClass = Class.forName("android.app.ActivityTaskManager")
+            val svc = atmClass.getMethod("getService").invoke(null)
+            svc.javaClass.getMethod("removeTask", Int::class.javaPrimitiveType).invoke(svc, task.taskId)
+            true
+        }.getOrDefault(false)
+    }
+    // forceStopPackage is a signature-permission @SystemApi — reachable for a platform-signed
+    // launcher, unlike the `su` fork it replaces.
+    runCatching {
+        ActivityManager::class.java.getMethod("forceStopPackage", String::class.java).invoke(am, task.packageName)
+    }
+    return removed
 }
 
 fun clearAllTasks(ctx: Context, tasks: List<RecentTaskItem>) {
@@ -5067,76 +4463,6 @@ fun CyberNotificationShadeModal(
     currentTime: String,
     currentDate: String
 ) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    // Hardware Audio States
-    var gainMode by remember { mutableStateOf(CirrusLogicManager.getGainMode(ctx)) }
-    var filterMode by remember { mutableStateOf(CirrusLogicManager.getDigitalFilter(ctx)) }
-    var dreEnabled by remember { mutableStateOf(CirrusLogicManager.isDreEnabled(ctx)) }
-    // The getters above fall back to a preset (HIGH / FAST_LINEAR / false) so the tiles have a
-    // selection to toggle. These say whether that selection was ever actually READ from a real
-    // source — if not, the tile subtitle shows "—" instead of asserting "HIGH (+6dB)".
-    var gainKnown by remember { mutableStateOf(CirrusLogicManager.getGainModeOrNull(ctx) != null) }
-    var filterKnown by remember { mutableStateOf(CirrusLogicManager.getDigitalFilterOrNull(ctx) != null) }
-    var dreKnown by remember { mutableStateOf(CirrusLogicManager.isDreEnabledOrNull(ctx) != null) }
-    // Real saved Pulsar mode, not an assumed "on". The M500's RGB indicator is non-functional on
-    // this unit (SELinux-locked, no consumer LED service), so this is only the stored preference.
-    var pulsarMode by remember { mutableStateOf(runCatching { PulsarLight.getMode(ctx) }.getOrDefault(PulsarLight.Mode.OFF)) }
-
-    // Telemetry & Weather
-    val weatherState by com.miku.launcher.weather.MikuWeatherService.state.collectAsState()
-    // Real radio telemetry (MikuNetworkService polls TelephonyManager/WifiManager). Before the
-    // first poll every field is blank/false, so the subtitles below read "Offline"/"—", never a
-    // fabricated "5GHz Wi-Fi + LTE".
-    val netState by com.miku.launcher.network.MikuNetworkService.state.collectAsState()
-
-    // Brightness Controller
-    val cr = ctx.contentResolver
-    var brightness by remember {
-        mutableStateOf(
-            try {
-                android.provider.Settings.System.getInt(cr, android.provider.Settings.System.SCREEN_BRIGHTNESS)
-            } catch (_: Throwable) { 128 }
-        )
-    }
-
-    // Volume Controller
-    val am = remember { ctx.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager }
-    var streamVol by remember {
-        mutableStateOf(am?.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) ?: 8)
-    }
-    val maxVol = remember { am?.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) ?: 15 }
-
-    // REAL Bluetooth audio state. The card used to claim "LDAC Hi-Res 990k" unconditionally — even
-    // with the radio off and nothing paired, and the active codec is not readable unprivileged.
-    // AudioManager's output-device list is the real source: it reports an A2DP/LE/SCO sink only when
-    // one is actually connected, and carries its product name.
-    val btAudioLabel = remember(am) {
-        runCatching {
-            val adapter = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
-            when {
-                adapter == null -> "No Bluetooth radio"
-                !adapter.isEnabled -> "Off"
-                else -> {
-                    val sink = am?.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
-                        ?.firstOrNull {
-                            it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                                it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                                it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET ||
-                                it.type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER
-                        }
-                    val name = sink?.productName?.toString()?.trim().orEmpty()
-                    when {
-                        sink == null -> "On · no audio device"
-                        name.isNotEmpty() -> name
-                        else -> "On · audio device connected"
-                    }
-                }
-            }
-        }.getOrDefault("—")
-    }
-
     Box(
         Modifier
             .fillMaxSize()
@@ -5262,554 +4588,19 @@ fun CyberNotificationShadeModal(
 
                 Spacer(Modifier.height(10.dp))
 
-                // Pixel-Style Large Dual Network / Bluetooth Connectivity Pills
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Internet Card (Wi-Fi + 4G LTE)
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isWifiConnected) MikuCyan.copy(alpha = 0.2f) else Color(0xFF081820))
-                            .border(1.dp, if (isWifiConnected) MikuCyan else Color(0xFF1E3A45), RoundedCornerShape(16.dp))
-                            .clickable {
-                                try { ctx.startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS)) } catch (_: Throwable) {}
-                            }
-                            .padding(10.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (isWifiConnected) Icons.Default.Wifi else Icons.Default.WifiOff,
-                                contentDescription = null,
-                                tint = if (isWifiConnected) MikuCyan else Color.Gray,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text("Internet", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-                                // Derived from the real Wi-Fi/cellular telemetry — SSID + the band the
-                                // radio actually reports, or the real mobile radio technology. The old
-                                // text asserted "5GHz Wi-Fi + LTE" / "LTE Connected" regardless.
-                                val internetSubtitle = run {
-                                    val w = netState.wifi
-                                    val c = netState.cellular
-                                    when {
-                                        w.isConnected -> listOf(
-                                            w.ssid.ifBlank { "Wi-Fi" },
-                                            w.bandLabel
-                                        ).filter { it.isNotBlank() }.joinToString(" · ")
-                                        c.dataConnected -> c.networkType.ifBlank { "Mobile data" }
-                                        c.hasSignal -> "No mobile data"
-                                        netState.lastUpdated == 0L -> "—"
-                                        else -> "Offline"
-                                    }
-                                }
-                                Text(internetSubtitle, color = MikuCyan, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-
-                    // Bluetooth Card (LDAC Hi-Res)
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF0A1828))
-                            .border(1.dp, Color(0xFF2979FF).copy(alpha = 0.7f), RoundedCornerShape(16.dp))
-                            .clickable {
-                                try {
-                                    val intent = Intent().setClassName("com.miku.settings", "com.miku.settings.MikuSettingsActivity").apply {
-                                        putExtra("extra_section", "bluetooth")
-                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                    }
-                                    ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                                } catch (_: Throwable) {
-                                    try { ctx.startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS)) } catch (_: Throwable) {}
-                                }
-                            }
-                            .padding(10.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Bluetooth,
-                                contentDescription = null,
-                                // Dimmed when the radio is off / absent, so the glyph cannot imply a
-                                // live link the label denies.
-                                tint = if (btAudioLabel == "Off" || btAudioLabel == "No Bluetooth radio" || btAudioLabel == "—")
-                                    Color.Gray else Color(0xFF2979FF),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text("Bluetooth", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-                                Text(btAudioLabel, color = Color(0xFF82B1FF), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-                }
+                CyberShadeConnectivitySection(isWifiConnected = isWifiConnected)
 
                 Spacer(Modifier.height(10.dp))
 
-                // Interactive Haptic Brightness Slider (Pixel-Style AOSP Bar)
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF081C24))
-                        .border(1.dp, MikuCyan.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.BrightnessMedium, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Slider(
-                            value = brightness.toFloat(),
-                            onValueChange = { newB ->
-                                brightness = newB.toInt()
-                                try {
-                                    android.provider.Settings.System.putInt(cr, android.provider.Settings.System.SCREEN_BRIGHTNESS, brightness)
-                                } catch (_: Throwable) {}
-                            },
-                            valueRange = 10f..255f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MikuCyan,
-                                activeTrackColor = MikuCyan,
-                                inactiveTrackColor = Color(0xFF0D2C35)
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // Master Audio Output & Volume Slider
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF0A1420))
-                        .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.VolumeUp, contentDescription = null, tint = Color(0xFFB388FF), modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Slider(
-                            value = streamVol.toFloat(),
-                            onValueChange = { newV ->
-                                streamVol = newV.toInt()
-                                try {
-                                    am?.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, streamVol, 0)
-                                } catch (_: Throwable) {}
-                            },
-                            valueRange = 0f..maxVol.toFloat(),
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color(0xFFB388FF),
-                                activeTrackColor = Color(0xFF7C4DFF),
-                                inactiveTrackColor = Color(0xFF140D26)
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text("${((streamVol.toFloat() / maxVol.toFloat()) * 100).toInt()}%", color = Color(0xFFB388FF), fontSize = 11.sp, fontFamily = AudiowideFont)
-                    }
-                }
+                CyberShadeSliderSection()
 
                 Spacer(Modifier.height(10.dp))
 
-                // 8 Cyber Quick Hardware Tiles (2x4 Grid)
-                Text(
-                    text = "MAGICAL MIRAI SOUNDBOARD",
-                    color = MikuCyan,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = AudiowideFont,
-                    letterSpacing = 1.sp
-                )
-
-                Spacer(Modifier.height(6.dp))
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Row 1: CS43131 Gain + Filter Mode
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "MASTER DYN / GAIN",
-                            subtitle = if (!gainKnown) "—  (gain not readable)"
-                                else if (gainMode == CirrusLogicManager.GainMode.HIGH) "HIGH" else "LOW",
-                            icon = Icons.Default.VolumeUp,
-                            accentColor = if (gainKnown && gainMode == CirrusLogicManager.GainMode.HIGH) MikuNeonPink else MikuCyan,
-                            isActive = gainKnown && gainMode == CirrusLogicManager.GainMode.HIGH,
-                            onClick = {
-                                val next = if (gainMode == CirrusLogicManager.GainMode.LOW) CirrusLogicManager.GainMode.HIGH else CirrusLogicManager.GainMode.LOW
-                                gainMode = next
-                                gainKnown = true
-                                scope.launch(Dispatchers.IO) {
-                                    CirrusLogicManager.setGainMode(ctx, next)
-                                }
-                            }
-                        )
-
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "VOCAL FILTER",
-                            subtitle = if (filterKnown) filterMode.label else "—  (filter not readable)",
-                            icon = Icons.Default.Tune,
-                            accentColor = MikuCyan,
-                            isActive = filterKnown,
-                            onClick = {
-                                val all = CirrusLogicManager.DigitalFilter.values()
-                                val next = all[(filterMode.ordinal + 1) % all.size]
-                                filterMode = next
-                                filterKnown = true
-                                scope.launch(Dispatchers.IO) {
-                                    CirrusLogicManager.setDigitalFilter(ctx, next)
-                                }
-                            }
-                        )
-                    }
-
-                    // Row 2: Pulsar RGB + Direct ALSA Bypass
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "PULSAR RGB",
-                            // The M500's RGB indicator is confirmed NON-FUNCTIONAL on this unit: the
-                            // LED sysfs nodes are SELinux-locked and there is no consumer LED service,
-                            // so nothing here can light up. The tile used to claim "BPM SYNC (ON)"
-                            // from a hardcoded `true`. It now only reports the stored preference and
-                            // says plainly that the hardware does not respond.
-                            subtitle = if (pulsarMode == PulsarLight.Mode.OFF)
-                                "OFF · NO LED ON THIS UNIT" else "SET: ${pulsarMode.label} · NO LED ON THIS UNIT",
-                            icon = Icons.Default.Lightbulb,
-                            accentColor = MikuTextSecondary,
-                            isActive = false,
-                            onClick = {
-                                val next = if (pulsarMode == PulsarLight.Mode.OFF)
-                                    PulsarLight.Mode.AUDIOPHILE_AUTO else PulsarLight.Mode.OFF
-                                pulsarMode = next
-                                scope.launch(Dispatchers.IO) {
-                                    PulsarLight.setMode(ctx, next)
-                                }
-                                android.widget.Toast.makeText(
-                                    ctx,
-                                    "Pulsar preference saved — the M500's RGB indicator is not driveable on this unit",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        )
-
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "DRE (DYNAMIC RANGE)",
-                            subtitle = if (!dreKnown) "—  (DRE not readable)"
-                                else if (dreEnabled) "ON" else "OFF",
-                            icon = Icons.Default.Headphones,
-                            accentColor = com.miku.launcher.ui.MikuIdentity.Leek,
-                            isActive = dreKnown && dreEnabled,
-                            onClick = {
-                                dreEnabled = !dreEnabled
-                                dreKnown = true
-                                scope.launch(Dispatchers.IO) {
-                                    CirrusLogicManager.setDreEnabled(ctx, dreEnabled)
-                                }
-                            }
-                        )
-                    }
-
-                    // Row 3: Wireless ADB + System Tools
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val adbIp = remember(isWifiConnected) {
-                            try {
-                                val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                                val ipInt = wm?.connectionInfo?.ipAddress ?: 0
-                                if (ipInt != 0) {
-                                    String.format(
-                                        Locale.US,
-                                        "%d.%d.%d.%d",
-                                        ipInt and 0xff,
-                                        ipInt shr 8 and 0xff,
-                                        ipInt shr 16 and 0xff,
-                                        ipInt shr 24 and 0xff
-                                    )
-                                } else ""
-                            } catch (_: Throwable) { "" }
-                        }
-                        var isAdbEnabled by remember {
-                            mutableStateOf(
-                                try {
-                                    val p = Runtime.getRuntime().exec("getprop service.adb.tcp.port")
-                                    p.inputStream.bufferedReader().readText().trim() == "5555"
-                                } catch (_: Throwable) { false }
-                            )
-                        }
-
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "WIRELESS ADB",
-                            subtitle = if (isAdbEnabled) "$adbIp:5555" else "PORT 5555",
-                            icon = Icons.Default.DeveloperMode,
-                            accentColor = if (isAdbEnabled) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
-                            isActive = isAdbEnabled,
-                            onClick = {
-                                val next = !isAdbEnabled
-                                isAdbEnabled = next
-                                scope.launch(Dispatchers.IO) {
-                                    // persist.adb.tcp.port, NOT service.adb.tcp.port — the service.
-                                    // prop flips adbd TCP-ONLY and kills USB adb (bit us hard once);
-                                    // persist. adds TCP alongside USB and survives reboots.
-                                    val cmd = if (next) {
-                                        "setprop persist.adb.tcp.port 5555 && stop adbd && start adbd"
-                                    } else {
-                                        "setprop persist.adb.tcp.port -1 && stop adbd && start adbd"
-                                    }
-                                    try {
-                                        Runtime.getRuntime().exec(arrayOf("su", "-c", cmd)).waitFor()
-                                    } catch (_: Throwable) {}
-                                }
-                                android.widget.Toast.makeText(
-                                    ctx,
-                                    if (next) "⚡ Wireless ADB Active on $adbIp:5555" else "Wireless ADB Disabled",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        )
-
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "DEV OPTIONS",
-                            subtitle = "SYSTEM & TOOLS",
-                            icon = Icons.Default.Build,
-                            accentColor = MikuCyan,
-                            isActive = true,
-                            onClick = {
-                                onClose()
-                                val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                            }
-                        )
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // Pause-on-unplug — mirrors the toggle in Miku Music's Sound Settings page
-                        // (quick settings + sound page only; deliberately NOT in the volume modal).
-                        // State lives in Settings.Global "miku_pause_on_unplug"; the broadcast lets
-                        // the player apply it live to the running ExoPlayer.
-                        var pauseOnUnplug by remember {
-                            mutableStateOf(
-                                android.provider.Settings.Global.getInt(ctx.contentResolver, "miku_pause_on_unplug", 1) == 1
-                            )
-                        }
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "PAUSE ON UNPLUG",
-                            subtitle = if (pauseOnUnplug) "STOCK BEHAVIOR" else "KEEP PLAYING",
-                            icon = Icons.Default.HeadsetOff,
-                            accentColor = if (pauseOnUnplug) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
-                            isActive = pauseOnUnplug,
-                            onClick = {
-                                val next = !pauseOnUnplug
-                                pauseOnUnplug = next
-                                scope.launch(Dispatchers.IO) {
-                                    runCatching {
-                                        android.provider.Settings.Global.putInt(
-                                            ctx.contentResolver, "miku_pause_on_unplug", if (next) 1 else 0
-                                        )
-                                    }.getOrNull() ?: RootShell.execFast(
-                                        "settings put global miku_pause_on_unplug ${if (next) 1 else 0}"
-                                    )
-                                }
-                                ctx.sendBroadcast(
-                                    Intent("com.miku.player.SET_PAUSE_ON_UNPLUG")
-                                        .setPackage("com.miku.player")
-                                        .putExtra("enabled", next)
-                                )
-                            }
-                        )
-                        // Ingress engine (network rsync ingest) — OFF by default; while off only local
-                        // SD-card scan updates run. State = Settings.Global "miku_ingest_enabled";
-                        // the FS & Ingestion modal shows the same switch and reflects this live.
-                        var ingestOn by remember {
-                            mutableStateOf(com.miku.launcher.ingest.MikuIngestEngine.isEngineEnabled(ctx))
-                        }
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "INGRESS ENGINE",
-                            subtitle = if (ingestOn) "RSYNC INGEST ON" else "LOCAL SD ONLY",
-                            icon = Icons.Default.Sync,
-                            accentColor = if (ingestOn) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
-                            isActive = ingestOn,
-                            onClick = {
-                                val next = !ingestOn
-                                ingestOn = next
-                                com.miku.launcher.ingest.MikuIngestEngine.setEngineEnabled(ctx, next)
-                            }
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // System-wide track-change popup (SystemUI draws it; Miku Music stops broadcasting
-                        // when 0). State = Settings.Global "miku_track_hud_enabled", default 1.
-                        var trackHudOn by remember {
-                            mutableStateOf(
-                                try { android.provider.Settings.Global.getInt(ctx.contentResolver, "miku_track_hud_enabled", 1) == 1 } catch (_: Throwable) { true }
-                            )
-                        }
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "NOW PLAYING HUD",
-                            subtitle = if (trackHudOn) "TRACK POPUP ON" else "TRACK POPUP OFF",
-                            icon = Icons.Default.MusicNote,
-                            accentColor = if (trackHudOn) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
-                            isActive = trackHudOn,
-                            onClick = {
-                                val next = !trackHudOn
-                                trackHudOn = next
-                                scope.launch(Dispatchers.IO) {
-                                    runCatching {
-                                        android.provider.Settings.Global.putInt(ctx.contentResolver, "miku_track_hud_enabled", if (next) 1 else 0)
-                                    }.getOrNull() ?: RootShell.execFast("settings put global miku_track_hud_enabled ${if (next) 1 else 0}")
-                                }
-                            }
-                        )
-                        // POWER MODE: Settings.Global miku_power_mode auto → perf → save (Miku Music's
-                        // governor honours it); subtitle shows the live profile while in AUTO.
-                        val powerMode by com.miku.launcher.ui.rememberPowerMode()
-                        val liveProfile by com.miku.launcher.ui.rememberPowerProfile()
-                        CyberQuickTile(
-                            modifier = Modifier.weight(1f),
-                            title = "POWER MODE",
-                            subtitle = com.miku.launcher.ui.MikuPowerProfile.modeGlyph(powerMode, liveProfile) + " " +
-                                com.miku.launcher.ui.MikuPowerProfile.modeLabel(powerMode, liveProfile),
-                            icon = when (powerMode) { "perf" -> Icons.Default.Bolt; "save" -> Icons.Default.DarkMode; else -> Icons.Default.AutoAwesome },
-                            accentColor = when (powerMode) {
-                                "perf" -> com.miku.launcher.ui.MikuIdentity.PinkNeon
-                                "save" -> com.miku.launcher.ui.MikuIdentity.Lavender
-                                else -> com.miku.launcher.ui.MikuIdentity.Teal
-                            },
-                            isActive = powerMode != "auto",
-                            onClick = {
-                                com.miku.launcher.ui.MikuPowerProfile.cycleMode(ctx)
-                                com.miku.launcher.haptics.MikuHaptics.confirm(ctx)
-                            },
-                            onLongClick = { com.miku.launcher.ui.MikuPowerProfile.openGovernor(ctx) }
-                        )
-                    }
-                }
+                CyberShadeSoundboardSection(isWifiConnected = isWifiConnected, onClose = onClose)
 
                 Spacer(Modifier.height(10.dp))
 
-                // Data-Only SIM Shield Banner
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0x3300E676))
-                        .border(1.dp, com.miku.launcher.ui.MikuIdentity.Leek, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(6.dp).clip(CircleShape).background(com.miku.launcher.ui.MikuIdentity.Leek))
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "🛡️ DATA-ONLY SIM SHIELD: GOOGLE FI & IMS NAGS SUPPRESSED",
-                            color = com.miku.launcher.ui.MikuIdentity.Leek,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = AudiowideFont
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // Weather & Conditions Card
-                val w = weatherState.weather
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0x3300E5FF))
-                        .border(1.dp, MikuCyan, RoundedCornerShape(16.dp))
-                        .padding(10.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(w.icon, fontSize = 24.sp)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = "${w.tempF.toInt()}°F · ${w.summary} (Feels ${w.feelsLikeF.toInt()}°F)",
-                                color = Color.White,
-                                fontSize = 15.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = AudiowideFont
-                            )
-                            Text(
-                                text = "💧 Humidity: ${w.humidityPct}% · 💨 Wind: ${w.windSpeedMph.toInt()}mph ${w.windDirectionCompass} · ☔ Precip: ${w.precipitationProbPct}%",
-                                color = MikuTextSecondary,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                // Footer Action Bar: Power Menu (Reboot / Power Off / Dismiss)
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            scope.launch(Dispatchers.IO) {
-                                Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot")).waitFor()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x3300E5FF)),
-                        border = BorderStroke(1.dp, MikuCyan),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f).height(42.dp)
-                    ) {
-                        Text("⚡ REBOOT", color = MikuCyan, fontSize = 14.sp, fontFamily = AudiowideFont)
-                    }
-
-                    Button(
-                        onClick = {
-                            scope.launch(Dispatchers.IO) {
-                                Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot -p")).waitFor()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x33FF4081)),
-                        border = BorderStroke(1.dp, MikuNeonPink),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f).height(42.dp)
-                    ) {
-                        Text("💤 POWER OFF", color = MikuNeonPink, fontSize = 14.sp, fontFamily = AudiowideFont)
-                    }
-
-                    Button(
-                        onClick = onClose,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x22FFFFFF)),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f).height(42.dp)
-                    ) {
-                        Text("✕ CLOSE", color = Color.White, fontSize = 14.sp, fontFamily = AudiowideFont)
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
+                CyberShadeFooterSection(onClose = onClose)
             }
         }
     }
@@ -5929,3 +4720,1642 @@ fun CyberQuickTile(
 
 
 
+/**
+ * Dual Internet / Bluetooth connectivity pills of the notification shade.
+ *
+ * Extracted out of [CyberNotificationShadeModal] because that composable compiled to
+ * ~18k dex instructions — past ART's 16384-instruction JIT ceiling — so it was refused
+ * by the JIT and re-interpreted on every recomposition, pinning the main thread.
+ * Behaviour, ordering and modifiers are identical to the inlined version; the network
+ * telemetry collection and the Bluetooth-sink lookup simply live here now, next to
+ * their only consumer.
+ */
+@Composable
+private fun CyberShadeConnectivitySection(isWifiConnected: Boolean) {
+    val ctx = LocalContext.current
+    val am = remember { ctx.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager }
+    // Real radio telemetry (MikuNetworkService polls TelephonyManager/WifiManager). Before the
+    // first poll every field is blank/false, so the subtitles below read "Offline"/"—", never a
+    // fabricated "5GHz Wi-Fi + LTE".
+    val netState by com.miku.launcher.network.MikuNetworkService.state.collectAsState()
+
+    // REAL Bluetooth audio state. The card used to claim "LDAC Hi-Res 990k" unconditionally — even
+    // with the radio off and nothing paired, and the active codec is not readable unprivileged.
+    // AudioManager's output-device list is the real source: it reports an A2DP/LE/SCO sink only when
+    // one is actually connected, and carries its product name.
+    val btAudioLabel = remember(am) {
+        runCatching {
+            val adapter = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
+            when {
+                adapter == null -> "No Bluetooth radio"
+                !adapter.isEnabled -> "Off"
+                else -> {
+                    val sink = am?.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+                        ?.firstOrNull {
+                            it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                                it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                                it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                                it.type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER
+                        }
+                    val name = sink?.productName?.toString()?.trim().orEmpty()
+                    when {
+                        sink == null -> "On · no audio device"
+                        name.isNotEmpty() -> name
+                        else -> "On · audio device connected"
+                    }
+                }
+            }
+        }.getOrDefault("—")
+    }
+
+    // Pixel-Style Large Dual Network / Bluetooth Connectivity Pills
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Internet Card (Wi-Fi + 4G LTE)
+        Box(
+            Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (isWifiConnected) MikuCyan.copy(alpha = 0.2f) else Color(0xFF081820))
+                .border(1.dp, if (isWifiConnected) MikuCyan else Color(0xFF1E3A45), RoundedCornerShape(16.dp))
+                .clickable {
+                    try { ctx.startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS)) } catch (_: Throwable) {}
+                }
+                .padding(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (isWifiConnected) Icons.Default.Wifi else Icons.Default.WifiOff,
+                    contentDescription = null,
+                    tint = if (isWifiConnected) MikuCyan else Color.Gray,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Internet", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                    // Derived from the real Wi-Fi/cellular telemetry — SSID + the band the
+                    // radio actually reports, or the real mobile radio technology. The old
+                    // text asserted "5GHz Wi-Fi + LTE" / "LTE Connected" regardless.
+                    val internetSubtitle = run {
+                        val w = netState.wifi
+                        val c = netState.cellular
+                        when {
+                            w.isConnected -> listOf(
+                                w.ssid.ifBlank { "Wi-Fi" },
+                                w.bandLabel
+                            ).filter { it.isNotBlank() }.joinToString(" · ")
+                            c.dataConnected -> c.networkType.ifBlank { "Mobile data" }
+                            c.hasSignal -> "No mobile data"
+                            netState.lastUpdated == 0L -> "—"
+                            else -> "Offline"
+                        }
+                    }
+                    Text(internetSubtitle, color = MikuCyan, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
+        // Bluetooth Card (LDAC Hi-Res)
+        Box(
+            Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF0A1828))
+                .border(1.dp, Color(0xFF2979FF).copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+                .clickable {
+                    try {
+                        val intent = Intent().setClassName("com.miku.settings", "com.miku.settings.MikuSettingsActivity").apply {
+                            putExtra("extra_section", "bluetooth")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
+                    } catch (_: Throwable) {
+                        try { ctx.startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS)) } catch (_: Throwable) {}
+                    }
+                }
+                .padding(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Bluetooth,
+                    contentDescription = null,
+                    // Dimmed when the radio is off / absent, so the glyph cannot imply a
+                    // live link the label denies.
+                    tint = if (btAudioLabel == "Off" || btAudioLabel == "No Bluetooth radio" || btAudioLabel == "—")
+                        Color.Gray else Color(0xFF2979FF),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Bluetooth", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                    Text(btAudioLabel, color = Color(0xFF82B1FF), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Brightness + master-volume slider rows of the notification shade.
+ *
+ * Extracted out of [CyberNotificationShadeModal]: the parent exceeded ART's 16384-dex-
+ * instruction JIT limit and therefore ran interpreted on every recomposition. The
+ * slider state is only ever read and written here, so it moved down with the UI.
+ */
+@Composable
+private fun CyberShadeSliderSection() {
+    val ctx = LocalContext.current
+    // Brightness Controller
+    val cr = ctx.contentResolver
+    var brightness by remember {
+        mutableStateOf(
+            try {
+                android.provider.Settings.System.getInt(cr, android.provider.Settings.System.SCREEN_BRIGHTNESS)
+            } catch (_: Throwable) { 128 }
+        )
+    }
+
+    // Volume Controller
+    val am = remember { ctx.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager }
+    var streamVol by remember {
+        mutableStateOf(am?.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) ?: 8)
+    }
+    val maxVol = remember { am?.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) ?: 15 }
+
+    // Interactive Haptic Brightness Slider (Pixel-Style AOSP Bar)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF081C24))
+            .border(1.dp, MikuCyan.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.BrightnessMedium, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Slider(
+                value = brightness.toFloat(),
+                onValueChange = { newB ->
+                    brightness = newB.toInt()
+                    try {
+                        android.provider.Settings.System.putInt(cr, android.provider.Settings.System.SCREEN_BRIGHTNESS, brightness)
+                    } catch (_: Throwable) {}
+                },
+                valueRange = 10f..255f,
+                colors = SliderDefaults.colors(
+                    thumbColor = MikuCyan,
+                    activeTrackColor = MikuCyan,
+                    inactiveTrackColor = Color(0xFF0D2C35)
+                ),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    // Master Audio Output & Volume Slider
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF0A1420))
+            .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.VolumeUp, contentDescription = null, tint = Color(0xFFB388FF), modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Slider(
+                value = streamVol.toFloat(),
+                onValueChange = { newV ->
+                    streamVol = newV.toInt()
+                    try {
+                        am?.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, streamVol, 0)
+                    } catch (_: Throwable) {}
+                },
+                valueRange = 0f..maxVol.toFloat(),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color(0xFFB388FF),
+                    activeTrackColor = Color(0xFF7C4DFF),
+                    inactiveTrackColor = Color(0xFF140D26)
+                ),
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text("${((streamVol.toFloat() / maxVol.toFloat()) * 100).toInt()}%", color = Color(0xFFB388FF), fontSize = 11.sp, fontFamily = AudiowideFont)
+        }
+    }
+}
+
+/**
+ * "MAGICAL MIRAI SOUNDBOARD" quick-tile grid of the notification shade.
+ *
+ * Extracted out of [CyberNotificationShadeModal]: that function compiled to ~18k dex
+ * instructions, over ART's 16384 JIT ceiling, so it was never JIT-compiled and every
+ * recomposition was interpreted on the main thread. The DAC/pulsar tile state is
+ * used nowhere else, so it is remembered here.
+ */
+@Composable
+private fun CyberShadeSoundboardSection(
+    isWifiConnected: Boolean,
+    onClose: () -> Unit
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Hardware Audio States
+    var gainMode by remember { mutableStateOf(CirrusLogicManager.getGainMode(ctx)) }
+    var filterMode by remember { mutableStateOf(CirrusLogicManager.getDigitalFilter(ctx)) }
+    var dreEnabled by remember { mutableStateOf(CirrusLogicManager.isDreEnabled(ctx)) }
+    // Provenance of each tile's value, not a bare "known" boolean. These used to be set to `true`
+    // the instant the user tapped, which claimed the DAC had been verified when all that had
+    // happened was a write attempt (and on MikuOS the sysfs write needs su and normally fails).
+    // null = nothing reports it; USER_REQUEST = only our own saved request; SYSFS/VENDOR_SETTING =
+    // a real read. Tapping sets USER_REQUEST, and the real source is re-read after the apply.
+    var gainSource by remember { mutableStateOf(CirrusLogicManager.readGainMode(ctx)?.source) }
+    var filterSource by remember { mutableStateOf(CirrusLogicManager.readDigitalFilter(ctx)?.source) }
+    var dreSource by remember { mutableStateOf(CirrusLogicManager.readDre(ctx)?.source) }
+    val gainKnown = gainSource != null
+    val filterKnown = filterSource != null
+    val dreKnown = dreSource != null
+    fun sourceNote(src: CirrusLogicManager.Source?): String = when (src) {
+        CirrusLogicManager.Source.SYSFS -> ""
+        CirrusLogicManager.Source.VENDOR_SETTING -> "  (HAL setting)"
+        CirrusLogicManager.Source.USER_REQUEST -> "  (requested, unverified)"
+        null -> ""
+    }
+
+
+    // 8 Cyber Quick Hardware Tiles (2x4 Grid)
+    Text(
+        text = "MAGICAL MIRAI SOUNDBOARD",
+        color = MikuCyan,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = AudiowideFont,
+        letterSpacing = 1.sp
+    )
+
+    Spacer(Modifier.height(6.dp))
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Row 1: CS43198 Gain + Filter Mode
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "MASTER DYN / GAIN",
+                subtitle = if (!gainKnown) "—  (gain not readable)"
+                    else (if (gainMode == CirrusLogicManager.GainMode.HIGH) "HIGH" else "LOW") + sourceNote(gainSource),
+                icon = Icons.Default.VolumeUp,
+                accentColor = if (gainKnown && gainMode == CirrusLogicManager.GainMode.HIGH) MikuNeonPink else MikuCyan,
+                isActive = gainKnown && gainMode == CirrusLogicManager.GainMode.HIGH,
+                onClick = {
+                    val next = if (gainMode == CirrusLogicManager.GainMode.LOW) CirrusLogicManager.GainMode.HIGH else CirrusLogicManager.GainMode.LOW
+                    gainMode = next
+                    // A tap is a REQUEST, never a verified hardware state.
+                    gainSource = CirrusLogicManager.Source.USER_REQUEST
+                    scope.launch(Dispatchers.IO) {
+                        CirrusLogicManager.setGainMode(ctx, next)
+                        // Re-read after the apply and report whatever really answers now.
+                        val back = CirrusLogicManager.readGainMode(ctx)
+                        withContext(Dispatchers.Main) {
+                            gainSource = back?.source
+                            if (back != null) gainMode = back.value
+                        }
+                    }
+                }
+            )
+
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "VOCAL FILTER",
+                subtitle = if (filterKnown) filterMode.label + sourceNote(filterSource) else "—  (filter not readable)",
+                icon = Icons.Default.Tune,
+                accentColor = MikuCyan,
+                // Only a real read lights the tile; a value we merely requested must not.
+                isActive = filterSource == CirrusLogicManager.Source.SYSFS ||
+                    filterSource == CirrusLogicManager.Source.VENDOR_SETTING,
+                onClick = {
+                    val all = CirrusLogicManager.DigitalFilter.values()
+                    val next = all[(filterMode.ordinal + 1) % all.size]
+                    filterMode = next
+                    filterSource = CirrusLogicManager.Source.USER_REQUEST
+                    scope.launch(Dispatchers.IO) {
+                        CirrusLogicManager.setDigitalFilter(ctx, next)
+                        val back = CirrusLogicManager.readDigitalFilter(ctx)
+                        withContext(Dispatchers.Main) {
+                            filterSource = back?.source
+                            if (back != null) filterMode = back.value
+                        }
+                    }
+                }
+            )
+        }
+
+        // Row 2: Direct ALSA Bypass + DRE
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Spacer(modifier = Modifier.weight(1f))
+
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "DRE (DYNAMIC RANGE)",
+                subtitle = if (!dreKnown) "—  (DRE not readable)"
+                    else (if (dreEnabled) "ON" else "OFF") + sourceNote(dreSource),
+                icon = Icons.Default.Headphones,
+                accentColor = com.miku.launcher.ui.MikuIdentity.Leek,
+                isActive = dreKnown && dreEnabled,
+                onClick = {
+                    val next = !dreEnabled
+                    dreEnabled = next
+                    dreSource = CirrusLogicManager.Source.USER_REQUEST
+                    scope.launch(Dispatchers.IO) {
+                        CirrusLogicManager.setDreEnabled(ctx, next)
+                        val back = CirrusLogicManager.readDre(ctx)
+                        withContext(Dispatchers.Main) {
+                            dreSource = back?.source
+                            if (back != null) dreEnabled = back.value
+                        }
+                    }
+                }
+            )
+        }
+
+        // Row 3: Wireless ADB + System Tools
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val adbIp = remember(isWifiConnected) {
+                try {
+                    val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                    val ipInt = wm?.connectionInfo?.ipAddress ?: 0
+                    if (ipInt != 0) {
+                        String.format(
+                            Locale.US,
+                            "%d.%d.%d.%d",
+                            ipInt and 0xff,
+                            ipInt shr 8 and 0xff,
+                            ipInt shr 16 and 0xff,
+                            ipInt shr 24 and 0xff
+                        )
+                    } else ""
+                } catch (_: Throwable) { "" }
+            }
+            var isAdbEnabled by remember {
+                mutableStateOf(
+                    try {
+                        val p = Runtime.getRuntime().exec("getprop service.adb.tcp.port")
+                        p.inputStream.bufferedReader().readText().trim() == "5555"
+                    } catch (_: Throwable) { false }
+                )
+            }
+
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "WIRELESS ADB",
+                subtitle = if (isAdbEnabled) "$adbIp:5555" else "PORT 5555",
+                icon = Icons.Default.DeveloperMode,
+                accentColor = if (isAdbEnabled) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
+                isActive = isAdbEnabled,
+                onClick = {
+                    val next = !isAdbEnabled
+                    isAdbEnabled = next
+                    scope.launch(Dispatchers.IO) {
+                        // persist.adb.tcp.port, NOT service.adb.tcp.port — the service.
+                        // prop flips adbd TCP-ONLY and kills USB adb (bit us hard once);
+                        // persist. adds TCP alongside USB and survives reboots.
+                        val cmd = if (next) {
+                            "setprop persist.adb.tcp.port 5555 && stop adbd && start adbd"
+                        } else {
+                            "setprop persist.adb.tcp.port -1 && stop adbd && start adbd"
+                        }
+                        try {
+                            Runtime.getRuntime().exec(arrayOf("su", "-c", cmd)).waitFor()
+                        } catch (_: Throwable) {}
+                    }
+                    android.widget.Toast.makeText(
+                        ctx,
+                        if (next) "⚡ Wireless ADB Active on $adbIp:5555" else "Wireless ADB Disabled",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
+
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "DEV OPTIONS",
+                subtitle = "SYSTEM & TOOLS",
+                icon = Icons.Default.Build,
+                accentColor = MikuCyan,
+                isActive = true,
+                onClick = {
+                    onClose()
+                    val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
+                }
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Pause-on-unplug — mirrors the toggle in Miku Music's Sound Settings page
+            // (quick settings + sound page only; deliberately NOT in the volume modal).
+            // State lives in Settings.Global "miku_pause_on_unplug"; the broadcast lets
+            // the player apply it live to the running ExoPlayer.
+            var pauseOnUnplug by remember {
+                mutableStateOf(
+                    android.provider.Settings.Global.getInt(ctx.contentResolver, "miku_pause_on_unplug", 1) == 1
+                )
+            }
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "PAUSE ON UNPLUG",
+                subtitle = if (pauseOnUnplug) "STOCK BEHAVIOR" else "KEEP PLAYING",
+                icon = Icons.Default.HeadsetOff,
+                accentColor = if (pauseOnUnplug) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
+                isActive = pauseOnUnplug,
+                onClick = {
+                    val next = !pauseOnUnplug
+                    pauseOnUnplug = next
+                    scope.launch(Dispatchers.IO) {
+                        runCatching {
+                            android.provider.Settings.Global.putInt(
+                                ctx.contentResolver, "miku_pause_on_unplug", if (next) 1 else 0
+                            )
+                        }.getOrNull() ?: RootShell.execFast(
+                            "settings put global miku_pause_on_unplug ${if (next) 1 else 0}"
+                        )
+                    }
+                    ctx.sendBroadcast(
+                        Intent("com.miku.player.SET_PAUSE_ON_UNPLUG")
+                            .setPackage("com.miku.player")
+                            .putExtra("enabled", next)
+                    )
+                }
+            )
+            // Ingress engine (network rsync ingest) — OFF by default; while off only local
+            // SD-card scan updates run. State = Settings.Global "miku_ingest_enabled";
+            // the FS & Ingestion modal shows the same switch and reflects this live.
+            var ingestOn by remember {
+                mutableStateOf(com.miku.launcher.ingest.MikuIngestEngine.isEngineEnabled(ctx))
+            }
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "INGRESS ENGINE",
+                subtitle = if (ingestOn) "RSYNC INGEST ON" else "LOCAL SD ONLY",
+                icon = Icons.Default.Sync,
+                accentColor = if (ingestOn) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
+                isActive = ingestOn,
+                onClick = {
+                    val next = !ingestOn
+                    ingestOn = next
+                    com.miku.launcher.ingest.MikuIngestEngine.setEngineEnabled(ctx, next)
+                }
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // System-wide track-change popup (SystemUI draws it; Miku Music stops broadcasting
+            // when 0). State = Settings.Global "miku_track_hud_enabled", default 1.
+            var trackHudOn by remember {
+                mutableStateOf(
+                    try { android.provider.Settings.Global.getInt(ctx.contentResolver, "miku_track_hud_enabled", 1) == 1 } catch (_: Throwable) { true }
+                )
+            }
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "NOW PLAYING HUD",
+                subtitle = if (trackHudOn) "TRACK POPUP ON" else "TRACK POPUP OFF",
+                icon = Icons.Default.MusicNote,
+                accentColor = if (trackHudOn) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
+                isActive = trackHudOn,
+                onClick = {
+                    val next = !trackHudOn
+                    trackHudOn = next
+                    scope.launch(Dispatchers.IO) {
+                        runCatching {
+                            android.provider.Settings.Global.putInt(ctx.contentResolver, "miku_track_hud_enabled", if (next) 1 else 0)
+                        }.getOrNull() ?: RootShell.execFast("settings put global miku_track_hud_enabled ${if (next) 1 else 0}")
+                    }
+                }
+            )
+            // POWER MODE: Settings.Global miku_power_mode auto → perf → save (Miku Music's
+            // governor honours it); subtitle shows the live profile while in AUTO.
+            val powerMode by com.miku.launcher.ui.rememberPowerMode()
+            val liveProfile by com.miku.launcher.ui.rememberPowerProfile()
+            CyberQuickTile(
+                modifier = Modifier.weight(1f),
+                title = "POWER MODE",
+                subtitle = com.miku.launcher.ui.MikuPowerProfile.modeGlyph(powerMode, liveProfile) + " " +
+                    com.miku.launcher.ui.MikuPowerProfile.modeLabel(powerMode, liveProfile),
+                icon = when (powerMode) { "perf" -> Icons.Default.Bolt; "save" -> Icons.Default.DarkMode; else -> Icons.Default.AutoAwesome },
+                accentColor = when (powerMode) {
+                    "perf" -> com.miku.launcher.ui.MikuIdentity.PinkNeon
+                    "save" -> com.miku.launcher.ui.MikuIdentity.Lavender
+                    else -> com.miku.launcher.ui.MikuIdentity.Teal
+                },
+                isActive = powerMode != "auto",
+                onClick = {
+                    com.miku.launcher.ui.MikuPowerProfile.cycleMode(ctx)
+                    com.miku.launcher.haptics.MikuHaptics.confirm(ctx)
+                },
+                onLongClick = { com.miku.launcher.ui.MikuPowerProfile.openGovernor(ctx) }
+            )
+        }
+    }
+}
+
+/**
+ * SIM-shield banner, weather card and power/close footer of the notification shade.
+ *
+ * Extracted out of [CyberNotificationShadeModal] to get the parent back under ART's
+ * 16384-dex-instruction JIT limit; over that limit the method is refused by the JIT
+ * and interpreted on every recomposition.
+ */
+@Composable
+private fun CyberShadeFooterSection(onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+
+    // Telemetry & Weather
+    val weatherState by com.miku.launcher.weather.MikuWeatherService.state.collectAsState()
+    val netState by com.miku.launcher.network.MikuNetworkService.state.collectAsState()
+
+    // Cellular status — REAL, from MikuNetworkService.
+    // WAS: an unconditional green "live" banner reading
+    //   "🛡️ DATA-ONLY SIM SHIELD: GOOGLE FI & IMS NAGS SUPPRESSED"
+    // which asserted (a) that the SIM was a Google Fi data-only SIM and (b) that a suppression had
+    // been applied. Neither was ever checked, it rendered with no SIM in the tray at all, and the
+    // only thing that could apply such a change is a RootShell write that silently no-ops on this
+    // (rootless) device. NOW: the carrier and SIM state we can actually read, and nothing at all
+    // until the telemetry poll has run or when no SIM is present.
+    val cell = netState.cellular
+    if (netState.lastUpdated > 0L && cell.isConnected) {
+        val liveTint = if (cell.dataConnected) com.miku.launcher.ui.MikuIdentity.Leek else Color(0xFFFFB300)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(liveTint.copy(alpha = 0.18f))
+                .border(1.dp, liveTint, RoundedCornerShape(12.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(liveTint))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "📶 ${cell.carrierName.ifBlank { "SIM" }} · ${cell.simStateLabel.ifBlank { "—" }}",
+                    color = liveTint,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = AudiowideFont
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+    }
+
+    // Weather & Conditions Card
+    val w = weatherState.weather
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0x3300E5FF))
+            .border(1.dp, MikuCyan, RoundedCornerShape(16.dp))
+            .padding(10.dp)
+    ) {
+        // WAS: rendered w.tempF / w.summary / w.feelsLikeF / humidity / wind / precip with NO
+        // freshness gate, so before the first successful fetch the shade printed the model's
+        // neutral defaults as readings: "0°F ·  (Feels 0°F)" and "Humidity: 0% · Wind: 0mph ·
+        // Precip: 0%". A WeatherCondition is only real once lastUpdatedTime > 0.
+        val wxReal = w.lastUpdatedTime > 0L
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (wxReal) w.icon.ifBlank { "🌐" } else "🌐", fontSize = 24.sp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = if (wxReal)
+                        "${w.tempF.toInt()}°F · ${w.summary.ifBlank { "—" }} (Feels ${w.feelsLikeF.toInt()}°F)"
+                    else "No weather data yet",
+                    color = Color.White,
+                    fontSize = 15.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = AudiowideFont
+                )
+                Text(
+                    text = if (wxReal)
+                        "💧 Humidity: ${w.humidityPct}% · 💨 Wind: ${w.windSpeedMph.toInt()}mph ${w.windDirectionCompass} · ☔ Precip: ${w.precipitationProbPct}%"
+                    else "💧 — · 💨 — · ☔ —",
+                    color = MikuTextSecondary,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+
+    // Footer Action Bar: Power Menu (Reboot / Power Off / Dismiss)
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Button(
+            onClick = {
+                scope.launch(Dispatchers.IO) {
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot")).waitFor()
+                }
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0x3300E5FF)),
+            border = BorderStroke(1.dp, MikuCyan),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f).height(42.dp)
+        ) {
+            Text("⚡ REBOOT", color = MikuCyan, fontSize = 14.sp, fontFamily = AudiowideFont)
+        }
+
+        Button(
+            onClick = {
+                scope.launch(Dispatchers.IO) {
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot -p")).waitFor()
+                }
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0x33FF4081)),
+            border = BorderStroke(1.dp, MikuNeonPink),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f).height(42.dp)
+        ) {
+            Text("💤 POWER OFF", color = MikuNeonPink, fontSize = 14.sp, fontFamily = AudiowideFont)
+        }
+
+        Button(
+            onClick = onClose,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0x22FFFFFF)),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f).height(42.dp)
+        ) {
+            Text("✕ CLOSE", color = Color.White, fontSize = 14.sp, fontFamily = AudiowideFont)
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+}
+
+
+/**
+ * THE QUILT — top-bar badge patchwork, plus the severe-weather banner under it.
+ *
+ * Extracted out of [MikuLauncherScreen]: that composable compiled to ~16.2k dex
+ * instructions, right at ART's 16384-instruction JIT ceiling, past which a method is
+ * never JIT-compiled and is re-interpreted on every recomposition (the home screen's
+ * main-thread stalls). Content, order and modifiers are unchanged; the quilt's own
+ * telemetry collectors simply live here now, next to their only consumer.
+ */
+@Composable
+private fun MikuLauncherQuiltSection(
+    currentTime: String,
+    currentDate: String,
+    isAudioPlaying: Boolean,
+    npAccent: com.miku.launcher.ui.NpAccent,
+    cpuTempC: Float,
+    batteryTempC: Float,
+    batteryPct: Int,
+    isCharging: Boolean,
+    topBarTheme: MikuTopBarTheme,
+    quiltConfig: com.miku.launcher.ui.MikuQuiltConfig,
+    quiltOrder: List<String>,
+    onQuiltOrderChange: (List<String>) -> Unit,
+    onOpenWeatherObservatory: () -> Unit,
+    onOpenGps: () -> Unit,
+    onOpenNetworkObservatory: () -> Unit,
+    onOpenBpmObservatory: () -> Unit,
+    onOpenFsIngest: () -> Unit,
+    onOpenBrain: () -> Unit,
+    onOpenThermal: () -> Unit,
+    onOpenBattery: () -> Unit,
+    onOpenQuickSettings: () -> Unit
+) {
+    val ctx = LocalContext.current
+    // ============================================================
+    // THE QUILT — the badge patchwork directly under the top bar (both always visible).
+    // Long-press-drag a badge to rearrange; size / density / rows / backdrop live in the
+    // home long-press menu → "Quilt & badges". The hearts clock stays here as a patch.
+    // ============================================================
+    val networkState by com.miku.launcher.network.MikuNetworkService.state.collectAsState()
+    val weatherState by com.miku.launcher.weather.MikuWeatherService.state.collectAsState()
+    val npBpm by com.miku.launcher.bpm.MikuBpmEngine.state.collectAsState()
+    val quiltBadges = listOf(
+        QuiltBadge("clock", "Hearts clock") {
+            Box(
+                Modifier.clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null
+                ) { launchClockApp(ctx) }
+            ) { CyberPlasmaGlowClock(time = currentTime, date = currentDate) }
+        },
+        // Full-width Miku weather TILE (Open-Meteo + optional Windy, real AQI, 6h strip,
+        // 3-day row). Self-contained: owns its engine + detail sheet, no launcher state.
+        QuiltBadge("wxtile", "Weather tile") {
+            com.miku.launcher.widget.MikuWeatherTile(onOpenObservatory = onOpenWeatherObservatory)
+        },
+        QuiltBadge("gps", "GPS") {
+            MikuCyberWeatherGpsBadge(
+                weather = weatherState.weather,
+                gps = weatherState.gps,
+                onWeatherClick = onOpenWeatherObservatory,
+                onGpsClick = onOpenGps,
+                modifier = Modifier.width(176.dp)
+            )
+        },
+        QuiltBadge("network", "Wi-Fi & LTE") {
+            ConnectedRfNetworkCapsule(
+                wifi = networkState.wifi,
+                cell = networkState.cellular,
+                radioStateKnown = networkState.lastUpdated != 0L,
+                onClick = onOpenNetworkObservatory
+            )
+        },
+        QuiltBadge("nowplaying", "Now playing / BPM") {
+            Box(
+                Modifier.then(
+                    if (npAccent.active) Modifier.border(1.2.dp, npAccent.full.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+                    else Modifier
+                )
+            ) {
+                MikuNowPlayingBadge(
+                    bpm = npBpm.bpm,
+                    isPlaying = isAudioPlaying || npBpm.isPlaying,
+                    beatIntervalMs = npBpm.beatIntervalMs,
+                    onClick = onOpenBpmObservatory
+                )
+            }
+        },
+        QuiltBadge("dac", "CS43198 DAC") {
+            CyberBespokeBadge(
+                onClick = {
+                    try {
+                        val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
+                    } catch (_: Throwable) {}
+                },
+                accentColor = Color(0xFF7C4DFF),
+                gradient = listOf(Color(0x447C4DFF), Color(0xFF0A0418)),
+                shape = DacChipShape
+            ) {
+                Box(Modifier.size(5.5.dp).clip(CircleShape).background(Color(0xFF7C4DFF)))
+                Spacer(Modifier.width(3.5.dp))
+                Text("CS43198", color = Color(0xFFB388FF), fontSize = 11.5.sp, fontWeight = FontWeight.Black, fontFamily = AudiowideFont, maxLines = 1)
+            }
+        },
+        QuiltBadge("ingest", "FS ingestion") {
+            com.miku.launcher.ingest.MikuIngestionBadge(onClick = onOpenFsIngest)
+        },
+        QuiltBadge("library", "Library") {
+            com.miku.launcher.track.MikuLibraryTrackBadge(onClick = onOpenFsIngest)
+        },
+        QuiltBadge("brain", "Brain") {
+            CyberBespokeBadge(
+                onClick = onOpenBrain,
+                accentColor = Color(0xFF00FF7F),
+                gradient = listOf(Color(0x3300FF7F), Color(0xFF04150E)),
+                shape = BrainShieldShape
+            ) {
+                Box(Modifier.size(5.5.dp).clip(CircleShape).background(Color(0xFF00FF7F)))
+                Spacer(Modifier.width(3.5.dp))
+                Text("BRAIN", color = Color(0xFF00FF7F), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont, maxLines = 1)
+            }
+        },
+        QuiltBadge("thermal", "Thermal") {
+            MikuThermalBadge(cpuTempC = cpuTempC, batteryTempC = batteryTempC, onClick = onOpenThermal)
+        },
+        QuiltBadge("volume", "Volume") {
+            com.miku.launcher.volume.CyberVolumeBadge(onClick = { com.miku.launcher.volume.MikuVolumeManager.triggerHud(ctx) })
+        },
+        QuiltBadge("battery", "Battery") {
+            MikuQuantumBatteryBadge(batteryPct = batteryPct, isCharging = isCharging, onClick = onOpenBattery)
+        },
+        QuiltBadge("control", "MikuOS control") {
+            Box(Modifier.width(96.dp)) {
+                CyberBespokeBadge(
+                    onClick = onOpenQuickSettings,
+                    accentColor = MikuCyan,
+                    gradient = listOf(Color(0x3300E5FF), Color(0xFF041015)),
+                    shape = IngressStreamShape
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = "MikuOS control", tint = MikuCyan, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("CONTROL", color = MikuCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont, maxLines = 1)
+                }
+            }
+        }
+    )
+    Box(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 3.dp).graphicsLayer()) {
+        MikuTopBarBackground(topBarTheme, Modifier.matchParentSize())
+        com.miku.launcher.ui.MikuBadgeQuilt(
+            badges = quiltBadges,
+            order = quiltOrder,
+            onOrderChange = onQuiltOrderChange,
+            config = quiltConfig
+        )
+    }
+    // Active severe weather warning banner (if any)
+    if (weatherState.weather.severeWarning != null) {
+        Spacer(Modifier.height(3.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+                .clip(CutCornerShape(8.dp))
+                .background(Brush.horizontalGradient(listOf(com.miku.launcher.ui.MikuIdentity.Coral, Color(0xFFB71C1C))))
+                .border(1.dp, Color(0xFFFF5252), CutCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = weatherState.weather.severeWarning ?: "",
+                color = Color.White,
+                fontSize = MikuDimens.textXs,
+                fontWeight = FontWeight.Black,
+                fontFamily = AudiowideFont,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * BOTTOM 3D EMBOSSED DIVA DOCK TRAY (anchor bar + protruding Miku pearl).
+ *
+ * Extracted out of [MikuLauncherScreen]: the parent sat at ~16.2k dex instructions,
+ * at ART's 16384-instruction JIT limit, so it ran interpreted on every recomposition.
+ * This is the densest part of the home tree (deeply nested inline Box/Row/Column with
+ * gradient brushes), so it moves out whole — identical composables, order and modifiers.
+ */
+@Composable
+private fun MikuLauncherDivaDock(
+    hasActiveAudioOutput: Boolean,
+    isAudioPlaying: Boolean,
+    npAccent: com.miku.launcher.ui.NpAccent,
+    onOpenAllApps: () -> Unit,
+    onOpenHardware: () -> Unit,
+    onOpenWeather: () -> Unit
+) {
+    val ctx = LocalContext.current
+    // ============================================================
+    // BOTTOM 3D EMBOSSED DIVA DOCK TRAY
+    // Features spinning rainbow sweep gradient ring, BPM aura pulse,
+    // bottom-aligned bold centerpiece text, and horizontal swipe quick app switching
+    // ============================================================
+    val bpmState by com.miku.launcher.bpm.MikuBpmEngine.state.collectAsState()
+    val isBpmAudioPlaying = hasActiveAudioOutput && (isAudioPlaying || bpmState.isPlaying)
+    val liveBpm = if (bpmState.bpm in 40f..260f) bpmState.bpm else 128f
+    val beatIntervalMs = (60_000f / liveBpm).toInt().coerceIn(240, 1500)
+
+    // Ambient-gated: the dock aura only animates while someone is looking (MikuAmbient).
+    val lowPowerGate by com.miku.launcher.ui.rememberAmbientGate()
+    androidx.compose.runtime.LaunchedEffect(isBpmAudioPlaying) { com.miku.launcher.ui.MikuAmbient.setPlaying(isBpmAudioPlaying) }
+
+    val dockInfiniteTransition = rememberInfiniteTransition(label = "DivaDockAura")
+    val rainbowRotation by dockInfiniteTransition.gatedFloat(lowPowerGate, 
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (isBpmAudioPlaying) 6000 else 16000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "DockRainbowRotate"
+    )
+
+    // Subtle BPM background aura glow (ONLY animated when active audio output = true)
+    val bpmAuraAlpha by dockInfiniteTransition.gatedFloat(lowPowerGate, 
+        initialValue = if (isBpmAudioPlaying) 0.35f else 0.18f,
+        targetValue = if (isBpmAudioPlaying) 0.72f else 0.18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (isBpmAudioPlaying) (beatIntervalMs / 2) else 3000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "DockBpmAura"
+    )
+
+    val rainbowStops = remember {
+        listOf(
+            Color(0xFF00E5FF), // Cyan
+            Color(0xFF00FF88), // Mint
+            com.miku.launcher.ui.MikuIdentity.Gold, // Gold
+            Color(0xFFFF4081), // Pink
+            Color(0xFFB388FF), // Purple
+            Color(0xFF00E5FF)  // Cyan
+        )
+    }
+
+    // Anchor bar: ONE evenly-spaced row of 5 equal cells (Hardware · FM · Miku Music · Settings ·
+    // Weather) — Miku-suite destinations ONLY, no third-party apps. 48dp icons, the Miku anchor one step larger (56dp), 11sp labels on every cell,
+    // nothing absolutely positioned, so nothing can overlap or wrap at 360dp.
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 14.dp)
+            .pointerInput(Unit) {
+                var totalDragX = 0f
+                var totalDragY = 0f
+                detectDragGestures(
+                    onDragStart = { totalDragX = 0f; totalDragY = 0f },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        totalDragX += dragAmount.x
+                        totalDragY += dragAmount.y
+                    },
+                    onDragEnd = {
+                        // Swipe UP on the dock = app drawer. App switching lives on the system pill.
+                        val thresholdPx = 40 * ctx.resources.displayMetrics.density
+                        if (kotlin.math.abs(totalDragY) > kotlin.math.abs(totalDragX) && totalDragY < -thresholdPx) {
+                            onOpenAllApps()
+                        }
+                    }
+                )
+            }
+    ) {
+        // Shorter glass tray; the pearl above is drawn OUTSIDE it (no clip on the outer Box).
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+            .clip(RoundedCornerShape(MikuDimens.cornerL))
+            .background(Brush.verticalGradient(listOf(Color(0xEE0D2630), Color(0xFF06141B))))
+            .border(
+                BorderStroke(
+                    1.dp,
+                    Brush.verticalGradient(
+                        listOf(
+                            CyberGlassBorder.copy(alpha = 0.9f),
+                            CyberGlassBorder.copy(alpha = 0.25f),
+                            CyberGlassBorder.copy(alpha = 0.65f)
+                        )
+                    )
+                ),
+                RoundedCornerShape(MikuDimens.cornerL)
+            )
+            .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 5.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            // Anchor bar is Miku-suite ONLY (no third-party apps). This cell used to
+            // launch Chrome/Firefox; it now opens the in-launcher Hardware (Anatomical/DAC)
+            // observatory — the device's real hardware readout, no external dependency.
+            DockIconItem(
+                iconRes = R.drawable.ic_miku_monitor_status,
+                label = "Hardware",
+                modifier = Modifier.weight(1f),
+                onClick = onOpenHardware
+            )
+            DockIconItem(
+                iconRes = R.drawable.ic_fm_miku,
+                label = "FM Radio",
+                modifier = Modifier.weight(1f),
+                onClick = { launchMikuFm(ctx) }
+            )
+            // Reserved slot for the Miku Pearl (drawn above the tray, see below): keeps the
+            // even 5-cell spacing and holds the label at the same baseline as the others.
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Spacer(Modifier.size(48.dp))
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Miku Music",
+                    color = if (isBpmAudioPlaying) MikuNeonPink else MikuCyan,
+                    fontSize = MikuDimens.textXs,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+            DockIconItem(
+                iconRes = R.drawable.ic_settings_miku,
+                label = "Settings",
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
+                }
+            )
+            // Was Files (launched DocumentsUI); now the in-launcher Weather observatory.
+            DockIconItem(
+                iconRes = R.drawable.ic_weather_miku,
+                label = "Weather",
+                modifier = Modifier.weight(1f),
+                onClick = onOpenWeather
+            )
+        }
+        }
+        // MIKU PEARL: the Miku Music anchor, larger than the dock icons and protruding above the
+        // bar's top edge (drawn after the tray, so it is above it in z-order). Magic-lamp launch.
+            val mikuMusicInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp)
+                    .mikuPressScale(
+                        pressedScale = 0.86f,
+                        glowColor = Color(0xFFFF007F),
+                        interactionSource = mikuMusicInteraction
+                    )
+                    .clickable(
+                        interactionSource = mikuMusicInteraction,
+                        indication = null
+                    ) {
+                        try {
+                            val intent = Intent().apply {
+                                setClassName("com.miku.player", "com.miku.player.MainActivity")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                            }
+                            val options = android.app.ActivityOptions.makeCustomAnimation(
+                                ctx,
+                                R.anim.magic_lamp_expand,
+                                R.anim.magic_lamp_fade_out
+                            )
+                            ctx.startActivity(intent, options.toBundle())
+                        } catch (_: Throwable) {}
+                    }
+            ) {
+                Box(
+                    Modifier
+                        .size(62.dp)
+                        .background(
+                            Brush.radialGradient(
+                                listOf(
+                                    if (isBpmAudioPlaying) Color(bpmState.dominantColor).copy(alpha = bpmAuraAlpha) else npAccent.full.copy(alpha = 0.20f),
+                                    Color(0xFFB388FF).copy(alpha = if (isBpmAudioPlaying) 0.25f else 0.08f),
+                                    Color.Transparent
+                                )
+                            ),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { rotationZ = rainbowRotation }
+                            .border(BorderStroke(2.5.dp, Brush.sweepGradient(colors = rainbowStops)), CircleShape)
+                    )
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_miku_music_brand),
+                        contentDescription = "Miku Music",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(2.5.dp)
+                            .clip(CircleShape)
+                    )
+                }
+            }
+    }
+}
+
+/**
+ * Quick-settings shade, USB-host modal and the wallpaper / theme picker dialog.
+ *
+ * Extracted out of [MikuLauncherScreen] to pull that composable back from ART's
+ * 16384-dex-instruction JIT ceiling (it measured ~16.2k and therefore ran interpreted
+ * on every recomposition). Same composables, same visibility conditions.
+ */
+@Composable
+private fun MikuLauncherShadeAndWallpaperModals(
+    isCyberQuickSettingsOpen: Boolean,
+    onCloseQuickSettings: () -> Unit,
+    batteryPct: Int,
+    isCharging: Boolean,
+    isWifiConnected: Boolean,
+    currentTime: String,
+    currentDate: String,
+    showUsbHostModal: Boolean,
+    onDismissUsbHostModal: () -> Unit,
+    isWallpaperPickerOpen: Boolean,
+    onCloseWallpaperPicker: () -> Unit,
+    onPickFromGallery: () -> Unit,
+    customWallpaperUri: String?,
+    onCustomWallpaperUriChange: (String?) -> Unit,
+    onWallpaperIdChange: (String) -> Unit,
+    prefs: SharedPreferences,
+    wallpapers: List<MikuWallpaperTheme>,
+    currentWallpaperRes: Int
+) {
+    val ctx = LocalContext.current
+    // Cosmetics earned in the BPM game. A locked card stays VISIBLE (hiding it means nobody
+    // learns the reward exists) but is labelled and refuses selection. Ids are MikuUnlocks'.
+    val lockedCosmetics = remember {
+        val u = com.miku.launcher.bpm.MikuUnlocks.unlockedIds(ctx)
+        mapOf(
+            "w6" to com.miku.launcher.bpm.MikuUnlocks.OS_WALLPAPER_NEON_WAVE,
+            "w7" to com.miku.launcher.bpm.MikuUnlocks.OS_WALLPAPER_CYBER_HOLOGRAM,
+            "theme_cozy_cafe" to com.miku.launcher.bpm.MikuUnlocks.OS_THEME_COZY_CAFE,
+            "theme_cyber_stage" to com.miku.launcher.bpm.MikuUnlocks.OS_THEME_CYBER_STAGE
+        ).filterValues { it !in u }.keys
+    }
+    // ============================================================
+    // CYBER NOTIFICATION SHADE & QUICK SETTINGS MODAL
+    // ============================================================
+    AnimatedVisibility(
+        visible = isCyberQuickSettingsOpen,
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+    ) {
+        CyberNotificationShadeModal(
+            onClose = onCloseQuickSettings,
+            onOpenSettings = {
+                onCloseQuickSettings()
+                val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
+            },
+            onOpenAudioSettings = {
+                onCloseQuickSettings()
+                val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
+            },
+            batteryPct = batteryPct,
+            isCharging = isCharging,
+            isWifiConnected = isWifiConnected,
+            currentTime = currentTime,
+            currentDate = currentDate
+        )
+    }
+
+    // ============================================================
+    // SYSTEM-WIDE USB HOST CONTROLLER MODAL
+    // ============================================================
+    if (showUsbHostModal) {
+        com.miku.launcher.usb.MikuUsbHostModal(
+            onDismissRequest = onDismissUsbHostModal
+        )
+    }
+
+    // ============================================================
+    // WALLPAPER & THEME PICKER MODAL (LONG-PRESS DESKTOP)
+    // ============================================================
+    if (isWallpaperPickerOpen) {
+        AlertDialog(
+            onDismissRequest = onCloseWallpaperPicker,
+            containerColor = Color(0xF50A1E26),
+            title = {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Wallpaper & Gallery Picker", color = MikuCyan, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                    IconButton(onClick = onCloseWallpaperPicker) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
+                    }
+                }
+            },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    // 1. Primary Action: Direct System Gallery Picker
+                    Button(
+                        onClick = {
+                            onCloseWallpaperPicker()
+                            onPickFromGallery()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MikuCyan.copy(alpha = 0.25f)),
+                        border = BorderStroke(1.5.dp, MikuCyan),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("🖼 Choose From Gallery / Files", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                    }
+
+                    if (customWallpaperUri != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                onCustomWallpaperUriChange(null)
+                                prefs.edit().remove("custom_wallpaper_uri").apply()
+                                onCloseWallpaperPicker()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(38.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MikuNeonPink.copy(alpha = 0.2f)),
+                            border = BorderStroke(1.dp, MikuNeonPink),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("🔄 Reset to Default Miku Artwork", color = MikuNeonPink, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    Text("Or select built-in Hatsune Miku desktop artwork:", color = MikuTextSecondary, fontSize = 11.sp)
+                    Spacer(Modifier.height(8.dp))
+
+                    LazyRow(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(wallpapers) { wp ->
+                            val isSelected = (customWallpaperUri == null && currentWallpaperRes == wp.resId)
+                            val isLocked = wp.id in lockedCosmetics
+                            Column(
+                                Modifier
+                                    .width(90.dp)
+                                    .clickable(enabled = !isLocked) {
+                                        onCustomWallpaperUriChange(null)
+                                        prefs.edit().remove("custom_wallpaper_uri").apply()
+                                        onWallpaperIdChange(wp.id)
+                                        prefs.edit().putString("current_wallpaper_id", wp.id).apply()
+                                        // Persist to the theme engine when a built-in theme is chosen.
+                                        if (wp.id.startsWith("theme_")) {
+                                            com.miku.launcher.theme.MikuThemeRegistry.selectTheme(ctx, wp.id.removePrefix("theme_"))
+                                        }
+                                        onCloseWallpaperPicker()
+                                    },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(width = 90.dp, height = 140.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .border(if (isSelected) 2.dp else 1.dp, if (isSelected) MikuCyan else Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = wp.resId),
+                                        contentDescription = wp.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                        alpha = if (isLocked) 0.3f else 1f
+                                    )
+                                    if (isLocked) {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            Text("\uD83D\uDD12", fontSize = 26.sp)
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = if (isLocked) "Locked \u00B7 BPM game" else wp.name,
+                                    color = if (isLocked) Color.White.copy(alpha = 0.55f) else if (isSelected) MikuCyan else Color.White,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+}
+
+/**
+ * All-apps drawer sheet, recents overview and the long-press app context dialog.
+ *
+ * Extracted out of [MikuLauncherScreen]: the parent measured ~16.2k dex instructions,
+ * at ART's 16384-instruction JIT limit, so it was refused by the JIT and interpreted on
+ * every recomposition. Behaviour, ordering and the drawer's finger-follow physics are
+ * unchanged — only the lexical home of the block moved.
+ */
+@Composable
+private fun MikuLauncherDrawerAndRecents(
+    drawerSheet: com.miku.launcher.ui.DrawerSheetState,
+    drawerHeightPx: Float,
+    allApps: List<InstalledApp>,
+    searchQuery: String,
+    onSearchChange: (String) -> Unit,
+    selectedCategory: String,
+    onCategoryChange: (String) -> Unit,
+    onCloseAllApps: () -> Unit,
+    onOpenQuickSettings: () -> Unit,
+    contextMenuApp: InstalledApp?,
+    onContextMenuAppChange: (InstalledApp?) -> Unit,
+    isRecentsOpen: Boolean,
+    onCloseRecents: () -> Unit,
+    recentTasks: List<RecentTaskItem>,
+    onRecentTasksChange: (List<RecentTaskItem>) -> Unit,
+    pinnedPackages: Set<String>,
+    onTogglePinDesktop: (String) -> Unit
+) {
+    val ctx = LocalContext.current
+    // ============================================================
+    // ALL-APPS CYBER DRAWER SHEET (SWIPE-UP GESTURE)
+    // ============================================================
+    // Pixel-style drawer SHEET: translated by (1 - progress) * height so it follows the finger
+    // from the home swipe, settles with a spring, scrim fades with progress, grid parallax.
+    run {
+        // Scrim + sheet translation are driven from the Animatable inside draw/layer lambdas
+        // (frame-rate work only, zero recomposition of this screen); the sheet stays composed
+        // even when closed (translated fully off-screen) so opening never pays a first-frame
+        // composition hitch.
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            alpha = 0.6f * drawerSheet.progress.value.coerceIn(0f, 1f)
+        }.background(Color.Black))
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            val pr = drawerSheet.progress.value
+            translationY = (1f - pr) * drawerHeightPx
+            alpha = if (pr <= 0.001f) 0f else 1f
+        }) {
+            CyberAllAppsDrawer(
+                apps = allApps,
+                searchQuery = searchQuery,
+                onSearchChange = onSearchChange,
+                selectedCategory = selectedCategory,
+                onCategoryChange = onCategoryChange,
+                onLaunchApp = {
+                    onCloseAllApps()
+                    launchApp(ctx, it)
+                },
+                onAppLongClick = { onContextMenuAppChange(it) },
+                onOpenQuickSettings = onOpenQuickSettings,
+                onClose = onCloseAllApps,
+                sheet = drawerSheet,
+                revealProgress = { drawerSheet.progress.value }
+            )
+        }
+    }
+
+    // ============================================================
+    // PIXEL-STYLE RECENTS MULTI-TASKING OVERVIEW (SWIPE & HOLD)
+    // ============================================================
+    AnimatedVisibility(
+        visible = isRecentsOpen,
+        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+    ) {
+        CyberRecentsOverview(
+            tasks = recentTasks,
+            onSelectTask = { task ->
+                onCloseRecents()
+                bringTaskToFront(ctx, task)
+            },
+            onDismissTask = { task ->
+                dismissTask(ctx, task)
+                onRecentTasksChange(recentTasks.filter { it.taskId != task.taskId })
+            },
+            onClearAll = {
+                clearAllTasks(ctx, recentTasks)
+                onRecentTasksChange(emptyList())
+                onCloseRecents()
+            },
+            onClose = onCloseRecents
+        )
+    }
+
+    // Context Menu Dialog (Long-press App QoL)
+    if (contextMenuApp != null) {
+        val app = contextMenuApp!!
+        CyberAppContextDialog(
+            app = app,
+            isPinnedOnDesktop = pinnedPackages.contains(app.packageName),
+            onDismiss = { onContextMenuAppChange(null) },
+            onAppInfo = {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${app.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.MODAL))
+                } catch (_: Throwable) {}
+            },
+            onUninstall = {
+                try {
+                    val intent = Intent(Intent.ACTION_DELETE).apply {
+                        data = Uri.parse("package:${app.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.MODAL))
+                } catch (_: Throwable) {}
+            },
+            onTogglePinDesktop = {
+                onTogglePinDesktop(app.packageName)
+            }
+        )
+    }
+}
+
+/**
+ * Quilt-options / home long-press dialogs, the observatory modal-host stack, the
+ * floating volume HUD and the first-boot onboarding wizard.
+ *
+ * Extracted out of [MikuLauncherScreen], which measured ~16.2k dex instructions — ART
+ * refuses to JIT-compile any method over 16384, so the home screen was re-interpreted
+ * on every recomposition. Declared as a BoxScope extension so the volume HUD keeps its
+ * Modifier.align(Alignment.TopEnd) against the same root Box as before.
+ */
+@Composable
+private fun BoxScope.MikuLauncherObservatoryModals(
+    quiltConfig: com.miku.launcher.ui.MikuQuiltConfig,
+    onQuiltConfigChange: (com.miku.launcher.ui.MikuQuiltConfig) -> Unit,
+    topBarTheme: MikuTopBarTheme,
+    onCycleQuiltBackground: () -> Unit,
+    onResetQuiltOrder: () -> Unit,
+    isQuiltOptionsOpen: Boolean,
+    onOpenQuiltOptions: () -> Unit,
+    onCloseQuiltOptions: () -> Unit,
+    isDesktopContextMenuOpen: Boolean,
+    onCloseDesktopContextMenu: () -> Unit,
+    onOpenWallpaperPicker: () -> Unit,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+    pagerState: androidx.compose.foundation.pager.PagerState,
+    isRecentsOpen: Boolean,
+    onCloseRecents: () -> Unit,
+    recentTasks: List<RecentTaskItem>,
+    onRecentTasksChange: (List<RecentTaskItem>) -> Unit,
+    isWeatherObservatoryOpen: Boolean,
+    onCloseWeatherObservatory: () -> Unit,
+    isGpsModalOpen: Boolean,
+    onCloseGps: () -> Unit,
+    isBatteryObservatoryOpen: Boolean,
+    onCloseBatteryObservatory: () -> Unit,
+    isNetworkObservatoryOpen: Boolean,
+    onCloseNetworkObservatory: () -> Unit,
+    isBrainModalOpen: Boolean,
+    onCloseBrain: () -> Unit,
+    isBpmObservatoryOpen: Boolean,
+    onCloseBpmObservatory: () -> Unit,
+    isFsIngestModalOpen: Boolean,
+    onCloseFsIngest: () -> Unit,
+    isThermalObservatoryOpen: Boolean,
+    onCloseThermal: () -> Unit,
+    cpuTempC: Float,
+    batteryTempC: Float,
+    batteryPct: Int,
+    isCharging: Boolean,
+    isOnboardingOpen: Boolean,
+    onFinishOnboarding: () -> Unit,
+    prefs: SharedPreferences
+) {
+    val ctx = LocalContext.current
+    // ============================================================
+    // VERBOSE MIKU MONITOR, BRAIN & OBSERVATORY MODALS
+    // ============================================================
+    if (isQuiltOptionsOpen) {
+        com.miku.launcher.ui.MikuQuiltOptionsDialog(
+            config = quiltConfig,
+            onConfigChange = onQuiltConfigChange,
+            backgroundName = topBarTheme.displayName,
+            onCycleBackground = onCycleQuiltBackground,
+            onResetOrder = onResetQuiltOrder,
+            onDismiss = onCloseQuiltOptions
+        )
+    }
+    if (isDesktopContextMenuOpen) {
+        com.miku.launcher.menu.MikuHomescreenLongpressMenu(
+            onWallpaperAndStyle = onOpenWallpaperPicker,
+            onQuiltOptions = onOpenQuiltOptions,
+            onWidgets = {
+                coroutineScope.launch {
+                    if (pagerState.pageCount > 1) {
+                        pagerState.animateScrollToPage(1)
+                    } else {
+                        val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
+                    }
+                }
+            },
+            onHomeSettings = {
+                val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
+            },
+            onDismiss = onCloseDesktopContextMenu
+        )
+    }
+
+    com.miku.launcher.ui.MikuModalHost(visible = isRecentsOpen, onDismiss = onCloseRecents) {
+        com.miku.launcher.recents.MikuRecentsOverviewCarousel(
+            tasks = recentTasks,
+            onLaunchTask = { task -> bringTaskToFront(ctx, task) },
+            // These used to update the launcher's own list ONLY: the card vanished and the
+            // count went to zero while the app was never stopped and the task never removed —
+            // a completed action the user watched happen that had not happened. (The sibling
+            // CyberRecentsOverview host above always did call these.)
+            onDismissTask = { task ->
+                dismissTask(ctx, task)
+                onRecentTasksChange(recentTasks.filter { it.taskId != task.taskId })
+            },
+            onClearAll = {
+                clearAllTasks(ctx, recentTasks)
+                onRecentTasksChange(emptyList())
+            },
+            onDismissRequest = onCloseRecents
+        )
+    }
+
+    com.miku.launcher.ui.MikuModalHost(visible = isWeatherObservatoryOpen, onDismiss = onCloseWeatherObservatory) {
+        com.miku.launcher.weather.MikuWeatherObservatoryModal(
+            onDismissRequest = onCloseWeatherObservatory
+        )
+    }
+    // Live GPS (5 s HIGH_ACCURACY) only while the tactical map is on screen - see
+    // MikuWeatherService.acquireLiveGps (background-forever GPS was the big idle drain).
+    androidx.compose.runtime.DisposableEffect(isGpsModalOpen) {
+        if (isGpsModalOpen) com.miku.launcher.weather.MikuWeatherService.acquireLiveGps(ctx)
+        onDispose { if (isGpsModalOpen) com.miku.launcher.weather.MikuWeatherService.releaseLiveGps(ctx) }
+    }
+    com.miku.launcher.ui.MikuModalHost(visible = isGpsModalOpen, onDismiss = onCloseGps) {
+        com.miku.launcher.gps.MikuGpsTacticalMapModal(
+            onDismissRequest = onCloseGps
+        )
+    }
+    com.miku.launcher.ui.MikuModalHost(visible = isBatteryObservatoryOpen, onDismiss = onCloseBatteryObservatory) {
+        com.miku.launcher.battery.MikuBatteryObservatoryModal(
+            onDismissRequest = onCloseBatteryObservatory
+        )
+    }
+    com.miku.launcher.ui.MikuModalHost(visible = isNetworkObservatoryOpen, onDismiss = onCloseNetworkObservatory) {
+        com.miku.launcher.network.MikuNetworkObservatoryModal(
+            onDismissRequest = onCloseNetworkObservatory
+        )
+    }
+    com.miku.launcher.ui.MikuModalHost(visible = isBrainModalOpen, onDismiss = onCloseBrain) {
+        com.miku.launcher.observatory.MikuAnatomicalObservatoryModal(
+            onDismissRequest = onCloseBrain
+        )
+    }
+    com.miku.launcher.ui.MikuModalHost(visible = isBpmObservatoryOpen, onDismiss = onCloseBpmObservatory) {
+        val bpmState by com.miku.launcher.bpm.MikuBpmEngine.state.collectAsState()
+        com.miku.launcher.bpm.MikuBpmObservatoryModal(
+            onClose = onCloseBpmObservatory,
+            bpmState = bpmState
+        )
+    }
+    com.miku.launcher.ui.MikuModalHost(visible = isFsIngestModalOpen, onDismiss = onCloseFsIngest) {
+        com.miku.launcher.ingest.MikuFsIngestObservatoryModal(
+            onClose = onCloseFsIngest
+        )
+    }
+    com.miku.launcher.ui.MikuModalHost(visible = isThermalObservatoryOpen, onDismiss = onCloseThermal) {
+        com.miku.launcher.thermal.MikuThermalObservatoryModal(
+            onClose = onCloseThermal,
+            cpuTempC = cpuTempC,
+            batteryTempC = batteryTempC
+        )
+    }
+    // The "QUANTUM CHARGING CORE" screen is only truthful while the device is actually charging.
+    // It was mounted on the SAME flag as the battery observatory with no isCharging check, so
+    // tapping the battery badge on battery power put a full-screen CHARGING panel over it.
+    com.miku.launcher.ui.MikuModalHost(visible = isBatteryObservatoryOpen && isCharging, onDismiss = onCloseBatteryObservatory) {
+        com.miku.launcher.battery.MikuFullscreenChargingModal(
+            onDismiss = onCloseBatteryObservatory,
+            batteryPct = batteryPct,
+            isCharging = isCharging
+        )
+    }
+
+    // Floating In-Theme Cyber Volume HUD Overlay (Top-Right Aligned near Physical Roller)
+    com.miku.launcher.volume.MikuCyberVolumeHudOverlay(
+        ctx = ctx,
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(top = 92.dp, end = 4.dp)
+    )
+
+    val lowPowerGate by com.miku.launcher.ui.rememberAmbientGate()
+
+    val infinitePulse = rememberInfiniteTransition(label = "verPulse")
+    val verColor by infinitePulse.gatedColor(lowPowerGate, 
+        initialValue = Color(0x9989ACA7),
+        targetValue = MikuCyan.copy(alpha = 0.85f),
+        animationSpec = infiniteRepeatable(
+            animation = tween(2500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "verColor"
+    )
+    // ============================================================
+    // MIKUOS BESPOKE 4-STEP FAST-BOOT ONBOARDING WIZARD MODAL
+    // ============================================================
+    if (isOnboardingOpen) {
+        com.miku.launcher.onboarding.MikuOnboardingWizardModal(
+            prefs = prefs,
+            onFinish = onFinishOnboarding
+        )
+    }
+}

@@ -63,9 +63,12 @@ class MikuNotificationShadeService : AccessibilityService() {
         // Gesture geometry (dp)
         const val POWER_HOLD_MS = 450L
         const val EDGE_STRIP_DP = 24
-        const val EDGE_CLAIM_DP = 16f
-        const val EDGE_COMMIT_DP = 32f
-        const val EDGE_UNCOMMIT_DP = 22f
+        // AOSP EdgeBackGestureHandler claims the gesture at the view touch slop and
+        // BackPanelController commits at R.dimen.navigation_edge_action_drag_threshold (16dp).
+        // Ours were 16/32/22, which is roughly double the Pixel's and is why back felt stiff.
+        const val EDGE_CLAIM_DP = 8f
+        const val EDGE_COMMIT_DP = 16f
+        const val EDGE_UNCOMMIT_DP = 10f
         const val EDGE_MAX_DP = 36f
         const val EDGE_VERTICAL_INTENT_PX = 20f
         const val EDGE_MAX_ANGLE_TAN = 1.428f      // tan(55°)
@@ -80,17 +83,37 @@ class MikuNotificationShadeService : AccessibilityService() {
         const val PILL_W_DP = 104f
         const val PILL_H_DP = 4f
         const val HOME_DP = 24f
+        /** Fallback only. The pill uses ViewConfiguration.scaledMinimumFlingVelocity, same as AOSP. */
         const val HOME_FLING_PX_S = 900f
-        const val RECENTS_DP = 48f
-        const val RECENTS_HOLD_MS = 150L
-        const val RECENTS_HOLD_MAX_PX_S = 150f
-        const val QUICK_SWITCH_DP = 32f
+        /**
+         * AOSP `motion_pause_detector_min_displacement`. Overview opens once the swipe has come
+         * this far AND the motion pauses. Was 48dp plus a 150ms stillness timer, which is a much
+         * higher bar than a Pixel and is what made the app switcher feel cumbersome.
+         */
+        const val RECENTS_DP = 24f
+        // AOSP MotionPauseDetector speeds, in dp per MILLISECOND (Launcher3 res/values/dimens.xml:
+        // motion_pause_detector_speed_{very_fast,fast,somewhat_fast,slow}).
+        const val PAUSE_SPEED_VERY_FAST_DP_MS = 3.0f
+        const val PAUSE_SPEED_FAST_DP_MS = 1.0f
+        const val PAUSE_SPEED_SOMEWHAT_FAST_DP_MS = 0.9f
+        const val PAUSE_SPEED_SLOW_DP_MS = 0.15f
+        /** MotionPauseDetector.RAPID_DECELERATION_FACTOR. */
+        const val PAUSE_RAPID_DECELERATION_FACTOR = 0.6f
+        /** MotionPauseDetector.FORCE_PAUSE_TIMEOUT: no motion at all for this long counts as a pause. */
+        const val PAUSE_FORCE_TIMEOUT_MS = 300L
+        /** AOSP quick switch commits just past the touch slop, not at 32dp. */
+        const val QUICK_SWITCH_DP = 16f
         const val QUICK_SWITCH_MAX_DY_DP = 16f
         const val QUICK_SWITCH_SESSION_MS = 2500L
         const val REPLAY_MAX_MS = 600L
     }
 
     private lateinit var windowManager: WindowManager
+    /** OS-wide idle dim + tap-to-awaken ladder (see MikuIdleDim.kt). Lives here because this
+     *  service is the only thing on the device that sees input from every app. */
+    private var idleDim: MikuIdleDimController? = null
+    /** The shade, as a persistent window rather than an Activity. See MikuShadeWindow. */
+    private var shadeWindow: MikuShadeWindow? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val workThread = HandlerThread("miku-nav-work").apply { start() }
     private val workHandler = Handler(workThread.looper)
@@ -111,6 +134,8 @@ class MikuNotificationShadeService : AccessibilityService() {
 
     /** Now-Playing HUD (track-change pop-over drawn in our overlay layer). */
     private var trackHud: MikuTrackHud? = null
+    /** Universal volume HUD overlay for 3rd-party apps (Spotify, etc.). */
+    private var volumeHud: MikuVolumeHud? = null
 
     /** Album accent bled ≈25% into the nav chrome (pill glow, back capsule), animated 400ms. */
     @Volatile private var navTeal = MikuAccent.TEAL
@@ -147,6 +172,11 @@ class MikuNotificationShadeService : AccessibilityService() {
                     if (a != 0) MikuAccent.push(a, a2)
                     trackHud?.show(MikuTrackHud.Payload.from(intent))
                 }
+                "android.media.VOLUME_CHANGED_ACTION",
+                "android.media.MASTER_VOLUME_CHANGED_ACTION",
+                "android.media.RINGER_MODE_CHANGED" -> {
+                    volumeHud?.onVolumeChanged()
+                }
                 ACTION_TRIGGER_BACK, ACTION_DEBUG_BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
                 ACTION_DEBUG_HOME -> triggerHome()
                 ACTION_DEBUG_RECENTS -> openRecents()
@@ -163,7 +193,9 @@ class MikuNotificationShadeService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        idleDim = MikuIdleDimController(this, windowManager)
         trackHud = MikuTrackHud(this, windowManager) { dragPx -> openShadeActivity(dragPx) }
+        volumeHud = MikuVolumeHud(this, windowManager)
         MikuPowerProfile.observe(this)
         startAccentObserver()
         try {
@@ -172,6 +204,9 @@ class MikuNotificationShadeService : AccessibilityService() {
                 addAction(ACTION_DEBUG_HOME); addAction(ACTION_DEBUG_RECENTS)
                 addAction(ACTION_DEBUG_QUICK_SWITCH)
                 addAction(MikuTrackHud.ACTION_TRACK_CHANGED); addAction(MikuTrackHud.ACTION_DEBUG)
+                addAction("android.media.VOLUME_CHANGED_ACTION")
+                addAction("android.media.MASTER_VOLUME_CHANGED_ACTION")
+                addAction("android.media.RINGER_MODE_CHANGED")
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
@@ -184,6 +219,27 @@ class MikuNotificationShadeService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // Before addOverlays(): accessibility overlays stack in add order, so starting the idle
+        // ladder first puts its 1px touch sentinel UNDERNEATH the nav strips rather than stealing
+        // the top-left pixel of the shade pull strip.
+        idleDim?.start()
+        // Attach BEFORE the nav overlays so the shade sits underneath the top strip and the home
+        // pill in z-order: the strip must keep receiving the pull that opens it.
+        if (shadeWindow == null) {
+            shadeWindow = MikuShadeWindow(
+                ctx = this,
+                windowManager = windowManager,
+                onOpenSettings = {
+                    runCatching {
+                        packageManager.getLaunchIntentForPackage("com.miku.settings")
+                            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            ?.let { startActivity(it) }
+                    }
+                },
+                onOpenPower = { openPowerMenuActivity() }
+            )
+        }
+        shadeWindow?.attach()
         addOverlays()
         MikuNotificationStore.ensureEnabled(this)
         suppressStockShade()
@@ -193,7 +249,10 @@ class MikuNotificationShadeService : AccessibilityService() {
 
     override fun onDestroy() {
         try { unregisterReceiver(receiver) } catch (_: Throwable) {}
+        idleDim?.destroy(); idleDim = null
+        shadeWindow?.detach(); shadeWindow = null
         trackHud?.destroy(); trackHud = null
+        volumeHud?.destroy(); volumeHud = null
         accentJob?.cancel(); accentAnim?.cancel()
         removeOverlays()
         try { workThread.quitSafely() } catch (_: Throwable) {}
@@ -221,9 +280,20 @@ class MikuNotificationShadeService : AccessibilityService() {
             val DISABLE_NOTIFICATION_ICONS = 0x00020000
             val DISABLE_SYSTEM_INFO = 0x00100000
             val DISABLE_CLOCK = 0x00800000
-            val flags = DISABLE_EXPAND or DISABLE_NOTIFICATION_ICONS or DISABLE_SYSTEM_INFO or DISABLE_CLOCK
+            // THE DUPLICATE GESTURE PILL. AOSP SystemUI draws its own NavigationBar0 and
+            // SecondaryHomeHandle0 next to our accessibility home pill, so there are two handles
+            // and the bland one is not ours. It cannot be removed with an RRO: idmap2 refuses to
+            // map android:bool/config_showNavigationBar on this device (proven 2026-09-27 — the
+            // resource exists in framework-res AND in our overlay, and the idmap carries only the
+            // other two entries), so baking it would change nothing. StatusBarManager's disable
+            // flags are the runtime lever that is actually ours to pull.
+            val DISABLE_HOME = 0x00200000
+            val DISABLE_BACK = 0x00400000
+            val DISABLE_RECENT = 0x01000000
+            val flags = DISABLE_EXPAND or DISABLE_NOTIFICATION_ICONS or DISABLE_SYSTEM_INFO or
+                DISABLE_CLOCK or DISABLE_HOME or DISABLE_BACK or DISABLE_RECENT
             sb.javaClass.getMethod("disable", Int::class.javaPrimitiveType).invoke(sb, flags)
-            Log.i(TAG, "stock status bar blanked + shade blocked (alerts/sounds preserved)")
+            Log.i(TAG, "stock status bar blanked, shade blocked, stock nav disabled (alerts/sounds preserved)")
         }.onFailure { Log.w(TAG, "suppressStockShade failed: $it") }
     }
 
@@ -307,10 +377,21 @@ class MikuNotificationShadeService : AccessibilityService() {
         }
     }
 
-    private fun openShadeActivity(dragOffsetPx: Int = -1) =
+    /**
+     * Opens the shade. Named for history: it is no longer an Activity.
+     *
+     * MikuShadeActivity cost 524 to 861ms on a warm launch, paid on EVERY pull, with the first
+     * frames of the drag landing inside activity creation. [shadeWindow] is composed once when this
+     * service connects and only shown, which is how a Pixel's shade works. The Activity is still in
+     * the manifest so the quick-settings tile and any external launcher intent keep working.
+     */
+    private fun openShadeActivity(dragOffsetPx: Int = -1) {
+        val w = shadeWindow
+        if (w != null) { w.open(dragOffsetPx); return }
         launchOwnActivity(MikuShadeActivity::class.java, 0) {
             if (dragOffsetPx >= 0) putExtra(MikuShadeActivity.EXTRA_DRAG_OFFSET_PX, dragOffsetPx)
         }
+    }
 
     private var lastPowerMenuOpenMs = 0L
     private fun openPowerMenuActivity() {
@@ -527,14 +608,20 @@ class MikuNotificationShadeService : AccessibilityService() {
             android.provider.Settings.Global.getInt(contentResolver, "hiby_volume_dialog_enable", 0) == 1
         }.getOrDefault(false)
         val flags = if (showHiby) android.media.AudioManager.FLAG_SHOW_UI else 0
-        return runCatching { am.setStreamVolume(stream, target, flags); true }
+        val ok = runCatching { am.setStreamVolume(stream, target, flags); true }
             .onFailure { Log.w(TAG, "knob: setStreamVolume($target/$max) failed", it) }
             .getOrDefault(false)
+        if (ok) {
+            volumeHud?.onVolumeChanged(step)
+        }
+        return ok
     }
 
     override fun onKeyEvent(event: android.view.KeyEvent?): Boolean {
         if (event == null) return false
         if (fnLockSwallows(event.keyCode)) return true
+        // Any key (incl. the volume knob) is an interaction: restore full brightness immediately.
+        if (event.action == android.view.KeyEvent.ACTION_DOWN) idleDim?.poke()
         if (event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
             event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
             if (handleVolumeKnob(event)) return true
@@ -556,7 +643,23 @@ class MikuNotificationShadeService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        // Idle ladder: a THIRD interaction source behind the 1px touch sentinel and onKeyEvent.
+        // ONLY unambiguously user-initiated event types are listed. Deliberately excluded:
+        // TYPE_WINDOW_CONTENT_CHANGED (a ticking clock fires it every second), TYPE_VIEW_SCROLLED
+        // (programmatic scrolls and animations fire it) and TYPE_VIEW_TEXT_CHANGED (a field
+        // updated in code fires it) — any of those would reset the idle timer with nobody
+        // touching the device and the screen would never dim at all.
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_CLICKED,
+            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED,
+            AccessibilityEvent.TYPE_TOUCH_INTERACTION_START,
+            AccessibilityEvent.TYPE_GESTURE_DETECTION_START -> idleDim?.poke()
+        }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            // Hand the ladder the new foreground app so it can stand down for the apps that run
+            // their own brightness lifecycle (Miku Music, the MikuOS lockscreen/AOD).
+            idleDim?.setForeground(event.packageName?.toString(), event.className?.toString())
+            volumeHud?.setForeground(event.packageName?.toString(), event.className?.toString())
             val cls = event.className?.toString() ?: ""
             val pkg = event.packageName?.toString() ?: ""
             if (cls.contains("GlobalActions", ignoreCase = true) ||
@@ -844,10 +947,21 @@ class MikuNotificationShadeService : AccessibilityService() {
         private var stretch = 0f       // 0..1 upward drag progress
         private var shiftX = 0f        // horizontal follow
         private var armed = false      // recents hold armed (pill turns teal)
+        // ---- AOSP MotionPauseDetector port. A Pixel opens Overview the moment the swipe-up
+        // DECELERATES past 24dp, not when the finger has been held perfectly still for a fixed
+        // time. The old 48dp + 150ms-still rule is what "cumbersome" meant.
+        private var pausePrevSpeed = 0f       // px/ms
+        private var pauseIsPaused = false
+        private var pauseEverPaused = false
+        private var pauseDisabled = false     // a very fast flick is a fling home, never Overview
+        private var pauseLastTime = 0L
+        private var pauseLastY = 0f
+        private var pauseSlowCount = 0
         private var pop = 1f
         private var flash = 0f         // 90ms glow flash when leaving an app for home
         private var flashAnim: ValueAnimator? = null
         private var claimed = false    // first light tick once the drag is clearly upward
+        private var holdScheduled = false  // holdCheck poll is running; see ACTION_MOVE
         private var relaxAnim: ValueAnimator? = null
         private var popAnim: ValueAnimator? = null
 
@@ -855,23 +969,50 @@ class MikuNotificationShadeService : AccessibilityService() {
         private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x3800F5D4 }
         private val rect = RectF()
 
-        private val holdCheck = object : Runnable {
-            override fun run() {
-                if (!down || fired) return
-                velocity?.computeCurrentVelocity(1000)
-                val vx = velocity?.xVelocity ?: 0f; val vy = velocity?.yVelocity ?: 0f
-                val speed = abs(vx) + abs(vy)
-                val dyUp = startY - curY
-                if (dyUp >= dp(RECENTS_DP) && speed < RECENTS_HOLD_MAX_PX_S) {
-                    Log.i(TAG, "pill hold -> recents (dyUp=${dyUp.toInt()} speed=${speed.toInt()})")
-                    fired = true; armed = true
-                    MikuHaptics.pop(this@HomePillView)                      // strong: hold → recents
-                    animatePop()
-                    openRecents()
-                } else {
-                    mainHandler.postDelayed(this, 60L)
-                }
+        /**
+         * FORCE_PAUSE_TIMEOUT arm: a finger held truly still can stop producing MOVE events, so
+         * AOSP treats "no motion for 300ms" as a pause outright. Re-posted on every MOVE, which is
+         * correct here (unlike the old stillness poll) because the timeout means "no events at
+         * all", and a jittering still finger is already caught by the slow-speed path below.
+         */
+        private val forcePause = Runnable {
+            if (down && !fired && !pauseDisabled) onMotionPaused()
+        }
+
+        /** MotionPauseDetector.checkMotionPaused, constants and all. Speeds are px/ms. */
+        private fun checkMotionPaused(speed: Float, prevSpeed: Float) {
+            val slow = dp(PAUSE_SPEED_SLOW_DP_MS)
+            val somewhatFast = dp(PAUSE_SPEED_SOMEWHAT_FAST_DP_MS)
+            val fast = dp(PAUSE_SPEED_FAST_DP_MS)
+            val paused: Boolean
+            if (pauseIsPaused) {
+                // Stay paused until the finger clearly moves again.
+                paused = speed < fast
+            } else if (speed < slow) {
+                // AOSP wants two slow samples in a row before the first pause sticks.
+                pauseSlowCount++
+                paused = pauseEverPaused || pauseSlowCount >= 2
+            } else {
+                pauseSlowCount = 0
+                // Be aggressive about the FIRST pause so it feels responsive: a rapid deceleration
+                // counts even if the finger has not actually come to a stop yet.
+                paused = !pauseEverPaused &&
+                    speed < prevSpeed * PAUSE_RAPID_DECELERATION_FACTOR && speed < somewhatFast
             }
+            if (paused && !pauseIsPaused) { pauseIsPaused = true; pauseEverPaused = true; onMotionPaused() }
+            else if (!paused) pauseIsPaused = false
+        }
+
+        /** The pause fired. Open Overview if the swipe has come far enough. */
+        private fun onMotionPaused() {
+            if (fired) return
+            val dyUp = startY - curY
+            if (dyUp < dp(RECENTS_DP)) return
+            Log.i(TAG, "pill motion pause -> recents (dyUp=${dyUp.toInt()})")
+            fired = true; armed = true
+            MikuHaptics.pop(this@HomePillView)                      // strong: pause → recents
+            animatePop()
+            openRecents()
         }
 
         override fun onDraw(canvas: Canvas) {
@@ -940,8 +1081,12 @@ class MikuNotificationShadeService : AccessibilityService() {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     relaxAnim?.cancel()
-                    down = true; fired = false; armed = false; claimed = false
+                    down = true; fired = false; armed = false; claimed = false; holdScheduled = false
                     startX = event.rawX; startY = event.rawY; curX = startX; curY = startY
+                    pausePrevSpeed = 0f; pauseIsPaused = false; pauseEverPaused = false
+                    pauseDisabled = false; pauseSlowCount = 0
+                    pauseLastTime = event.eventTime; pauseLastY = event.rawY
+                    mainHandler.removeCallbacks(forcePause)
                     velocity?.recycle(); velocity = VelocityTracker.obtain().also { it.addMovement(event) }
                     invalidate()
                     return true
@@ -956,9 +1101,20 @@ class MikuNotificationShadeService : AccessibilityService() {
                     stretch = if (dyUp <= max) dyUp / max else 1f + (dyUp - max) / max * 0.12f
                     shiftX = (dx * 0.5f).coerceIn(-dp(24f), dp(24f))
                     if (!claimed && (dyUp >= dp(8f) || abs(dx) >= dp(8f))) { claimed = true; MikuHaptics.tick(this) }   // light: claimed
+                    // Overview is decided by the AOSP motion-pause rule, not by a stillness timer.
                     if (!fired) {
-                        mainHandler.removeCallbacks(holdCheck)
-                        if (dyUp >= max) mainHandler.postDelayed(holdCheck, RECENTS_HOLD_MS)
+                        val dt = (event.eventTime - pauseLastTime).coerceAtLeast(1L)
+                        val speed = abs(event.rawY - pauseLastY) / dt      // px/ms
+                        pauseLastTime = event.eventTime; pauseLastY = event.rawY
+                        // A genuinely fast flick is a fling home. AOSP stops looking for a pause
+                        // at all once the gesture has been that fast.
+                        if (speed > dp(PAUSE_SPEED_VERY_FAST_DP_MS)) pauseDisabled = true
+                        if (!pauseDisabled) {
+                            checkMotionPaused(speed, pausePrevSpeed)
+                            mainHandler.removeCallbacks(forcePause)
+                            mainHandler.postDelayed(forcePause, PAUSE_FORCE_TIMEOUT_MS)
+                        }
+                        pausePrevSpeed = speed
                     }
                     invalidate()
                     return true
@@ -966,7 +1122,8 @@ class MikuNotificationShadeService : AccessibilityService() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (!down) return false
                     down = false
-                    mainHandler.removeCallbacks(holdCheck)
+                    holdScheduled = false
+                    mainHandler.removeCallbacks(forcePause)
                     velocity?.addMovement(event)
                     velocity?.computeCurrentVelocity(1000)
                     val vy = velocity?.yVelocity ?: 0f
@@ -976,7 +1133,12 @@ class MikuNotificationShadeService : AccessibilityService() {
                     val dy = abs(curY - startY)
                     Log.i(TAG, "pill up: dyUp=${dyUp.toInt()} dx=${dx.toInt()} vy=${vy.toInt()} fired=$fired")
                     if (event.actionMasked == MotionEvent.ACTION_UP && !fired) {
-                        if (dyUp >= dp(HOME_DP) || (vy < -HOME_FLING_PX_S && dyUp >= dp(12f))) {
+                        // AOSP uses the platform's own minimum fling velocity here rather than a
+                        // magic number, so a flick that registers as a fling anywhere else in the
+                        // system registers as one on the pill too.
+                        val flingPxS = android.view.ViewConfiguration.get(context)
+                            .scaledMinimumFlingVelocity.toFloat().coerceAtLeast(1f)
+                        if (dyUp >= dp(HOME_DP) || (vy < -flingPxS && dyUp >= dp(12f))) {
                             fired = true
                             MikuHaptics.confirm(this)
                             animatePop()

@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.audiofx.Visualizer
 import android.util.Log
+import com.miku.launcher.ui.MikuPowerProfile
 import kotlinx.coroutines.*
 
 /**
@@ -42,9 +43,49 @@ object MikuLiveBeatDetector {
         // the counter shows "standby" honestly and we don't hold a Visualizer for nothing.
         gateJob = scope.launch {
             while (isActive) {
-                val musicOut = try { am?.isMusicActive == true } catch (_: Throwable) { false }
+                // VISIBILITY GATE (added 2026-09-13). Everything this detector feeds — the BPM badge,
+                // widget and observatory — is launcher UI. Capturing the output mix at max FFT rate
+                // while the launcher is BACKGROUNDED cost ~4% of a core continuously for something
+                // nobody could see, and over a long listening session that is what got the launcher
+                // killed by the platform: `am_kill com.miku.launcher, excessive cpu 158760 during
+                // 300077 limit=25` (~53% sustained). The lockscreen's BPM is unaffected: it reads
+                // Settings.Global miku_now_playing_bpm, published by Miku Music, not from here.
+                if (!MikuPowerProfile.visible.value) {
+                    if (vis != null) { detach(); MikuBpmEngine.pushLivePlaying(false) }
+                    MikuPowerProfile.awaitVisible()   // suspends — no polling at all while hidden
+                    continue
+                }
+                val activeLink = com.miku.launcher.lockscreen.MikuMediaLink.active(app)
+                val isLinkPlaying = activeLink?.isPlaying == true
+                val musicOut = (try { am?.isMusicActive == true } catch (_: Throwable) { false }) || isLinkPlaying
                 if (musicOut && vis == null) attach(app)
-                if (!musicOut && vis != null) { detach(); MikuBpmEngine.pushLivePlaying(false) }
+                if (!musicOut && vis != null) {
+                    detach()
+                    MikuBpmEngine.pushLivePlaying(false)
+                    // Output stopped: whatever comes back may be a different song, so the held
+                    // tempo is dropped rather than carried across the gap.
+                    MikuTempoLock.onPlaybackStopped()
+                    // Don't leave the last track's BPM on screen as if it were live.
+                    MikuBpmEngine.clearLiveTempo()
+                }
+                // A track change is not an outlier to be argued down over six onsets — drop the
+                // lock at once and re-acquire. onTrackChanged() no-ops when the key is unchanged.
+                if (musicOut) {
+                    MikuBpmEngine.pushLivePlaying(true)
+                    val key = if (activeLink != null && (!activeLink.title.isNullOrBlank() || !activeLink.artist.isNullOrBlank())) {
+                        "${activeLink.artist.orEmpty()}|${activeLink.title.orEmpty()}"
+                    } else {
+                        try {
+                            val t = android.provider.Settings.Global.getString(app.contentResolver, "miku_now_playing_title")
+                            val a2 = android.provider.Settings.Global.getString(app.contentResolver, "miku_now_playing_artist")
+                            if (t.isNullOrBlank() && a2.isNullOrBlank()) null else "$a2|$t"
+                        } catch (_: Throwable) { null }
+                    }
+                    val hadLock = MikuTempoLock.tempo.value.isLocked
+                    MikuTempoLock.onTrackChanged(key)
+                    // A dropped lock means the displayed tempo belonged to the PREVIOUS track.
+                    if (hadLock && !MikuTempoLock.tempo.value.isLocked) MikuBpmEngine.clearLiveTempo()
+                }
                 // If capturing but no onset for >2.5s while music is out, keep isPlaying true but
                 // let BPM coast on the last value (steady-state / ambient track).
                 delay(600L)
@@ -53,6 +94,8 @@ object MikuLiveBeatDetector {
     }
 
     fun stop() { gateJob?.cancel(); gateJob = null; detach() }
+
+    private fun _state_bpm(): Float = MikuBpmEngine.state.value.bpm
 
     private fun attach(app: Context) {
         try {
@@ -93,7 +136,7 @@ object MikuLiveBeatDetector {
         val avg = if (energyHist.isNotEmpty()) energyHist.sum() / energyHist.size else e
         val now = System.currentTimeMillis()
         val refractoryMs = 260L                        // cap ~230 BPM, reject double-triggers
-        val isOnset = e > avg * 1.45f && e > 800f && (now - lastBeatMs) > refractoryMs
+        val isOnset = e > avg * 1.45f && e > 250f && (now - lastBeatMs) > refractoryMs
         if (isOnset) {
             if (lastBeatMs != 0L) {
                 val interval = now - lastBeatMs
@@ -107,8 +150,23 @@ object MikuLiveBeatDetector {
             lastBeatMs = now
             // Audio IS out, so report playing; but only publish a tempo once at least two intervals
             // have produced a real median. Before that there is nothing measured to publish.
-            if (liveBpm > 0f && beatIntervals.size >= 2) {
-                MikuBpmEngine.pushLivePulse(liveBpm)
+            //
+            // And never publish the raw per-onset estimate: it moves by a few BPM on every vocal
+            // transient, cymbal or fill, which made the readout flicker while a track played at
+            // one constant tempo. MikuTempoLock ACQUIRES a tempo from agreeing estimates, then
+            // HOLDS exactly that value (octave-tolerantly) until sustained evidence of a real
+            // tempo change, so what reaches the UI is solid. While it is still acquiring it
+            // returns 0 and we publish no tempo at all — "listening…", not a confident guess.
+            val published = if (liveBpm > 0f && beatIntervals.size >= 2) MikuTempoLock.onEstimate(liveBpm) else 0f
+            if (published > 0f) {
+                // If a tempo is already published (e.g. com.miku.player broadcast its own
+                // file-analysis BPM) and our lock is just the other OCTAVE of it, keep the
+                // existing number. Otherwise the two sources take turns and the readout flips
+                // 170 → 85 → 170 forever, which is the jitter this whole path exists to stop.
+                val existing = _state_bpm()
+                val out = if (existing > 0f && MikuRhythmTiming.octaveMultiplier(published, existing) != null)
+                    existing else published
+                MikuBpmEngine.pushLivePulse(out)
             } else {
                 MikuBpmEngine.pushLivePlaying(true)
             }

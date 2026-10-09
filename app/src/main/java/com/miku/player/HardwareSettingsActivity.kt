@@ -51,7 +51,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
 
     var isRooted by remember { mutableStateOf(false) }
 
-    // Cirrus Logic CS43131 Hardware State
+    // Cirrus Logic CS43198 Hardware State
     var csFilter by remember { mutableStateOf(CirrusLogicManager.DigitalFilter.NOS) }
     var csGain by remember { mutableStateOf(CirrusLogicManager.GainMode.LOW) }
     var csDre by remember { mutableStateOf(true) }
@@ -77,7 +77,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
 
     fun refreshAudit() {
         scope.launch(Dispatchers.IO) {
-            auditState = CirrusLogicManager.getLiveHardwareAudit()
+            auditState = CirrusLogicManager.getLiveHardwareAudit(ctx)
             dtaStatus = MikuDirectAudio.status(ctx)
         }
     }
@@ -130,7 +130,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
             csTurbo = CirrusLogicManager.isHighPowerEnabled(ctx)
             csDsdComp = CirrusLogicManager.getDsdGainCompensate(ctx)
             csOutput = CirrusLogicManager.getOutputMode(ctx)
-            auditState = CirrusLogicManager.getLiveHardwareAudit()
+            auditState = CirrusLogicManager.getLiveHardwareAudit(ctx)
         }
     }
 
@@ -228,11 +228,20 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                // FAKE-DATA FIX: this status dot was hardcoded green, so the banner
+                                // read "healthy" even when not one sa_sound_setting node could be
+                                // read and every field below said "—". It now tracks the real probe.
                                 Box(
                                     Modifier
                                         .size(10.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0xFF00E676))
+                                        .background(
+                                            when (auditState.source) {
+                                                CirrusLogicManager.HardwareAuditState.Source.SYSFS -> Color(0xFF00E676)
+                                                CirrusLogicManager.HardwareAuditState.Source.VENDOR_SETTINGS -> Color(0xFF7FE3FF)
+                                                else -> Color(0xFF6B7A80)
+                                            }
+                                        )
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
@@ -274,7 +283,18 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                                 .padding(10.dp)
                         ) {
                             Text(
-                                "LIVE KERNEL SYSFS STATE (/sys/.../sa_sound_setting/)",
+                                // Say which source answered. The sysfs nodes are the closest thing
+                                // to ground truth but SELinux denies them to platform_app, so most
+                                // of the time this reads the vendor settings the audio HAL itself
+                                // uses. Both are real reads; claiming "kernel" for either would not be.
+                                when (auditState.source) {
+                                    CirrusLogicManager.HardwareAuditState.Source.SYSFS ->
+                                        "LIVE KERNEL SYSFS STATE (/sys/.../sa_sound_setting/)"
+                                    CirrusLogicManager.HardwareAuditState.Source.VENDOR_SETTINGS ->
+                                        "LIVE VENDOR HAL STATE (vendor.audio.hiby.*) · SYSFS DENIED TO THIS DOMAIN"
+                                    else ->
+                                        "NO DAC STATE READABLE BY THIS PROCESS"
+                                },
                                 color = MikuCyan,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
@@ -300,7 +320,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                 }
 
                 // ============================================================
-                // SECTION 1: CIRRUS LOGIC CS43131 DAC ARCHITECTURE
+                // SECTION 1: CIRRUS LOGIC CS43198 DAC ARCHITECTURE
                 // ============================================================
                 item {
                     Column(

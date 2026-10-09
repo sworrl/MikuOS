@@ -37,7 +37,7 @@ import kotlinx.coroutines.withContext
  * Skeuomorphic Hatsune Miku Vocaloid Android Anatomy & Brain Observatory.
  * Organizes hardware telemetry, sensors, and audio subsystems by body structure:
  * - Neural Cortex: System Watchdog, Thread Pools & ANR Sentinel
- * - Audio Ears: Cirrus Logic Dual CS43131 DACs, Gain & Digital Filters
+ * - Audio Ears: Cirrus Logic Dual CS43198 DACs, Gain & Digital Filters
  * - Optical Eyes: Light Sensor, Display Backlight & Vision Matrix
  * - Quantum Heart: Snapdragon Octa-Core CPU Governor, Thermals & Power
  * - Vocal Synthesizer: Direct ALSA Stream, Qualcomm FM & MSEB DSP
@@ -598,9 +598,13 @@ private fun readAnatomyFacts(ctx: Context): AnatomyFacts {
         val f = java.io.File("/dev/radio0")
         if (f.exists()) (if (f.canRead()) "present · readable" else "present · no access") else "not visible"
     }.getOrDefault("not visible")
+    // "idle" was an ASSERTION: this pill read the unset key as proof of an idle device and said
+    // so while music was playing. The key now has a writer — MikuNowPlayingFormat, fed from the
+    // granted AudioTrack format in the player's sink — so an unset value means exactly one thing:
+    // the player is not holding an output. That is reported as such, never as "idle".
     val nowPlayingFormat = runCatching {
         android.provider.Settings.Global.getString(ctx.contentResolver, "miku_now_playing_format")?.takeIf { it.isNotBlank() }
-    }.getOrNull() ?: "idle"
+    }.getOrNull() ?: "— (not published)"
 
     val ledDriver = runCatching {
         val nodes = listOf("/sys/class/leds/sgm31324-leds", "/sys/class/leds/red", "/sys/class/leds/blue")

@@ -22,7 +22,10 @@ class UsbDacTileService : TileService() {
         val active = UsbDacManager.isActive(applicationContext)
         tile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.label = if (active) "USB DAC: ON" else "USB DAC: OFF"
-        tile.subtitle = if (active) "${UsbDacManager.getSampleRate(applicationContext) / 1000}kHz" else "MTP / ADB"
+        // Was "${'$'}{getSampleRate()/1000}kHz" - that is the SAVED PREFERENCE (default 192 kHz),
+        // printed on an ON tile as if it were the rate the host had negotiated. The real rate
+        // lives in /proc/asound and is shown on the USB DAC screen; the tile says "configured".
+        tile.subtitle = if (active) "configured ${UsbDacManager.getSampleRate(applicationContext) / 1000}kHz" else "MTP / ADB"
         tile.updateTile()
     }
 
@@ -65,40 +68,3 @@ class PocketLockTileService : TileService() {
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.N)
-class PulsarTileService : TileService() {
-    private val scope = CoroutineScope(Dispatchers.Main)
-
-    override fun onStartListening() {
-        super.onStartListening()
-        updateTile()
-    }
-
-    private fun updateTile() {
-        val tile = qsTile ?: return
-        val enabled = PulsarLight.isEnabled(applicationContext)
-        val mode = PulsarLight.getMode(applicationContext)
-        tile.state = if (enabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        tile.label = "Pulsar RGB"
-        tile.subtitle = if (enabled) mode.label else "Off"
-        tile.updateTile()
-    }
-
-    override fun onClick() {
-        super.onClick()
-        val modes = PulsarLight.Mode.values()
-        val currentMode = PulsarLight.getMode(applicationContext)
-        val nextIdx = (modes.indexOf(currentMode) + 1) % modes.size
-        val nextMode = modes[nextIdx]
-
-        scope.launch {
-            if (nextMode == PulsarLight.Mode.OFF) {
-                PulsarLight.setEnabled(applicationContext, false)
-            } else {
-                PulsarLight.setEnabled(applicationContext, true)
-                PulsarLight.setMode(applicationContext, nextMode)
-            }
-            updateTile()
-        }
-    }
-}

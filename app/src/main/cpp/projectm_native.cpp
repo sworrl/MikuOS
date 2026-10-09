@@ -18,6 +18,15 @@ static std::mutex               s_lock;
 // Remembered playlist position so re-creating the handle for a new GL surface (e.g. entering
 // fullscreen) can restore the SAME preset instead of jumping to a random one.
 static int                      s_lastPos  = -1;
+// Frames left on the projectM attribution splash (the built-in "idle://" M logo). Counted down in
+// nativeRender; when it reaches zero the playlist takes over. Only armed on a FRESH open, never on
+// a surface re-create (fullscreen toggle), so the logo does not reappear every time you toggle.
+static int                      s_splashFrames = 0;
+/** Count of preset load failures reported by projectM since init. Read by nativePresetFailures. */
+static int                      s_presetFailures = 0;
+/** Self-test hand-off (see nativeQueueLoadPresetPath): a path for the GL thread to load next frame. */
+static std::string              s_pendingLoad;
+static int                      s_pendingResult = 0;
 
 extern "C" {
 
@@ -60,12 +69,29 @@ Java_com_miku_player_ProjectMNative_nativeInit(JNIEnv* /*env*/, jobject /*thiz*/
     projectm_set_hard_cut_sensitivity(s_pm, 3.0f);
     projectm_set_beat_sensitivity(s_pm, 1.0f);
 
+    // ATTRIBUTION SPLASH: load projectM's built-in idle preset first, which draws the projectM "M"
+    // logo. projectM 4.2.0 exposes it through the special filename "idle://" (see
+    // projectM-4/core.h). It shows for a moment when the visualizer opens, then the playlist takes
+    // over on the first advance, so the user is told which engine is rendering this. libprojectM is
+    // LGPL and calling it out is the right thing to do as well as a nicer hand-off than a cold cut
+    // straight into a preset.
+    // A preset that fails to parse or compile used to vanish silently: the playlist retried past
+    // it and nobody learned which one was broken. Log every failure by name. This is how the 80
+    // Miku presets get verified rather than assumed.
+    projectm_set_preset_switch_failed_event_callback(s_pm, [](const char* file, const char* msg, void*) {
+        LOGE("PRESET FAILED: %s :: %s", file ? file : "?", msg ? msg : "?");
+        s_presetFailures++;
+    }, nullptr);
+
+    projectm_load_preset_file(s_pm, "idle://", false);
+    s_splashFrames = (s_lastPos >= 0) ? 0 : 120;   // ~2 s at 60 fps on a fresh open only
+
     s_playlist = projectm_playlist_create(s_pm);
     if (s_playlist) {
         projectm_playlist_set_shuffle(s_playlist, true);
         projectm_playlist_set_retry_count(s_playlist, 5);   // skip presets that fail to load
     }
-    LOGI("libprojectM 4.2.0 initialized");
+    LOGI("libprojectM 4.2.0 initialized (idle:// logo splash shown first)");
 }
 
 JNIEXPORT void JNICALL
@@ -95,6 +121,17 @@ Java_com_miku_player_ProjectMNative_nativeRender(JNIEnv* /*env*/, jobject /*thiz
                                                  jfloat /*bass*/, jfloat /*treble*/) {
     std::lock_guard<std::mutex> g(s_lock);
     if (!s_pm) return;
+    // Self-test: load a queued preset HERE, on the GL thread, and record whether projectM took it.
+    if (!s_pendingLoad.empty()) {
+        int before = s_presetFailures;
+        try { projectm_load_preset_file(s_pm, s_pendingLoad.c_str(), false); } catch (...) { s_presetFailures++; }
+        s_pendingResult = (s_presetFailures == before) ? 1 : 2;
+        s_pendingLoad.clear();
+    }
+    // Hold the projectM logo for its few frames, then hand over to the playlist.
+    if (s_splashFrames > 0 && --s_splashFrames == 0 && s_playlist) {
+        try { projectm_playlist_play_next(s_playlist, true); } catch (...) { LOGE("splash handoff threw"); }
+    }
     try { projectm_opengl_render_frame(s_pm); }
     catch (const std::exception& e) { LOGE("render threw: %s", e.what()); }
     catch (...) { LOGE("render threw (unknown)"); }
@@ -160,6 +197,58 @@ Java_com_miku_player_ProjectMNative_nativePresetName(JNIEnv* env, jobject) {
     } catch (...) { return env->NewStringUTF(""); }
 }
 
+/**
+ * The REAL library version, straight out of libprojectM. Not a constant in our source: a hardcoded
+ * "4.2.0" would keep saying 4.2.0 after the vendored submodule moved, and this string is shown to
+ * the user as attribution, so it has to be true. projectm_get_version_string() allocates, and the
+ * header says to hand the pointer back to projectm_free_string().
+ */
+JNIEXPORT jstring JNICALL
+Java_com_miku_player_ProjectMNative_nativeVersion(JNIEnv* env, jobject) {
+    try {
+        char* v = projectm_get_version_string();
+        std::string out = v ? v : "";
+        if (v) projectm_free_string(v);
+        return env->NewStringUTF(out.c_str());
+    } catch (...) { return env->NewStringUTF(""); }
+}
+
+/** Git revision the vendored library was built from. Shown next to the version in the debug row. */
+JNIEXPORT jint JNICALL
+Java_com_miku_player_ProjectMNative_nativePresetFailures(JNIEnv*, jobject) { return s_presetFailures; }
+
+/**
+ * Self-test hand-off. Preset loading compiles shaders and MUST happen on the GL thread, so this
+ * only queues the path; nativeRender performs the load on its next frame and records the outcome.
+ * The caller polls nativePendingLoadResult: 0 = still pending, 1 = accepted, 2 = rejected.
+ */
+
+JNIEXPORT void JNICALL
+Java_com_miku_player_ProjectMNative_nativeQueueLoadPresetPath(JNIEnv* env, jobject, jstring jpath) {
+    std::lock_guard<std::mutex> g(s_lock);
+    if (!jpath) return;
+    const char* p = env->GetStringUTFChars(jpath, nullptr);
+    s_pendingLoad = p ? p : "";
+    s_pendingResult = 0;
+    env->ReleaseStringUTFChars(jpath, p);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_miku_player_ProjectMNative_nativePendingLoadResult(JNIEnv*, jobject) {
+    std::lock_guard<std::mutex> g(s_lock);
+    return s_pendingResult;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_miku_player_ProjectMNative_nativeVcsVersion(JNIEnv* env, jobject) {
+    try {
+        char* v = projectm_get_vcs_version_string();
+        std::string out = v ? v : "";
+        if (v) projectm_free_string(v);
+        return env->NewStringUTF(out.c_str());
+    } catch (...) { return env->NewStringUTF(""); }
+}
+
 JNIEXPORT void JNICALL
 Java_com_miku_player_ProjectMNative_nativeSetBeatSensitivity(JNIEnv*, jobject, jfloat s) {
     std::lock_guard<std::mutex> g(s_lock);
@@ -178,10 +267,13 @@ Java_com_miku_player_ProjectMNative_nativeLoadPresets(JNIEnv* env, jobject /*thi
         env->ReleaseStringUTFChars(dir, path);
         projectm_playlist_set_shuffle(s_playlist, true);
         // Restore the same preset across a surface re-create (fullscreen); else start fresh.
-        if (s_lastPos >= 0 && (uint32_t) s_lastPos < added)
+        if (s_lastPos >= 0 && (uint32_t) s_lastPos < added) {
             projectm_playlist_set_position(s_playlist, (uint32_t) s_lastPos, true);
-        else
+        } else if (s_splashFrames <= 0) {
             projectm_playlist_play_next(s_playlist, true);
+        }
+        // else: the attribution splash is still up; nativeRender advances when it expires.
+        // Without this the playlist would load a preset here and the logo would never be seen.
     }
 }
 

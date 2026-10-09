@@ -66,7 +66,22 @@ object CirrusLogicManager {
         RootShell.execFast("chmod 666 $SYSFS_BASE/*")
     }
 
+    /**
+     * Nodes SELinux refuses us, remembered for the life of the process.
+     *
+     * These sysfs files are denied to our domain (avc: denied { read } ... scontext=platform_app
+     * tcontext=sysfs). The policy cannot change while we run, so a failure is permanent — but this
+     * retried on EVERY call, and each attempt costs a kernel audit record. Measured on-device:
+     * ~120 denials/second streaming into logcat and the player burning ~44% of a core while idle
+     * with the screen off, which is what made lists scroll at a few frames per second.
+     * Probe once per node, then never again.
+     */
+    private val unreadableNodes = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    )
+
     private fun readSysfs(node: String): String? {
+        if (node in unreadableNodes) return null
         try {
             val file = File("$SYSFS_BASE/$node")
             if (file.exists()) {
@@ -76,6 +91,7 @@ object CirrusLogicManager {
         } catch (_: Throwable) {}
         val rootOut = RootShell.execOut("cat $SYSFS_BASE/$node")?.trim()
         if (!rootOut.isNullOrBlank()) return rootOut
+        unreadableNodes.add(node)
         return null
     }
 
@@ -140,13 +156,38 @@ object CirrusLogicManager {
         }
     }
 
+    // ---- "All audio to max unless the user lowered it" (user directive 2026-09-13) ----
+    // These Global rows record an EXPLICIT user choice; the Miku player's best-audio enforcer
+    // (MikuDirectAudio.ensureBestAudio) pushes the maximum for every knob without a row and the
+    // user's value where one exists. Same keys as com.miku.player.MikuDirectAudio.
+    private const val KEY_USER_GAIN = "miku_audio_user_gain"
+    private const val KEY_USER_DRE = "miku_audio_user_dre"
+    private const val KEY_USER_HIGH_POWER = "miku_audio_user_high_power"
+
+    /**
+     * Push a vendor.audio.hiby.* value straight into the audio HAL via AudioManager.setParameters -
+     * the root-free channel that actually moves the DAC. The RootShell lines that follow it in the
+     * setters are kept for rooted builds only; on MikuOS (no su) they are no-ops.
+     */
+    private fun pushToHal(ctx: Context, key: String, value: String) {
+        runCatching {
+            val am = ctx.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+            am?.setParameters("$key=$value")
+        }.onFailure { Log.w(TAG, "pushToHal $key failed: $it") }
+    }
+
     suspend fun setGainMode(ctx: Context, gain: GainMode) = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
         val hp = if (gain == GainMode.HIGH) "hpower_enable" else "hpower_disable"
 
+        runCatching { Settings.Global.putString(cr, KEY_USER_GAIN, gain.id.lowercase()) }
+        runCatching { Settings.Global.putInt(cr, KEY_USER_HIGH_POWER, if (gain == GainMode.HIGH) 1 else 0) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.hw.gain", gain.id) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.gain", gain.id) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.high_power", hp) }
+        pushToHal(ctx, "vendor.audio.hiby.hw.gain", gain.id)
+        pushToHal(ctx, "vendor.audio.hiby.gain", gain.id)
+        pushToHal(ctx, "vendor.audio.hiby.hw.high_power_mode", hp)
 
         RootShell.execFast(
             "echo ${gain.id} > $SYSFS_BASE/gain; " +
@@ -181,7 +222,11 @@ object CirrusLogicManager {
         val cr = ctx.contentResolver
         val cmd = if (enabled) "dremode_enable" else "dremode_disable"
 
+        runCatching { Settings.Global.putInt(cr, KEY_USER_DRE, if (enabled) 1 else 0) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.dre_mode", cmd) }
+        runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.dre", if (enabled) 1 else 0) }
+        pushToHal(ctx, "vendor.audio.hiby.hw.dre", if (enabled) "1" else "0")
+        pushToHal(ctx, "vendor.audio.hiby.hw.dre_mode", cmd)
 
         RootShell.execFast(
             "echo $cmd > $SYSFS_BASE/dre_mode; " +
@@ -206,8 +251,12 @@ object CirrusLogicManager {
         val cr = ctx.contentResolver
         val cmd = if (enabled) "hpower_enable" else "hpower_disable"
 
+        runCatching { Settings.Global.putInt(cr, KEY_USER_HIGH_POWER, if (enabled) 1 else 0) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.high_power", cmd) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.high_power_mode", cmd) }
+        runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.high_power", if (enabled) 1 else 0) }
+        pushToHal(ctx, "vendor.audio.hiby.hw.high_power", if (enabled) "1" else "0")
+        pushToHal(ctx, "vendor.audio.hiby.hw.high_power_mode", cmd)
 
         RootShell.execFast(
             "echo $cmd > $SYSFS_BASE/high_power_mode; " +
@@ -300,6 +349,20 @@ object CirrusLogicManager {
             "setprop vendor.audio.hiby.bal_po_lo_switch ${mode.id}"
         )
         Log.i(TAG, "Applied Output Routing: ${mode.id}")
+    }
+
+    /**
+     * Null when NO real source reports a balance. [getBalance] falls back to 0 so callers that need
+     * a number have one, but display surfaces must use this: an unreadable node was being printed
+     * as "Center" next to an enabled slider, i.e. an unknown shown as a measurement.
+     */
+    fun getBalanceOrNull(ctx: Context): Int? {
+        readSysfs("lrbalance")?.toIntOrNull()?.let { return it }
+        val cr = ctx.contentResolver
+        return try {
+            Settings.Global.getString(cr, "vendor.audio.hiby.hw.lrbalance")?.trim()?.toIntOrNull()
+                ?: Settings.Global.getString(cr, "vendor.audio.hiby.lrbalance")?.trim()?.toIntOrNull()
+        } catch (_: Throwable) { null }
     }
 
     fun getBalance(ctx: Context): Int {

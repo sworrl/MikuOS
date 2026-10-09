@@ -111,7 +111,8 @@ fun openAospSettings(ctx: Context, action: String, fallbackMsg: String = "Not av
 
 enum class SettingsSection(val title: String, val icon: ImageVector, val desc: String) {
     AUDIO_DAC("DAC & Audio", Icons.Default.Headphones, "Cirrus Dual CS43198 MasterHIFI, Gain, Filters & USB DAC"),
-    PULSAR_RGB("Pulsar Light", Icons.Default.Lightbulb, "Dual-die front RGB LED, dynamic modes & BPM pulse"),
+    // Was "dynamic modes & BPM pulse": this screen stores a mode, it does not animate anything,
+    // and the indicator is non-functional on this unit.
     FN_SWITCH("FN Switch & Keys", Icons.Default.ToggleOn, "Hardware Fn lock switch (Screen & Keys Lock default)"),
     WIRELESS("Network & ADB", Icons.Default.Wifi, "Wi-Fi, Wireless ADB, Hotspot & Network tools"),
     BLUETOOTH("Bluetooth", Icons.Default.Bluetooth, "Audio streaming codecs, LDAC, aptX & paired gear"),
@@ -145,7 +146,6 @@ class MikuSettingsActivity : ComponentActivity() {
             extraSec.equals("wireless", ignoreCase = true) || extraSec.equals("wifi", ignoreCase = true) || targetAction == Settings.ACTION_WIFI_SETTINGS || targetAction == Settings.ACTION_WIRELESS_SETTINGS -> SettingsSection.WIRELESS
             extraSec.equals("bluetooth", ignoreCase = true) || extraSec.equals("bt", ignoreCase = true) || targetAction == Settings.ACTION_BLUETOOTH_SETTINGS -> SettingsSection.BLUETOOTH
             extraSec.equals("audio_dac", ignoreCase = true) || extraSec.equals("dac", ignoreCase = true) || targetAction == "com.m500.hardware.action.USB_DAC" || targetAction == Settings.ACTION_SOUND_SETTINGS || targetAction == "android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" -> SettingsSection.AUDIO_DAC
-            extraSec.equals("pulsar", ignoreCase = true) || extraSec.equals("rgb", ignoreCase = true) || targetAction == "com.m500.hardware.action.PULSAR_SETTINGS" -> SettingsSection.PULSAR_RGB
             extraSec.equals("fn_switch", ignoreCase = true) || extraSec.equals("fn", ignoreCase = true) || targetAction == "com.m500.hardware.action.FN_SETTINGS" -> SettingsSection.FN_SWITCH
             extraSec.equals("display", ignoreCase = true) || targetAction == Settings.ACTION_DISPLAY_SETTINGS -> SettingsSection.DISPLAY
             extraSec.equals("storage_apps", ignoreCase = true) || extraSec.equals("storage", ignoreCase = true) || targetAction == Settings.ACTION_APPLICATION_SETTINGS || targetAction == Settings.ACTION_INTERNAL_STORAGE_SETTINGS -> SettingsSection.STORAGE_APPS
@@ -365,7 +365,6 @@ fun MikuOSSettingsApp(initialSection: SettingsSection?, onExit: () -> Unit) {
                 ) {
                     when (currentSection) {
                         SettingsSection.AUDIO_DAC -> AudioDacScreen(ctx)
-                        SettingsSection.PULSAR_RGB -> PulsarScreen(ctx)
                         SettingsSection.FN_SWITCH -> FnSwitchScreen(ctx)
                         SettingsSection.WIRELESS -> WirelessScreen(ctx)
                         SettingsSection.BLUETOOTH -> BluetoothScreen(ctx)
@@ -1038,112 +1037,6 @@ fun AudioDacScreen(ctx: Context) {
 }
 
 // ----------------------------------------------------
-// Section 2: Pulsar RGB Light
-// ----------------------------------------------------
-@Composable
-fun PulsarScreen(ctx: Context) {
-    var mode by remember { mutableStateOf(PulsarLight.getMode(ctx)) }
-    var brightness by remember { mutableStateOf(PulsarLight.getBrightness(ctx)) }
-    var bpmSync by remember { mutableStateOf(PulsarLight.isBpmSyncEnabled(ctx)) }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            Column(Modifier.mikuHeroCard().padding(16.dp)) {
-                Text(
-                    "Front Pulsar RGB Matrix (Dual-Die PWM)",
-                    color = MikuTealBright,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "SGM31324 constant-current LED driver hardware controller. Dual-die red & blue PWM cross-fading for dynamic audio tier status, beats-per-minute sync, and ambient battery glow.",
-                    color = MikuMuted,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-            }
-        }
-
-        item {
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Text("LIGHTING MODE", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-
-                PulsarLight.Mode.values().forEach { m ->
-                    val isSel = mode == m
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSel) MikuTealBright.copy(alpha = 0.15f) else Color.Transparent)
-                            .clickable {
-                                mode = m
-                                PulsarLight.setMode(ctx, m)
-                            }
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = isSel,
-                            onClick = {
-                                mode = m
-                                PulsarLight.setMode(ctx, m)
-                            },
-                            colors = RadioButtonDefaults.colors(selectedColor = MikuTealBright, unselectedColor = MikuMuted)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Column {
-                            Text(m.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Text(m.description, color = MikuMuted, fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("LED BRIGHTNESS LEVEL", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("$brightness / 255", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(8.dp))
-                Slider(
-                    value = brightness.toFloat(),
-                    onValueChange = {
-                        brightness = it.toInt()
-                        PulsarLight.setBrightness(ctx, it.toInt())
-                    },
-                    valueRange = 10f..255f,
-                    colors = SliderDefaults.colors(thumbColor = MikuTealBright, activeTrackColor = MikuTeal, inactiveTrackColor = MikuSurface2)
-                )
-
-                Spacer(Modifier.height(10.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Audiophile BPM Pulse Sync", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Pulse LED brightness in rhythm with track tempo (BPM)", color = MikuMuted, fontSize = 11.5.sp)
-                    }
-                    Switch(
-                        checked = bpmSync,
-                        onCheckedChange = {
-                            bpmSync = it
-                            PulsarLight.setBpmSyncEnabled(ctx, it)
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = MikuTealBright, checkedTrackColor = Color(0xFF0F3238))
-                    )
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(24.dp)) }
-    }
-}
 
 // ----------------------------------------------------
 // Section 2.5: Physical FN Hardware Switch & Key Lock
@@ -1568,13 +1461,19 @@ fun WirelessScreen(ctx: Context) {
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Force T-Mobile network", color = Color.White, fontSize = 13.sp)
+                    // Was: "manual = on" straight off the tap, with the failure only logged - a
+                    // refused setNetworkSelectionModeManual left the switch showing the network as
+                    // pinned. Re-read networkSelectionMode and show what the modem actually is on.
                     Switch(checked = manual, onCheckedChange = { on ->
-                        manual = on
                         Thread {
                             try {
                                 if (on) tm?.setNetworkSelectionModeManual("310260", true)
                                 else tm?.setNetworkSelectionModeAutomatic()
                             } catch (t: Throwable) { android.util.Log.w("MikuSettings", "network selection failed", t) }
+                            val actual = try {
+                                tm?.networkSelectionMode == android.telephony.TelephonyManager.NETWORK_SELECTION_MODE_MANUAL
+                            } catch (_: Throwable) { false }
+                            android.os.Handler(android.os.Looper.getMainLooper()).post { manual = actual }
                         }.start()
                     })
                 }
@@ -1601,13 +1500,47 @@ fun BluetoothScreen(ctx: Context) {
     val pairedDevices by com.miku.settings.bluetooth.MikuBluetoothController.pairedDevices.collectAsState()
     val discoveredDevices by com.miku.settings.bluetooth.MikuBluetoothController.discoveredDevices.collectAsState()
 
-    val prefs = remember { ctx.getSharedPreferences("miku_bluetooth_prefs", Context.MODE_PRIVATE) }
-    // Codec preferences are read back from the REAL persist.* props applyCodecConfig writes —
-    // null = never set (the old code showed "990 kbps / aptX on / AAC on" from local defaults).
-    val codecPrefs = remember { com.miku.settings.bluetooth.MikuBluetoothController.readCodecPrefs() }
-    var ldacQuality by remember { mutableStateOf<String?>(codecPrefs.ldacQuality) }
-    var aptxEnabled by remember { mutableStateOf<Boolean?>(codecPrefs.aptx) }
-    var aacEnabled by remember { mutableStateOf<Boolean?>(codecPrefs.aac) }
+    // Codec policy (Settings.Global miku_bt_*): absent rows mean MAXIMUM, and the controller
+    // enforces this on every A2DP connect - so what is shown here is what the link gets.
+    val codecPolicy = remember { com.miku.settings.bluetooth.MikuBluetoothController.readCodecPolicy() }
+    var ldacQuality by remember { mutableStateOf(codecPolicy.ldacLabel) }
+    var aptxEnabled by remember { mutableStateOf(codecPolicy.aptx) }
+    var aacEnabled by remember { mutableStateOf(codecPolicy.aac) }
+    // AUDIO LOCKDOWN: any change BELOW maximum quality is held here until the user confirms it in
+    // the dialog below; raising quality applies immediately. Never a silent downgrade.
+    var pendingDowngrade by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    fun requestCodecChange(ldac: String, aptx: Boolean, aac: Boolean, what: String) {
+        val applied = com.miku.settings.bluetooth.MikuBluetoothController.applyCodecConfig(ldac, aptx, aac)
+        if (applied) {
+            ldacQuality = ldac; aptxEnabled = aptx; aacEnabled = aac
+        } else {
+            pendingDowngrade = what to {
+                com.miku.settings.bluetooth.MikuBluetoothController.applyCodecConfig(ldac, aptx, aac, confirmed = true)
+                ldacQuality = ldac; aptxEnabled = aptx; aacEnabled = aac
+            }
+        }
+    }
+    pendingDowngrade?.let { (what, confirm) ->
+        AlertDialog(
+            onDismissRequest = { pendingDowngrade = null },
+            containerColor = MikuCardBg,
+            titleContentColor = Color.White,
+            textContentColor = MikuMuted,
+            title = { Text("Lower Bluetooth audio quality?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("$what\n\nMikuOS keeps Bluetooth on the highest quality your headphones support. " +
+                    "This change lets the link use a lower-quality codec or bitrate until you raise it again.")
+            },
+            confirmButton = {
+                TextButton(onClick = { confirm(); pendingDowngrade = null }) {
+                    Text("Lower quality", color = MikuPinkBright, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDowngrade = null }) { Text("Keep maximum", color = MikuTealBright) }
+            }
+        )
+    }
     // The codec A2DP is really negotiating right now (BluetoothA2dp.getCodecStatus) — null when idle.
     var activeCodec by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(pairedDevices) {
@@ -1969,9 +1902,12 @@ fun BluetoothScreen(ctx: Context) {
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                    if (ldacQuality == null) {
-                        Text("Not set on this device — nothing is selected until you choose one", color = MikuMuted, fontSize = 11.sp)
-                    }
+                    Text(
+                        if (aptxEnabled && aacEnabled && ldacQuality.contains("990")) "Locked to maximum — re-applied on every connection"
+                        else "Lowered by you — MikuOS applies this instead of the maximum",
+                        color = if (aptxEnabled && aacEnabled && ldacQuality.contains("990")) MikuTealBright else MikuGold,
+                        fontSize = 11.sp
+                    )
                     Spacer(Modifier.height(6.dp))
 
                     val ldacOptions = listOf(
@@ -1988,21 +1924,13 @@ fun BluetoothScreen(ctx: Context) {
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (isSel) MikuTealBright.copy(alpha = 0.15f) else Color.Transparent)
-                                .clickable {
-                                    ldacQuality = opt
-                                    prefs.edit().putString("ldac_quality", opt).apply()
-                                    com.miku.settings.bluetooth.MikuBluetoothController.applyCodecConfig(opt, aptxEnabled == true, aacEnabled == true)
-                                }
+                                .clickable { requestCodecChange(opt, aptxEnabled, aacEnabled, "LDAC bitrate → $opt") }
                                 .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = isSel,
-                                onClick = {
-                                    ldacQuality = opt
-                                    prefs.edit().putString("ldac_quality", opt).apply()
-                                    com.miku.settings.bluetooth.MikuBluetoothController.applyCodecConfig(opt, aptxEnabled == true, aacEnabled == true)
-                                },
+                                onClick = { requestCodecChange(opt, aptxEnabled, aacEnabled, "LDAC bitrate → $opt") },
                                 colors = RadioButtonDefaults.colors(
                                     selectedColor = MikuTealBright,
                                     unselectedColor = MikuMuted
@@ -2028,15 +1956,11 @@ fun BluetoothScreen(ctx: Context) {
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text("Qualcomm aptX / aptX HD", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                            Text(if (aptxEnabled == null) "Not set on this device (persist.vendor.bt.a2dp.aptx_hd unset)" else "Low-latency 24-bit audiophile streaming on supported gear", color = MikuMuted, fontSize = 11.5.sp)
+                            Text(if (aptxEnabled) "24-bit aptX HD / aptX on supported gear (off = falls back to AAC/SBC)" else "Disabled by you — aptX-only gear falls back to AAC/SBC", color = if (aptxEnabled) MikuMuted else MikuGold, fontSize = 11.5.sp)
                         }
                         Switch(
-                            checked = aptxEnabled == true,
-                            onCheckedChange = {
-                                aptxEnabled = it
-                                prefs.edit().putBoolean("aptx_enabled", it).apply()
-                                com.miku.settings.bluetooth.MikuBluetoothController.applyCodecConfig(ldacQuality ?: "", it, aacEnabled == true)
-                            },
+                            checked = aptxEnabled,
+                            onCheckedChange = { requestCodecChange(ldacQuality, it, aacEnabled, "Disable Qualcomm aptX / aptX HD") },
                             colors = SwitchDefaults.colors(checkedThumbColor = MikuTealBright, checkedTrackColor = Color(0xFF0F3238))
                         )
                     }
@@ -2051,15 +1975,11 @@ fun BluetoothScreen(ctx: Context) {
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text("AAC High Definition Audio", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                            Text(if (aacEnabled == null) "Not set on this device (persist.vendor.bt.a2dp.aac unset)" else "Advanced Audio Coding for Apple AirPods & Sony wireless gear", color = MikuMuted, fontSize = 11.5.sp)
+                            Text(if (aacEnabled) "Advanced Audio Coding for Apple AirPods & similar gear (off = SBC on AAC-only gear)" else "Disabled by you — AAC-only gear falls back to SBC", color = if (aacEnabled) MikuMuted else MikuGold, fontSize = 11.5.sp)
                         }
                         Switch(
-                            checked = aacEnabled == true,
-                            onCheckedChange = {
-                                aacEnabled = it
-                                prefs.edit().putBoolean("aac_enabled", it).apply()
-                                com.miku.settings.bluetooth.MikuBluetoothController.applyCodecConfig(ldacQuality ?: "", aptxEnabled == true, it)
-                            },
+                            checked = aacEnabled,
+                            onCheckedChange = { requestCodecChange(ldacQuality, aptxEnabled, it, "Disable AAC") },
                             colors = SwitchDefaults.colors(checkedThumbColor = MikuTealBright, checkedTrackColor = Color(0xFF0F3238))
                         )
                     }
@@ -2080,8 +2000,9 @@ fun BluetoothScreen(ctx: Context) {
                     // Live rows come from the stack; hardware spec rows are static datasheet facts.
                     AboutSpecRow("Active A2DP Codec", activeCodec ?: (if (connectedCount > 0) "connected · codec not reported" else "— (nothing streaming)"))
                     AboutSpecRow("Connected Devices", if (connectedCount > 0) "$connectedCount" else "none")
-                    AboutSpecRow("RF Transceiver", "Qualcomm WCN3988 (SM6225 companion)")
-                    AboutSpecRow("Bluetooth Version", "Bluetooth 5.0 / BLE")
+                    // Static datasheet claims, not probed - say so; the two rows above them ARE live.
+                    AboutSpecRow("RF Transceiver (spec)", "Qualcomm WCN3988 (SM6225 companion)")
+                    AboutSpecRow("Bluetooth Version (spec)", "Bluetooth 5.0 / BLE")
 
                     Spacer(Modifier.height(12.dp))
                     Button(
@@ -2184,13 +2105,15 @@ fun DisplayScreen(ctx: Context) {
                     Switch(
                         checked = isProtectorMode,
                         onCheckedChange = { enabled ->
-                            isProtectorMode = enabled
                             val v = if (enabled) 1 else 0
-                            try {
-                                Settings.Secure.putInt(cr, "touch_sensitivity_enabled", v)
-                                Settings.System.putInt(cr, "touch_sensitivity_enabled", v)
-                                Settings.System.putInt(cr, "screen_protector_mode", v)
-                            } catch (_: Throwable) {}
+                            // Was: one try/catch that swallowed every failure, then an unconditional
+                            // "…Enabled" toast and a switch set straight from the tap. If all three
+                            // writes were refused the user was still told touch boost was on. Now
+                            // each write is tracked and the switch shows what actually persisted.
+                            var wrote = false
+                            runCatching { Settings.Secure.putInt(cr, "touch_sensitivity_enabled", v) }.onSuccess { wrote = true }
+                            runCatching { Settings.System.putInt(cr, "touch_sensitivity_enabled", v) }.onSuccess { wrote = true }
+                            runCatching { Settings.System.putInt(cr, "screen_protector_mode", v) }.onSuccess { wrote = true }
                             RootShell.execFast(
                                 "settings put secure touch_sensitivity_enabled $v; " +
                                 "settings put system touch_sensitivity_enabled $v; " +
@@ -2198,10 +2121,19 @@ fun DisplayScreen(ctx: Context) {
                                 "setprop persist.sys.screen_protector $v; " +
                                 "setprop persist.sys.touch_sensitivity $v"
                             )
+                            val readBack = try {
+                                Settings.Secure.getInt(cr, "touch_sensitivity_enabled", -1) == v ||
+                                Settings.System.getInt(cr, "touch_sensitivity_enabled", -1) == v ||
+                                Settings.System.getInt(cr, "screen_protector_mode", -1) == v
+                            } catch (_: Throwable) { false }
+                            isProtectorMode = if (readBack) enabled else !enabled
                             Toast.makeText(
                                 ctx,
-                                if (enabled) "Screen Protector Mode (Touch Boost) Enabled"
-                                else "Screen Protector Mode Disabled",
+                                when {
+                                    !wrote || !readBack -> "Could not change screen protector mode \u2014 the setting was refused"
+                                    enabled -> "touch_sensitivity_enabled = 1 (applied if the touch firmware honours it)"
+                                    else -> "touch_sensitivity_enabled = 0"
+                                },
                                 Toast.LENGTH_SHORT
                             ).show()
                         },
@@ -2332,7 +2264,10 @@ fun DisplayScreen(ctx: Context) {
         item {
             Column(Modifier.mikuCard().padding(14.dp)) {
                 Text("SYSTEM NAVIGATION MODE", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("Configure Pixel-style edge swipe back & navigation bar", color = MikuMuted, fontSize = 10.sp)
+                Text(
+                    "Sets Settings.Secure navigation_mode. Swapping the navbar OVERLAY itself needs root, so the bar may not change appearance even when the value takes.",
+                    color = MikuMuted, fontSize = 10.sp, lineHeight = 13.sp
+                )
                 Spacer(Modifier.height(10.dp))
 
                 // null = navigation_mode not set on this device → neither option pre-selected
@@ -2361,15 +2296,19 @@ fun DisplayScreen(ctx: Context) {
                                 RoundedCornerShape(8.dp)
                             )
                             .clickable {
-                                isGestureNav = true
-                                RootShell.execFast(
-                                    "cmd overlay enable com.android.internal.systemui.navbar.gestural; " +
-                                    "cmd overlay disable com.android.internal.systemui.navbar.threebutton; " +
-                                    "settings put secure navigation_mode 2; " +
-                                    "settings put secure back_gesture_inset_scale_left 2; " +
-                                    "settings put secure back_gesture_inset_scale_right 2"
-                                )
-                                Toast.makeText(ctx, "Gesture Navigation (Pixel Swipe Back) Enabled", Toast.LENGTH_SHORT).show()
+                                // Was: RootShell-ONLY (`cmd overlay ...` / `settings put secure ...`)
+                                // plus an immediate selection and a "...Enabled" toast. There is no
+                                // su on this device, so every one of those commands was a silent
+                                // no-op while the UI reported the mode as applied. Write through the
+                                // root-free ContentResolver path, then report what actually stuck.
+                                val ok = applyNavigationMode(cr, gesture = true)
+                                isGestureNav = readNavigationMode(cr)
+                                Toast.makeText(
+                                    ctx,
+                                    if (ok) "navigation_mode set to gesture (2)"
+                                    else "Could not change navigation mode \u2014 the write was refused",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                             .padding(vertical = 10.dp, horizontal = 8.dp),
                         contentAlignment = Alignment.Center
@@ -2393,13 +2332,16 @@ fun DisplayScreen(ctx: Context) {
                                 RoundedCornerShape(8.dp)
                             )
                             .clickable {
-                                isGestureNav = false
-                                RootShell.execFast(
-                                    "cmd overlay enable com.android.internal.systemui.navbar.threebutton; " +
-                                    "cmd overlay disable com.android.internal.systemui.navbar.gestural; " +
-                                    "settings put secure navigation_mode 0"
-                                )
-                                Toast.makeText(ctx, "3-Button Navigation Bar Enabled", Toast.LENGTH_SHORT).show()
+                                // Same fix as the gesture option above: real write, then report the
+                                // value the system actually holds rather than the one we asked for.
+                                val ok = applyNavigationMode(cr, gesture = false)
+                                isGestureNav = readNavigationMode(cr)
+                                Toast.makeText(
+                                    ctx,
+                                    if (ok) "navigation_mode set to 3-button (0)"
+                                    else "Could not change navigation mode \u2014 the write was refused",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                             .padding(vertical = 10.dp, horizontal = 8.dp),
                         contentAlignment = Alignment.Center
@@ -2522,7 +2464,8 @@ fun BatteryScreen(ctx: Context) {
             Icon(
                 Icons.Default.BatteryChargingFull,
                 contentDescription = null,
-                tint = if ((pct ?: 100) > 20) MikuTealBright else MikuPinkBright,
+                // Was "(pct ?: 100) > 20": an UNKNOWN level was tinted as a healthy battery.
+                tint = when { pct == null -> MikuMuted; pct > 20 -> MikuTealBright; else -> MikuPinkBright },
                 modifier = Modifier.size(48.dp)
             )
         }
@@ -2636,22 +2579,28 @@ fun AboutScreen(ctx: Context) {
         AboutSpecRow("Android Release", "$androidRelease (API ${android.os.Build.VERSION.SDK_INT})$gkiTag")
         AboutSpecRow("Build", buildDisplay)
         AboutSpecRow("SoC", "$socModel · $cores cores")
-        AboutSpecRow("DAC Hardware", "Dual Cirrus Logic CS43198 MasterHIFI™")
-        AboutSpecRow("RGB Controller", "SGM31324 LED driver")
+        // Not read from the running system like the rows around them - these are datasheet facts
+        // about the board, so they are labelled as such rather than sitting in a list the section
+        // header calls "as reported by the running system".
+        AboutSpecRow("DAC Hardware (spec)", "Dual Cirrus Logic CS43198 MasterHIFI™")
+        AboutSpecRow("RGB Controller (spec)", "SGM31324 LED driver · indicator inactive on this unit")
         AboutSpecRow("Linux Kernel", "$kernel ($abi)")
         AboutSpecRow("Privilege", privilege)
         AboutSpecRow("Security Patch", android.os.Build.VERSION.SECURITY_PATCH ?: "unknown")
 
         Spacer(Modifier.height(14.dp))
 
+        // This row used to write "miku_onboarding_completed=false" into com.miku.settings' OWN
+        // SharedPreferences and then go Home. The wizard flag lives in com.miku.launcher's sandbox,
+        // which this app cannot touch, so the wizard never re-opened: it was a dressed-up Home
+        // button that claimed to re-run provisioning. The dead write is gone and the row now says
+        // exactly what it does (the launcher has no re-run entry point to call).
         SettingsLinkRow(
-            icon = Icons.Default.AutoFixHigh,
-            title = "MikuOS Setup & Provisioning Wizard",
-            subtitle = "Re-configure Google services, streaming platforms & DAC filters",
+            icon = Icons.Default.Home,
+            title = "Open MikuOS Home",
+            subtitle = "Re-running the first-boot setup wizard is done from the launcher itself",
             onClick = {
                 try {
-                    val prefs = ctx.getSharedPreferences("miku_launcher_prefs", Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("miku_onboarding_completed", false).apply()
                     val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                         addCategory(Intent.CATEGORY_HOME)
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -2729,6 +2678,34 @@ fun AboutSpecRow(label: String, value: String) {
         Text(label, color = MikuMuted, fontSize = 12.sp)
         Text(value, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
+}
+
+/** The value the system actually holds; null when navigation_mode is unset/unreadable. */
+fun readNavigationMode(cr: android.content.ContentResolver): Boolean? = try {
+    Settings.Secure.getString(cr, "navigation_mode")?.trim()?.toIntOrNull()?.let { it == 2 }
+} catch (_: Throwable) { null }
+
+/**
+ * Root-free navigation_mode write, VERIFIED. Returns true only when the setting reads back as the
+ * requested value. RootShell is kept as an optional extra for rooted units (it also flips the
+ * navbar overlay, which the ContentResolver path cannot do) but is never treated as success.
+ */
+fun applyNavigationMode(cr: android.content.ContentResolver, gesture: Boolean): Boolean {
+    val want = if (gesture) 2 else 0
+    runCatching { Settings.Secure.putInt(cr, "navigation_mode", want) }
+    if (gesture) {
+        runCatching { Settings.Secure.putInt(cr, "back_gesture_inset_scale_left", 2) }
+        runCatching { Settings.Secure.putInt(cr, "back_gesture_inset_scale_right", 2) }
+    }
+    RootShell.execFast(
+        if (gesture)
+            "cmd overlay enable com.android.internal.systemui.navbar.gestural; " +
+            "cmd overlay disable com.android.internal.systemui.navbar.threebutton"
+        else
+            "cmd overlay enable com.android.internal.systemui.navbar.threebutton; " +
+            "cmd overlay disable com.android.internal.systemui.navbar.gestural"
+    )
+    return readNavigationMode(cr) == gesture
 }
 
 fun applyDisplayDensity(cr: android.content.ContentResolver, dpi: Int) {

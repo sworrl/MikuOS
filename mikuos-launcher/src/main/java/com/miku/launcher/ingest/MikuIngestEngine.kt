@@ -63,7 +63,12 @@ data class MikuIngestState(
     val logMessages: List<String> = emptyList(),
     val isInitialized: Boolean = false,
     /** Network (rsync) ingest engine switch — OFF by default; local SD scans always work. */
-    val engineEnabled: Boolean = false
+    val engineEnabled: Boolean = false,
+    /**
+     * Live picture of what the host relay is doing, or null when we are not watching it.
+     * Polled only while the ingest observatory is open; see MikuRelayPoller.
+     */
+    val relay: MikuRelayStatus? = null
 )
 
 object MikuIngestEngine {
@@ -78,6 +83,12 @@ object MikuIngestEngine {
     private var networkCallbackRegistered = false
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var watchdogJob: Job? = null
+    private var mediaReceiverRegistered = false
+    private var autoScanDebounceJob: Job? = null
+    private const val AUTO_PREFS = "miku_ingest_auto"
+    private const val KEY_LAST_AUTO_SCAN = "last_auto_force_scan_ms"
+    /** Unattended force-scan cadence: once a day, plus right after an SD card (re)mount. */
+    private const val AUTO_SCAN_INTERVAL_MS = 24L * 60 * 60 * 1000
 
     /** Settings.Global switch for the network/rsync ingest engine. 0 (default) = OFF: only local SD scans. */
     const val GLOBAL_ENABLED_KEY = "miku_ingest_enabled"
@@ -150,6 +161,68 @@ object MikuIngestEngine {
                     observer
                 )
             } catch (_: Throwable) {}
+        }
+        armAutomaticScans(appContext)
+    }
+
+    /**
+     * Unattended ingest — the relay node keeps the library current without anyone opening the
+     * observatory. Two triggers: (1) SD card mounted / platform MediaScanner finished → debounced
+     * force scan; (2) a daily catch-up force scan if none has run in the last 24h (also first run).
+     * Purely local (MediaScanner + Miku Music nudge); never touches the network engine switch.
+     */
+    private fun armAutomaticScans(appContext: Context) {
+        if (!mediaReceiverRegistered) {
+            mediaReceiverRegistered = true
+            try {
+                // ONLY a real new-storage event. ACTION_MEDIA_SCANNER_FINISHED was in this filter
+                // and it is a FEEDBACK EDGE: our force scan runs MediaScanner, MediaScanner finishing
+                // broadcasts SCANNER_FINISHED, we scheduled another force scan, and so on forever —
+                // a self-sustaining rescan every ~8 s that pinned com.android.providers.media.module
+                // and hammered the SD card with I/O. The isScanning guard could never catch it: the
+                // scan has already COMPLETED (that is what sent the broadcast) by the time the
+                // debounce elapses. Introduced 2026-09-13, removed 2026-09-17.
+                val filter = android.content.IntentFilter().apply {
+                    addAction(Intent.ACTION_MEDIA_MOUNTED)
+                    addDataScheme("file")
+                }
+                val receiver = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(c: Context?, intent: Intent?) {
+                        val action = intent?.action ?: return
+                        log("Storage mounted · scheduling automatic force scan")
+                        scheduleAutoForceScan(appContext, "storage:${action.substringAfterLast('.')}")
+                    }
+                }
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    @Suppress("UnspecifiedRegisterReceiverFlag") appContext.registerReceiver(receiver, filter)
+                }
+            } catch (_: Throwable) { mediaReceiverRegistered = false }
+        }
+        val last = appContext.getSharedPreferences(AUTO_PREFS, Context.MODE_PRIVATE).getLong(KEY_LAST_AUTO_SCAN, 0L)
+        if (System.currentTimeMillis() - last > AUTO_SCAN_INTERVAL_MS) {
+            scheduleAutoForceScan(appContext, if (last == 0L) "first-run" else "daily")
+        }
+    }
+
+    private fun scheduleAutoForceScan(appContext: Context, reason: String) {
+        autoScanDebounceJob?.cancel()
+        autoScanDebounceJob = scope.launch {
+            delay(if (reason.startsWith("storage")) 8_000L else 20_000L)   // let the platform scanner / boot settle
+            if (_state.value.isScanning) { log("Auto scan ($reason) skipped · a scan is already running"); return@launch }
+            // The interval gates EVERY path, mounts included. Previously only the "daily" path
+            // consulted it, so a repeating storage event could rescan without limit.
+            val since = System.currentTimeMillis() -
+                appContext.getSharedPreferences(AUTO_PREFS, Context.MODE_PRIVATE).getLong(KEY_LAST_AUTO_SCAN, 0L)
+            if (since < AUTO_SCAN_INTERVAL_MS) {
+                log("Auto scan ($reason) skipped · last was ${since / 60_000} min ago")
+                return@launch
+            }
+            appContext.getSharedPreferences(AUTO_PREFS, Context.MODE_PRIVATE).edit()
+                .putLong(KEY_LAST_AUTO_SCAN, System.currentTimeMillis()).apply()
+            log("AUTO FORCE SCAN ($reason)")
+            triggerForceScan(appContext)
         }
     }
 
@@ -353,23 +426,55 @@ object MikuIngestEngine {
                 var sdTotalBytes = 0L
                 var isSdMounted = false
 
-                val storageDir = File("/storage")
-                if (storageDir.exists() && storageDir.isDirectory) {
-                    val subDirs = storageDir.listFiles()
-                    subDirs?.forEach { file ->
-                        if (file.isDirectory && file.name != "emulated" && file.name != "self" && file.canRead()) {
-                            try {
+                // Ask the platform which volumes exist instead of listing /storage ourselves.
+                //
+                // The old code did `File("/storage").listFiles()` and required `canRead()` on each
+                // entry. That cannot work on this device and was reporting "No external TF/MicroSD
+                // card mounted" while a 16,000-track card was mounted and playing. On-device:
+                // /storage is `drwx--x---  shell everybody`, so an app may traverse it but not
+                // LIST it, and /storage/EAFF-98FE is `drwxrwx--- root media_rw`, a group we are
+                // not in. MANAGE_EXTERNAL_STORAGE is granted as a permission but its APP OP sits
+                // at `default`, and that op has to be `allow` for the raw path to open. So both
+                // the listing and the canRead() gate fail, and the panel confidently said there
+                // was no card.
+                //
+                // StorageManager.getStorageVolumes() is the supported route and answers from the
+                // platform's own mount table, independent of filesystem permissions.
+                runCatching {
+                    val sm = context.getSystemService(Context.STORAGE_SERVICE) as android.os.storage.StorageManager
+                    for (vol in sm.storageVolumes) {
+                        if (!vol.isRemovable) continue
+                        if (vol.state != android.os.Environment.MEDIA_MOUNTED) continue
+                        val dir = vol.directory ?: continue
+                        val stat = StatFs(dir.absolutePath)
+                        val totalB = stat.blockCountLong * stat.blockSizeLong
+                        val availB = stat.availableBlocksLong * stat.blockSizeLong
+                        if (totalB <= 0L) continue
+                        sdPath = dir.absolutePath
+                        sdTotalBytes = totalB
+                        sdUsedBytes = (totalB - availB).coerceAtLeast(0L)
+                        isSdMounted = true
+                        break
+                    }
+                }.onFailure { log("Storage volume query failed: ${it.javaClass.simpleName}") }
+
+                // Fallback for anything StorageManager did not surface. Same shape as before, but
+                // without the canRead() gate that was the thing actually rejecting the card.
+                if (!isSdMounted) {
+                    val storageDir = File("/storage")
+                    storageDir.listFiles()?.forEach { file ->
+                        if (file.isDirectory && file.name != "emulated" && file.name != "self") {
+                            runCatching {
                                 val stat = StatFs(file.absolutePath)
-                                val bSize = stat.blockSizeLong
-                                val totalB = stat.blockCountLong * bSize
-                                val availB = stat.availableBlocksLong * bSize
-                                if (totalB > 1024 * 1024 * 500) { // > 500MB is valid external card
+                                val totalB = stat.blockCountLong * stat.blockSizeLong
+                                val availB = stat.availableBlocksLong * stat.blockSizeLong
+                                if (totalB > 1024 * 1024 * 500) {
                                     sdPath = file.absolutePath
                                     sdTotalBytes = totalB
                                     sdUsedBytes = (totalB - availB).coerceAtLeast(0L)
                                     isSdMounted = true
                                 }
-                            } catch (_: Throwable) {}
+                            }
                         }
                     }
                 }
@@ -481,9 +586,18 @@ object MikuIngestEngine {
                 }
             }
 
-            try {
-                RootShell.execFast("am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///storage/emulated/0/Music 2>/dev/null")
-            } catch (_: Throwable) {}
+            // A final sweep of the whole Music tree, on top of the per-file submissions above.
+            // This was an `am broadcast` through RootShell, which on a rootless device threw every
+            // time and then blocked RootShell for 120 seconds. We can send the broadcast
+            // ourselves: a platform-signed app does not need a shell to do it.
+            runCatching {
+                appContext.sendBroadcast(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_MEDIA_SCANNER_SCAN_FILE,
+                        android.net.Uri.parse("file:///storage/emulated/0/Music")
+                    )
+                )
+            }.onFailure { log("Final media-scan sweep failed: ${it.javaClass.simpleName}") }
 
             val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
             log("Completed ingestion scan: ${audioFiles.size} files indexed")
@@ -509,7 +623,8 @@ object MikuIngestEngine {
     fun triggerForceScan(context: Context) {
         val appContext = context.applicationContext
         log("FORCE SCAN · local SD + internal MediaScanner, then Miku Music library rescan")
-        nudgeMikuMusicLibrary(appContext)
+        // triggerRescan() nudges Miku Music itself once MediaScanner has finished — nudging here
+        // too made the player rescan a still-stale MediaStore and then rescan again seconds later.
         triggerRescan(appContext)
     }
 
@@ -521,6 +636,24 @@ object MikuIngestEngine {
                     .putExtra("source", "launcher_force_scan")
             )
         } catch (_: Throwable) {}
+    }
+
+    /**
+     * Start watching the host relay. Called when the ingest observatory opens.
+     *
+     * The tile used to fire a sync and then say nothing further, so a running transfer and a
+     * dead one looked identical from the device. This keeps the relay's own view on screen.
+     */
+    fun startRelayWatch(context: Context) {
+        val app = context.applicationContext
+        MikuRelayPoller.start(app) { status ->
+            _state.value = _state.value.copy(relay = status)
+        }
+    }
+
+    /** Stop watching. Called when the observatory closes, so nothing polls in the background. */
+    fun stopRelayWatch() {
+        MikuRelayPoller.stop()
     }
 
     fun triggerRsyncSync(context: Context) {
@@ -544,20 +677,36 @@ object MikuIngestEngine {
             // NO FAKE SYNC. This used to fire `rsync --version`, discard the result, log "Rsync sync
             // broadcast transmitted" (no broadcast was ever sent), sleep 1.5 s and then report
             // "Rsync sync completed" with a 100 % progress bar — while nothing had been transferred.
-            // Report exactly what is actually known: whether an rsync binary exists at all and
-            // whether the configured server answers.
-            val rsyncVersion = try {
-                RootShell.execOut("rsync --version 2>/dev/null")
-                    ?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
-            } catch (_: Throwable) { null }
-
+            // Report exactly what is actually known: whether the configured server answers.
+            //
+            // The `rsync --version` probe that used to sit here is gone. It ran through RootShell
+            // on a device with no root, so it threw every time, cost a 120 second RootShell
+            // backoff, and its result was assigned to a local that nothing ever read. It told us
+            // nothing and it delayed the next attempt at something that might have worked.
             val status = when {
                 syncHost.isBlank() ->
                     "No sync host configured — set one before an ingest sync can run"
-                rsyncVersion.isNullOrBlank() ->
-                    "rsync not available on this device — no sync performed"
-                else ->
-                    "rsync present ($rsyncVersion) · transfer not implemented in this build — no files were synced"
+                else -> {
+                    try {
+                        val url = java.net.URL("http://$syncHost:8787/api/sync")
+                        val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                            connectTimeout = 3000
+                            readTimeout = 3000
+                            requestMethod = "POST"
+                            doOutput = true
+                            setRequestProperty("Content-Type", "application/json")
+                        }
+                        val payload = org.json.JSONObject().put("action", "start").toString()
+                        conn.outputStream.use { it.write(payload.toByteArray()) }
+                        if (conn.responseCode in 200..299) {
+                            "Sync triggered on Host Daemon ($syncHost). It will push via ADB."
+                        } else {
+                            "Host Daemon returned HTTP ${conn.responseCode}"
+                        }
+                    } catch (t: Throwable) {
+                        "Failed to trigger host daemon: ${t.localizedMessage}"
+                    }
+                }
             }
             log(status)
 

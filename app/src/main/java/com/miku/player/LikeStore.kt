@@ -35,6 +35,13 @@ object LikeStore {
         else android.os.Handler(android.os.Looper.getMainLooper()).post(block)
     }
     val likedAlbums = mutableStateListOf<String>()   // canonicalAlbumKey values
+    /**
+     * Tracks explicitly REFUSED. Liking an album means liking everything on it, UNLESS the user
+     * said otherwise about one track, and this is where "otherwise" lives. It is deliberately not
+     * the same thing as "absent from [liked]": absent means no opinion and follows the album, while
+     * refused survives the album being un-liked and re-liked.
+     */
+    val refusedTracks = mutableStateListOf<Long>()
     val likedArtists = mutableStateListOf<String>()  // canonicalArtistKey values
     @Volatile private var loaded = false
 
@@ -46,10 +53,12 @@ object LikeStore {
         val t = PlayerPreferences.loadLikedTracks(ctx)
         val al = PlayerPreferences.loadLikedAlbums(ctx)
         val ar = PlayerPreferences.loadLikedArtists(ctx)
+        val rf = PlayerPreferences.loadRefusedTracks(ctx)
         mutateOnMain {
             for (id in t) if (!liked.contains(id)) liked.add(id)
             for (k in al) if (!likedAlbums.contains(k)) likedAlbums.add(k)
             for (k in ar) if (!likedArtists.contains(k)) likedArtists.add(k)
+            for (id in rf) if (!refusedTracks.contains(id)) refusedTracks.add(id)
         }
     }
 
@@ -60,7 +69,6 @@ object LikeStore {
         val key = canonicalArtistKey(artist, ctx)
         val now = if (likedArtists.contains(key)) { likedArtists.remove(key); false } else { likedArtists.add(key); true }
         PlayerPreferences.saveLikedArtist(ctx, key, now)
-        if (now) PulsarLight.indicateHearted(ctx)
         return now
     }
 
@@ -84,7 +92,6 @@ object LikeStore {
         mutateOnMain { if (!liked.contains(track.id)) liked.add(track.id) }
         PlayerPreferences.saveLikedTrackMeta(ctx, track.id, track.title, track.artist)
         MikuPlayQualifier.markHearted(track.id)
-        PulsarLight.indicateHearted(ctx)
         broadcastLike(ctx, track.id, true, n)
         if (n == 1 && track.artist.isNotBlank() && track.title.isNotBlank()) {
             LastFmPreferences.loadSessionKey(ctx)?.let { LastFm.setLoved(it, track.artist, track.title, true) }
@@ -142,7 +149,6 @@ object LikeStore {
         // Keep the heart score consistent with the boolean: turning it on seeds at least one heart,
         // turning it off zeroes the score. (Earning extra hearts goes through heart() per play.)
         PlayerPreferences.setHeartCount(ctx, id, if (nowLiked) PlayerPreferences.getHeartCount(ctx, id).coerceAtLeast(1) else 0)
-        if (nowLiked) PulsarLight.indicateHearted(ctx)
         try {
             android.provider.Settings.Global.putString(
                 ctx.contentResolver,
@@ -228,14 +234,68 @@ object LikeStore {
         return result
     }
 
+    // ================================================== inherited likes
+    /**
+     * Where a track's like comes from.
+     *
+     *   TRACK    — liked on its own.
+     *   ALBUM    — not liked on its own, but the album is, and the user has not refused it.
+     *   NONE     — not liked.
+     *   REFUSED  — the album is liked but the user said no to THIS track.
+     */
+    enum class LikeOrigin { NONE, TRACK, ALBUM, REFUSED }
+
+    fun likeOrigin(ctx: Context, track: Track): LikeOrigin = when {
+        liked.contains(track.id) -> LikeOrigin.TRACK
+        refusedTracks.contains(track.id) -> LikeOrigin.REFUSED
+        isAlbumLiked(track.artist.ifBlank { track.albumArtist }, track.album, ctx) -> LikeOrigin.ALBUM
+        else -> LikeOrigin.NONE
+    }
+
+    /** Is this track liked, counting the album it belongs to? This is what the UI should ask. */
+    fun isLikedEffective(ctx: Context, track: Track): Boolean =
+        when (likeOrigin(ctx, track)) { LikeOrigin.TRACK, LikeOrigin.ALBUM -> true; else -> false }
+
+    /**
+     * Heart tap. Turns the EFFECTIVE state over, and records it explicitly so it beats the album:
+     * liking a track the album already covered promotes it to its own like, un-liking one the album
+     * covered records a refusal rather than silently doing nothing.
+     */
+    fun toggleEffective(ctx: Context, track: Track): Boolean {
+        val wasLiked = isLikedEffective(ctx, track)
+        if (wasLiked) {
+            if (liked.contains(track.id)) clearHearts(ctx, track)
+            mutateOnMain { if (!refusedTracks.contains(track.id)) refusedTracks.add(track.id) }
+            PlayerPreferences.saveRefusedTrack(ctx, track.id, true)
+        } else {
+            mutateOnMain { refusedTracks.remove(track.id) }
+            PlayerPreferences.saveRefusedTrack(ctx, track.id, false)
+            heart(ctx, track)
+        }
+        return !wasLiked
+    }
+
+    /** Long press: drop every per-track opinion so the track follows its album again. */
+    fun clearOverride(ctx: Context, track: Track) {
+        if (liked.contains(track.id)) clearHearts(ctx, track)
+        mutateOnMain { refusedTracks.remove(track.id) }
+        PlayerPreferences.saveRefusedTrack(ctx, track.id, false)
+    }
+
     fun isAlbumLiked(artist: String, album: String, ctx: Context? = null): Boolean =
         likedAlbums.contains(canonicalAlbumKey(artist, album, ctx))
 
+    /**
+     * Liking an album likes every track on it. Nothing is written per track: the tracks INHERIT it
+     * through [likeOrigin], so the album stays one row instead of N, un-liking it takes the whole
+     * set back with it, and a track the user explicitly liked on its own survives that.
+     * Per-track refusals are deliberately left alone here too, so re-liking an album does not
+     * quietly undo "except that one".
+     */
     fun toggleAlbum(ctx: Context, artist: String, album: String): Boolean {
         val key = canonicalAlbumKey(artist, album, ctx)
         val now = if (likedAlbums.contains(key)) { likedAlbums.remove(key); false } else { likedAlbums.add(key); true }
         PlayerPreferences.saveLikedAlbum(ctx, key, now)
-        if (now) PulsarLight.indicateHearted(ctx)
         return now
     }
 }

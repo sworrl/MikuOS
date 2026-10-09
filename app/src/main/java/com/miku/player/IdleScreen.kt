@@ -59,13 +59,58 @@ object IdleController {
     /** Ref count of on-screen surfaces demanding the display stay lit (see [KeepScreenAwake]). */
     var holdAwake by mutableStateOf(0)
         private set
-    fun acquireAwake() { holdAwake++ }
-    fun releaseAwake() { if (holdAwake > 0) holdAwake-- }
+    fun acquireAwake() { holdAwake++; publishHold() }
+    fun releaseAwake() { if (holdAwake > 0) holdAwake--; publishHold() }
+
+    /** App context, kept only so the hold flag can be published from acquire/release. */
+    @Volatile private var appCtx: Context? = null
+
+    /**
+     * Tell the OS idle ladder (MikuIdleDim in com.miku.systemui) that something on screen is meant
+     * to be WATCHED, not touched: tape mode and the fullscreen visualiser. That service owns the
+     * real Settings.System brightness now, and this is how it knows to stand down.
+     */
+    private fun publishHold() {
+        val c = appCtx ?: return
+        runCatching {
+            android.provider.Settings.Global.putInt(c.contentResolver, "miku_idle_hold_awake", if (holdAwake > 0) 1 else 0)
+        }
+    }
+
+    fun attachContext(ctx: Context) { appCtx = ctx.applicationContext; publishHold() }
 
     @Volatile private var lastInteraction = android.os.SystemClock.elapsedRealtime()
     @Volatile private var offRequested = false
 
+    /**
+     * The REAL display state, from ACTION_SCREEN_ON/OFF (see MainActivity) — not the idle ladder.
+     *
+     * [tier] alone was never a safe gate: it only advances from [IdleWatcher]'s in-composition
+     * once-a-second tick, and a [KeepScreenAwake] hold pins it to ACTIVE and resets the inactivity
+     * clock every second. So with the panel physically off, `screenActive` stayed TRUE and every
+     * per-frame loop that checks it (wavy scrubber, tape reels, transport deck, liked-heart) kept
+     * running at 30-60 Hz against a display nobody could see. Measured: the player's MAIN THREAD
+     * pinned at 67% with the screen dozing and the activity paused, which is what made the whole
+     * device feel laggy while music played.
+     */
+    @Volatile private var displayOn = true
+
+    /** Wire from ACTION_SCREEN_ON/OFF, and seed from DisplayManager so a missed broadcast can't strand it. */
+    fun setDisplayOn(on: Boolean) {
+        displayOn = on
+        if (on) lastInteraction = android.os.SystemClock.elapsedRealtime()
+    }
+
+    /** Seed [displayOn] from the platform (call at startup / resume). */
+    fun syncDisplayState(ctx: Context) {
+        displayOn = runCatching {
+            val dm = ctx.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+            dm.displays.any { it.state == android.view.Display.STATE_ON }
+        }.getOrDefault(true)
+    }
+
     fun loadPrefs(ctx: Context) {
+        attachContext(ctx)      // so acquire/releaseAwake can publish the hold to the OS ladder
         enabled = PlayerPreferences.loadIdleDimEnabled(ctx)
         ambientEnabled = PlayerPreferences.loadAmbientEnabled(ctx)
         activeSec = PlayerPreferences.loadIdleActiveSec(ctx)
@@ -119,13 +164,13 @@ object IdleController {
     // The single switch every GPU/CPU-continuous piece of UI should check before doing work
     // nobody's watching — dimmed-in-place still counts as "not active" here since the point is
     // burning battery on invisible-or-barely-visible frames, not literally screen-off.
-    val screenActive: Boolean get() = tier == IdleTier.ACTIVE
+    val screenActive: Boolean get() = displayOn && tier == IdleTier.ACTIVE
 
     // Coarser cutoff for things that ARE still worth keeping live through DIMMED (the real screen
     // stays fully visible there, e.g. a seek-bar position) but genuinely pointless once the screen
     // is either replaced by the ambient overlay or physically dark — no reason to keep polling
     // player position at sub-second cadence against a display nobody can see at all.
-    val visuallyIdle: Boolean get() = tier == IdleTier.AMBIENT || tier == IdleTier.OFF
+    val visuallyIdle: Boolean get() = !displayOn || tier == IdleTier.AMBIENT || tier == IdleTier.OFF
 }
 
 /**
@@ -192,14 +237,18 @@ fun IdleWatcher() {
  *  handled here — by the time tier reaches OFF the display is on its way down via ScreenOffHelper
  *  regardless of any brightness value this Window sets. */
 fun applyIdleBrightness(window: android.view.Window, tier: IdleTier) {
-    val level = when (tier) {
-        IdleTier.ACTIVE -> android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-        IdleTier.DIMMED -> IdleController.BRIGHTNESS_DIMMED
-        IdleTier.AMBIENT, IdleTier.OFF -> IdleController.BRIGHTNESS_AMBIENT
-    }
+    // NO-OP on purpose, kept so every call site does not have to change.
+    //
+    // This used to set window.attributes.screenBrightness, a per-WINDOW override. Justin asked for
+    // idle dim on the SYSTEM brightness, and having two owners is worse than having one: the OS
+    // ladder (MikuIdleDim, com.miku.systemui) stood down whenever Miku Music was in front, so
+    // inside the app the only dimming was this window override, and outside it the OS ladder never
+    // saw the app's holds. One owner now. MikuIdleDim writes Settings.System.SCREEN_BRIGHTNESS
+    // everywhere and reads IdleController's hold flag (Settings.Global miku_idle_hold_awake) to
+    // know when to leave the panel alone. The AMBIENT overlay UI below is unaffected.
     val attrs = window.attributes
-    if (attrs.screenBrightness != level) {
-        attrs.screenBrightness = level
+    if (attrs.screenBrightness != android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) {
+        attrs.screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         window.attributes = attrs
     }
 }

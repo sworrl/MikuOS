@@ -3,6 +3,8 @@ package com.miku.player
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
+import com.miku.player.ui.mikuGlassPanel
+import com.miku.player.ui.mikuHazeSource
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
 
@@ -80,6 +82,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.blur
@@ -384,9 +387,23 @@ class MainActivity : ComponentActivity() {
     // waiting for the app to be reopened. Without this, the shrunk timeout would keep applying
     // system-wide (every app, not just this one) until next launch. ACTION_SCREEN_OFF is a
     // protected broadcast — only deliverable to a dynamically-registered receiver, never manifest.
+    // Handles BOTH screen transitions. The OFF edge is what stops every per-frame UI loop in the
+    // app: IdleController.screenActive gates them, and it used to ignore the real display state
+    // entirely (see IdleController.displayOn) — leaving the main thread at ~67% against a dark panel.
     private val screenOffReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
-            ScreenOffHelper.restore(context)
+            when (intent.action) {
+                android.content.Intent.ACTION_SCREEN_ON -> IdleController.setDisplayOn(true)
+                else -> {
+                    IdleController.setDisplayOn(false)
+                    // The shared output-mix Visualizer is bound by the scrubber/visualisers via
+                    // AudioCapture.ensure() from four call sites and was released by NONE of them,
+                    // so it kept capturing FFT + waveform for a dark screen. Nothing reads those
+                    // buffers while the panel is off; the next ensure() rebinds on wake.
+                    runCatching { AudioCapture.release() }
+                    ScreenOffHelper.restore(context)
+                }
+            }
         }
     }
 
@@ -428,7 +445,13 @@ class MainActivity : ComponentActivity() {
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag") registerReceiver(updateStartingReceiver, updateFilter)
         }
-        registerReceiver(screenOffReceiver, android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_OFF))
+        registerReceiver(screenOffReceiver, android.content.IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_SCREEN_OFF)
+            addAction(android.content.Intent.ACTION_SCREEN_ON)
+        })
+        // Seed from the platform: a broadcast missed while we were not registered must not leave
+        // the per-frame loops believing the panel is lit.
+        IdleController.syncDisplayState(this)
         val backFilter = android.content.IntentFilter().apply {
             addAction("com.miku.player.action.TRIGGER_BACK")
             addAction("com.miku.systemui.action.TRIGGER_BACK")
@@ -444,6 +467,13 @@ class MainActivity : ComponentActivity() {
         MikuStorageAccess.ensure(this)
         // Automated SD card LOCAL rescans (never network — see MikuIngestGate for the ingress engine)
         schedulePeriodicLibraryScan(this)
+
+        // Warm the projectM preset library off the GL thread. The shipped library is ~9.8k presets
+        // (assets/presets_pack.zip); unpacking it the first time a visualizer opens would stall that
+        // first frame for tens of seconds, so do it here, once, in the background.
+        Thread {
+            runCatching { ProjectMNative.ensurePresets(applicationContext) }
+        }.apply { priority = Thread.MIN_PRIORITY; isDaemon = true }.start()
 
         // Tell the platform to hold a stable, un-throttled CPU/GPU clock state (no governor
         // hunting/lag) exactly while we're actually busy — playing audio, which is also when the
@@ -494,31 +524,74 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.RequestMultiplePermissions()
                 ) { result -> granted = result[audioPermission()] ?: hasAudioPermission() }
                 LaunchedEffect(Unit) { launcher.launch(permissionsToRequest()) }
-                Surface(color = MikuArtTheme.colors().ground, modifier = Modifier.fillMaxSize()) {
+                // Collapse the whole semantics tree to ONE node when the only accessibility service
+                // is our own navigation (which never reads content). Marking the content view
+                // unimportant did NOT stop Compose's delegate: it still walked every node and
+                // computed every window bound on every layout pass, 43% of the UI thread while
+                // scrolling. A one-node tree makes that walk free. With a real screen reader
+                // enabled the gate is off and the full tree is back. See MikuSemanticsGate.
+                val navOnly = remember { MikuSemanticsGate.onlyMikuNavEnabled(this@MainActivity) }
+                Surface(
+                    color = MikuArtTheme.colors().ground,
+                    modifier = Modifier.fillMaxSize().then(
+                        if (navOnly) Modifier.clearAndSetSemantics {} else Modifier
+                    )
+                ) {
                     if (granted) {
                         var refresh by remember { mutableStateOf(0) }
                         var lastSeenGen by remember { mutableStateOf(ScanProgress.generation.get()) }
                         LaunchedEffect(Unit) {
+                            // DEBOUNCED. A rescan bumps the generation once per scanner batch, and
+                            // each bump used to re-key produceState and queue another full walk:
+                            // FIVE back-to-back 7 to 20 second walks for one rescan (seen 2026-09-19).
+                            // Now a change only counts once the generation has held still for a
+                            // few seconds, i.e. the scan is actually done.
+                            var pendingGen: Int? = null
+                            var stableSince = 0L
                             while (true) {
                                 val g = ScanProgress.generation.get()
                                 if (g != lastSeenGen) {
-                                    lastSeenGen = g
-                                    AlbumArtCache.clearMisses() // a scan may have surfaced art for previously-missed tracks
-                                    refresh++
+                                    if (pendingGen != g) { pendingGen = g; stableSince = android.os.SystemClock.elapsedRealtime() }
+                                    else if (android.os.SystemClock.elapsedRealtime() - stableSince >= 4000L) {
+                                        lastSeenGen = g; pendingGen = null
+                                        AlbumArtCache.clearMisses() // a scan may have surfaced art for previously-missed tracks
+                                        refresh++
+                                    }
                                 }
-                                delay(2500L)
+                                delay(1500L)
                             }
                         }
-                        // Instant binary cache for 0ms cold start
-                        val cachedTracks = remember { FastLibraryStore.loadSync(this@MainActivity) ?: emptyList() }
-                        var hasLoadedOnce by remember { mutableStateOf(cachedTracks.isNotEmpty()) }
-                        val tracks by produceState(initialValue = cachedTracks, refresh) {
-                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { queryTracks() }
+                        // The binary cache load is NOT on the main thread any more. It was, inside
+                        // remember{}, under a comment promising "0ms cold start", and it measured 7 to
+                        // 10 SECONDS on this device because the launch-time background work starved
+                        // the UI thread (see MikuBackground). The cache lands from IO in well under a
+                        // second when nothing is fighting it, the screen draws a loading state until
+                        // then, and the full MediaStore query follows on the low-priority pool.
+                        var hasLoadedOnce by remember { mutableStateOf(FastLibraryStore.peek() != null) }
+                        val tracks by produceState(
+                            initialValue = FastLibraryStore.peek() ?: emptyList(), refresh
+                        ) {
+                            if (value.isEmpty()) {
+                                val cached = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    FastLibraryStore.loadSync(this@MainActivity)
+                                }
+                                if (!cached.isNullOrEmpty()) { value = cached; hasLoadedOnce = true }
+                            }
+                            // Skip the 45-second walk when MediaStore has not changed since the cache was
+                            // written. A rescan (refresh > 0) or an empty cache always walks.
+                            if (refresh == 0 && value.isNotEmpty() && FastLibraryStore.cacheIsCurrent(this@MainActivity)) {
+                                android.util.Log.i("MikuPlayer", "library: MediaStore generation unchanged, cache is current, skipping full query")
+                                hasLoadedOnce = true
+                                return@produceState
+                            }
+                            val result = kotlinx.coroutines.withContext(MikuBackground.dispatcher) { queryTracks() }
                             hasLoadedOnce = true
                             if (value.isEmpty() || result.size != value.size || (result.isNotEmpty() && value.isNotEmpty() && (result.first().id != value.first().id || result.last().id != value.last().id))) {
                                 value = result
                                 FastLibraryStore.saveAsync(this@MainActivity, result)
                             }
+                            // The cache now reflects THIS generation of MediaStore.
+                            FastLibraryStore.stampGeneration(this@MainActivity)
                         }
                         IdleWatcher()
                         val idleTier = IdleController.tier
@@ -578,21 +651,51 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Misnamed for history: this SHOWS the system bars and makes the app draw underneath them.
+     *
+     * The status bar owns the top 41px of a 720x1280 panel. Miku Music was laid out below it, so
+     * that strip was dead space the app paid for and never used. Edge-to-edge gives the window the
+     * whole panel and lets the stock clock/battery bar bleed over the app's own background, which
+     * is what it is for on a screen this small. FLAG_FULLSCREEN has to be cleared explicitly: an
+     * old theme set it, and while it is set the framework insets the app below the bar no matter
+     * what the insets controller says.
+     */
     private fun hideSystemBars() {
         try {
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
             val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-            insetsController.show(androidx.core.view.WindowInsetsCompat.Type.navigationBars())
+            // STATUS bar visible (clock/battery bleeding over the app is the point of edge-to-edge
+            // here). NAVIGATION bar HIDDEN: this device's navigation IS the accessibility service's
+            // own home pill, which follows the finger and shifts colour with the art. Showing the
+            // stock one too put a second, dead, all-white pill on screen next to ours. Clearing
+            // FLAG_FULLSCREEN for the status bar is what let it back in.
+            insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.navigationBars())
+            insetsController.systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.show(androidx.core.view.WindowInsetsCompat.Type.statusBars())
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
             window.statusBarColor = android.graphics.Color.TRANSPARENT
+            // Android 10+ re-tints a transparent bar with a scrim of its own when it thinks the
+            // content behind it is too busy. We draw our own scrim, so refuse it.
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+            }
+            // Light art behind the bar would leave black glyphs on black. Force the light glyph set.
+            insetsController.isAppearanceLightStatusBars = false
+            insetsController.isAppearanceLightNavigationBars = false
         } catch (_: Throwable) {}
     }
 
     override fun onResume() {
         super.onResume()
         hideSystemBars()
+        MikuSemanticsGate.apply(this)   // see MikuSemanticsGate: no semantics tree for a nav-only a11y service
         VisualizerMemoryGuard.release()
         IdleController.loadPrefs(this)
+        IdleController.syncDisplayState(this)   // resuming means the panel is lit; re-arm the loops
         IdleController.poke(this)
         try { com.miku.player.screentime.MikuSmartScreenTimeEngine.start(this) } catch (_: Throwable) {}
         ScreenOffHelper.restore(this)
@@ -669,6 +772,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isSupportedDevice(): Boolean {
+        // DEVELOPER OVERRIDE. Miku Music is built for one device and the gate is deliberate: the
+        // audio path, the DAC controls and half the hardware readouts assume an M500 and would
+        // otherwise show nothing or lie. But running the UI on another phone is genuinely useful
+        // for development, so shell can lift the gate:
+        //
+        //   adb shell settings put global miku_allow_any_device 1
+        //
+        // Settings.Global is used because the SHELL holds WRITE_SECURE_SETTINGS on any device
+        // while the app does not, so this cannot be flipped by the app or by anything the user
+        // taps. Off the M500 the hardware pages will honestly report that there is no CS43198 and
+        // no vendor audio properties; the player, library and visualiser work normally.
+        val overridden = try {
+            android.provider.Settings.Global.getInt(contentResolver, "miku_allow_any_device", 0) == 1
+        } catch (_: Throwable) { false }
+        if (overridden) {
+            android.util.Log.w("MikuPlayer", "device gate lifted by miku_allow_any_device; " +
+                "hardware-specific readouts will report unavailable on ${android.os.Build.MODEL}")
+            return true
+        }
         val realHardware = android.os.Build.MANUFACTURER.equals("HiBy", ignoreCase = true) &&
             android.os.Build.MODEL.contains("M500", ignoreCase = true)
         // Emulator/VM screen — a different field set than PlayerHolder's own VM check on purpose.
@@ -743,7 +865,24 @@ class MainActivity : ComponentActivity() {
         return p.toTypedArray()
     }
 
-    private fun queryTracks(): List<Track> {
+    /** Compiled once. This used to be `Regex(...)` INSIDE the per-row loop: 16.6k compiles a walk. */
+    private val LEADING_TRACK_NUMBER_RE = Regex("^(\\d{1,3})[\\s.\\-_]")
+
+    /**
+     * SINGLE FLIGHT. A rescan bumps ScanProgress.generation more than once (scan start, scan end),
+     * each bump re-keys the produceState, and produceState cancels the previous coroutine, but a
+     * blocking walk inside withContext cannot be interrupted, so the old walk ran to completion
+     * while the new one started: TWO full MediaStore walks at once (seen live: tids 14580 and
+     * 14581 both reporting 16609 rows, and the walk went from 18s to 58s). Now the second caller
+     * waits for the first and takes its result.
+     */
+    private val queryLock = Any()
+    @Volatile private var queryInFlight: List<Track>? = null
+
+    private fun queryTracks(): List<Track> = synchronized(queryLock) { queryTracksLocked() }
+
+    private fun queryTracksLocked(): List<Track> {
+        val tQuery0 = android.os.SystemClock.elapsedRealtime()
         val out = ArrayList<Track>()
         val hasBitrate = Build.VERSION.SDK_INT >= 30
         val proj = arrayListOf(
@@ -794,8 +933,8 @@ class MainActivity : ComponentActivity() {
 
                 // 2. Infer from leading filename digits if missing (e.g., "01 - Track.flac", "04. Title.mp3")
                 if (parsedTrackNo <= 0 && path.isNotBlank()) {
-                    val fname = java.io.File(path).nameWithoutExtension
-                    val match = Regex("^(\\d{1,3})[\\s.\\-_]").find(fname)
+                    val fname = path.substringAfterLast('/').substringBeforeLast('.')
+                    val match = LEADING_TRACK_NUMBER_RE.find(fname)
                     val inferred = match?.groupValues?.get(1)?.toIntOrNull()
                     if (inferred != null && inferred > 0) {
                         parsedTrackNo = inferred
@@ -809,22 +948,31 @@ class MainActivity : ComponentActivity() {
 
                 val albumArtist = if (iAlbumArtist >= 0 && !c.isNull(iAlbumArtist)) c.getString(iAlbumArtist) ?: "" else ""
                 out.add(Track(
-                    id, c.getString(iT) ?: "Unknown", c.getString(iA) ?: "Unknown artist",
-                    c.getString(iAl) ?: "", c.getLong(iD), c.getLong(iS),
-                    if (iBr >= 0 && !c.isNull(iBr)) c.getInt(iBr) / 1000 else 0, c.getString(iM) ?: "",
+                    id, c.getString(iT) ?: "Unknown", FastLibraryStore.intern(c.getString(iA) ?: "Unknown artist"),
+                    FastLibraryStore.intern(c.getString(iAl) ?: ""), c.getLong(iD), c.getLong(iS),
+                    if (iBr >= 0 && !c.isNull(iBr)) c.getInt(iBr) / 1000 else 0, FastLibraryStore.intern(c.getString(iM) ?: ""),
                     path,
                     if (iYear >= 0 && !c.isNull(iYear)) c.getInt(iYear) else 0,
                     if (iAlbumId >= 0 && !c.isNull(iAlbumId)) c.getLong(iAlbumId) else 0L,
                     parsedTrackNo,
-                    albumArtist,
+                    FastLibraryStore.intern(albumArtist),
                     if (iDateAdded >= 0 && !c.isNull(iDateAdded)) c.getLong(iDateAdded) else 0L,
                     discNumber = discNo
                 ))
             }
         }
+        val tQuery1 = android.os.SystemClock.elapsedRealtime()
         PlayerPreferences.flushTrackNumbers(this) // one batched write for every saveTrackNumber() call made during this pass, not one per track
+        val tFlush = android.os.SystemClock.elapsedRealtime()
         // Whole-CD image rips: flag + label, split into virtual tracks where a cue sheet allows.
-        return DiscImage.apply(this, out)
+        val result = DiscImage.apply(this, out)
+        val tDisc = android.os.SystemClock.elapsedRealtime()
+        android.util.Log.i("MikuPlayer", "queryTracks: mediastore=${tQuery1 - tQuery0}ms (${out.size} rows) " +
+            "flush=${tFlush - tQuery1}ms discimage=${tDisc - tFlush}ms")
+        // PERF (cold start): stamp this sweep so LibraryDaemonService can skip its own identical
+        // "initial background sync" query — the two used to run concurrently on every launch.
+        FastLibraryStore.noteFullQuery(result.size)
+        return result
     }
 }
 
@@ -942,7 +1090,7 @@ private fun App(tracks: List<Track>, player: ExoPlayer, loading: Boolean = false
         // else in this chain should be able to take the whole library's grouping down with it —
         // catch, log, and keep the previous result rather than get permanently stuck either way.
         runCatching {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withContext(MikuBackground.dispatcher) {
                 tracks.artists(ctx, ignoreThe = sortIgnoreThe, displayMode = displayTheMode)
             }
         }.onSuccess { artistGroups = it; hasGroupedOnce = true }
@@ -952,7 +1100,7 @@ private fun App(tracks: List<Track>, player: ExoPlayer, loading: Boolean = false
     var albumGroups by remember { mutableStateOf(emptyList<AlbumGroup>()) }
     LaunchedEffect(tracks, sortIgnoreThe) {
         val result = runCatching {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withContext(MikuBackground.dispatcher) {
                 tracks.albums(ctx, ignoreThe = sortIgnoreThe)
             }
         }.onFailure { android.util.Log.e("MikuPlayer", "album grouping failed, keeping previous result", it) }
@@ -1053,8 +1201,6 @@ private fun App(tracks: List<Track>, player: ExoPlayer, loading: Boolean = false
                     PlayerPreferences.saveLastPlayback(ctx, currentTrack!!.id, player.currentPosition)
                     PlayerPreferences.saveQueueIndex(ctx, player.currentMediaItemIndex)
                 }
-                // Root-gated, no-op without root/opt-in — see PulsarLight's doc comment.
-                kotlinx.coroutines.MainScope().launch { PulsarLight.updateForPlayback(ctx, currentTrack, p) }
             }
             override fun onEvents(pl: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TIMELINE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY)) {
@@ -1066,8 +1212,7 @@ private fun App(tracks: List<Track>, player: ExoPlayer, loading: Boolean = false
                             currentTrack = it
                             PlayerPreferences.saveLastPlayback(ctx, it.id, pl.currentPosition)
                             PlayerPreferences.recordPlay(ctx, it.id, System.currentTimeMillis())   // history + play count
-                            historyTick++
-                            kotlinx.coroutines.MainScope().launch { PulsarLight.updateForPlayback(ctx, it, pl.isPlaying) }
+                            kotlinx.coroutines.MainScope().launch { }
                         }
                     }
                 }
@@ -1199,7 +1344,7 @@ private fun App(tracks: List<Track>, player: ExoPlayer, loading: Boolean = false
             // gesture zones. System back still lands via BackHandler below.)
     ) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).haze(hazeState).padding(top = with(density) { headerHeightPx.toDp() })) {
+            Box(Modifier.weight(1f).mikuHazeSource(ctx, hazeState).padding(top = with(density) { headerHeightPx.toDp() })) {
                 // Same priority chain the old hard-cut `when` rendered in, snapshotted into an
                 // immutable route so the outgoing screen can finish its exit animation from its
                 // own captured data (see ContentRoute's doc comment).
@@ -1291,7 +1436,7 @@ private fun App(tracks: List<Track>, player: ExoPlayer, loading: Boolean = false
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
                 .onSizeChanged { headerHeightPx = it.height }
-                .hazeChild(state = hazeState, style = HazeMaterials.thick(artGround))
+                .mikuGlassPanel(ctx, hazeState, HazeMaterials.thick(artGround), artGround)
         ) {
             Header(
                 count = tracks.size,
@@ -1316,6 +1461,9 @@ private fun App(tracks: List<Track>, player: ExoPlayer, loading: Boolean = false
                 canGoBack = canGoBack,
                 onBack = performBack
             )
+            // The one-time Last.fm offer. Arms itself only after 90 seconds of actual playback, so
+            // a fresh install plays music first and asks second. See ScrobbleSetupOffer.
+            com.miku.player.scrobble.ScrobbleSetupOffer(player) { showSettings = true }
             if (artistSel == null && albumSel == null) TabBar(tab) {
                 tab = it
                 PlayerPreferences.saveTab(ctx, it.name)
@@ -1817,26 +1965,37 @@ private fun MikuAnimatedBootSplash(onFinished: () -> Unit) {
         if (deltaBadge != null) { delay(4000); deltaBadge = null }
     }
 
-    val rotationTransition = rememberInfiniteTransition(label = "spin")
-    val spinAngle by rotationTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "spinAngle"
-    )
-
-    val auraAlpha by rotationTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "auraAlpha"
-    )
+    // PERF (scroll jank, 2026-09-17): these two infinite transitions used to be created
+    // unconditionally — i.e. 60 animation frames a second for the entire life of the app — and
+    // `spinAngle` was unwrapped with `by` and read in this composable's BODY
+    // (`.rotate(spinAngle)` on the refresh icon). Since the pill lives in the always-visible
+    // header that sits on top of every list screen, that meant ScannerPill recomposed 60 times a
+    // second, forever, whether or not a scan was running, competing with list scrolling for the
+    // main thread. Now the transition only EXISTS while a scan is actually running (same
+    // conditional-composable-call pattern TechBadgeChip already uses for its shimmer), and both
+    // values are read from the layer/draw phase so even during a scan nothing recomposes for them.
+    val scanAnim: Pair<androidx.compose.runtime.State<Float>, androidx.compose.runtime.State<Float>>? = if (isScanning) {
+        val rotationTransition = rememberInfiniteTransition(label = "spin")
+        val spin = rotationTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "spinAngle"
+        )
+        val aura = rotationTransition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 0.9f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "auraAlpha"
+        )
+        spin to aura
+    } else null
 
     // Same 3D-embossed-key language as HapticIconButton/DataChip: raised face lit from the top +
     // drop shadow at rest, springy scale + inverted sunk lighting while held, haptic tick on tap
@@ -1889,7 +2048,13 @@ private fun MikuAnimatedBootSplash(onFinished: () -> Unit) {
                 }
                 drawRoundRect(
                     Brush.horizontalGradient(
-                        if (isScanning) listOf(MikuTealBright.copy(alpha = auraAlpha), MikuPink.copy(alpha = auraAlpha))
+                        // Draw-phase read of the aura animation (it was already read here, so
+                        // this one never cost a recomposition) — .value because the transition is
+                        // now conditional and handed around as a State rather than unwrapped.
+                        if (isScanning) {
+                            val aa = scanAnim?.second?.value ?: 0.35f
+                            listOf(MikuTealBright.copy(alpha = aa), MikuPink.copy(alpha = aa))
+                        }
                         else listOf(MikuTeal.copy(alpha = 0.6f), MikuPink.copy(alpha = 0.4f))
                     ),
                     cornerRadius = rr, style = Stroke(1.2.dp.toPx())
@@ -1910,7 +2075,9 @@ private fun MikuAnimatedBootSplash(onFinished: () -> Unit) {
                 tint = if (isScanning) MikuTealBright else MikuTeal,
                 modifier = Modifier
                     .size(13.dp)
-                    .rotate(if (isScanning) spinAngle else 0f)
+                    // graphicsLayer, not .rotate(): the angle is read in the LAYER phase, so the
+                    // 60 Hz spin no longer recomposes the pill (see the note above).
+                    .graphicsLayer { rotationZ = scanAnim?.first?.value ?: 0f }
             )
             Spacer(Modifier.width(4.dp))
             Text(
@@ -1974,7 +2141,7 @@ private fun MikuAnimatedBootSplash(onFinished: () -> Unit) {
                     indication = null
                 ) {}
                 .clip(RoundedCornerShape(22.dp))
-                .hazeChild(state = hazeState, style = HazeMaterials.thick(Ground))
+                .mikuGlassPanel(ctx, hazeState, HazeMaterials.thick(Ground), Ground)
                 .background(Brush.verticalGradient(listOf(Color(0xE6072328), Color(0xF2031114))))
                 .border(1.dp, MikuTealBright.copy(alpha = 0.5f), RoundedCornerShape(22.dp))
                 .padding(18.dp)
@@ -2122,7 +2289,7 @@ private fun MikuAnimatedBootSplash(onFinished: () -> Unit) {
                     } else {
                         Text(
                             "m500d daemon listening on port 8787",
-                            color = Muted.copy(alpha = 0.7f),
+                            color = Muted.copy(alpha = 0.85f),
                             fontSize = 10.5.sp
                         )
                     }
@@ -2226,8 +2393,52 @@ private fun MikuAnimatedBootSplash(onFinished: () -> Unit) {
                 }
             }
 
-            // Note: Ingress screen with Force Scan + automation is in the launcher, not here
-            // This app button will open the launcher's system ingress screen
+            Spacer(Modifier.height(8.dp))
+
+            // The SD-card scan controls (Quick / FORCE SCAN + unattended scans) live in the MikuOS
+            // launcher's ingest observatory — this button hands off to that system screen.
+            Button(
+                onClick = {
+                    val launch = ctx.packageManager.getLaunchIntentForPackage("com.miku.launcher")?.apply {
+                        putExtra("open_ingest", true)
+                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                    }
+                    if (launch == null) {
+                        android.widget.Toast.makeText(ctx, "MikuOS launcher not installed — ingress screen unavailable", android.widget.Toast.LENGTH_SHORT).show()
+                    } else try { ctx.startActivity(launch) } catch (t: Throwable) {
+                        android.widget.Toast.makeText(ctx, "Couldn't open ingress screen: ${t.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("🛰 Open Ingress Engine (SD scan)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            // BPM / rhythm game entry point. The game lives in the MikuOS launcher's BPM
+            // observatory (it owns the live output-mix beat detector); hand off the same way the
+            // ingress button does, via an `open_bpm` launch extra.
+            Button(
+                onClick = {
+                    val launch = ctx.packageManager.getLaunchIntentForPackage("com.miku.launcher")?.apply {
+                        putExtra("open_bpm", true)
+                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                    }
+                    if (launch == null) {
+                        android.widget.Toast.makeText(ctx, "MikuOS launcher not installed - BPM game unavailable", android.widget.Toast.LENGTH_SHORT).show()
+                    } else try { ctx.startActivity(launch) } catch (t: Throwable) {
+                        android.widget.Toast.makeText(ctx, "Couldn't open the BPM game: ${t.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MikuPink.copy(alpha = 0.16f)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("BPM Rhythm Game", color = MikuPink, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -2297,10 +2508,10 @@ private fun MikuAnimatedBootSplash(onFinished: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 260.dp)
-                    .hazeChild(
-                        state = hazeState,
-                        shape = RoundedCornerShape(22.dp),
-                        style = HazeMaterials.thick(Color(0xFF0F1522))
+                    .mikuGlassPanel(
+                        androidx.compose.ui.platform.LocalContext.current, hazeState,
+                        HazeMaterials.thick(Color(0xFF0F1522)), Color(0xFF0F1522),
+                        shape = RoundedCornerShape(22.dp)
                     )
                     .border(1.5.dp, Brush.horizontalGradient(listOf(MikuCyan.copy(alpha = 0.8f), MikuNeonPink.copy(alpha = 0.6f))), RoundedCornerShape(22.dp))
             ) {
@@ -2431,7 +2642,7 @@ private fun MikuAnimatedBootSplash(onFinished: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "Background ingestion running · Zero audio playback stutter.",
-                            color = Color.White.copy(alpha = 0.45f),
+                            color = Color.White.copy(alpha = 0.5f),
                             fontSize = 10.sp
                         )
                     }
@@ -3022,6 +3233,31 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexed(
     list: List<Track>, row: @Composable (Int, Track) -> Unit
 ) = items(list.size, key = { list[it].id }, contentType = { "track" }) { i -> row(i, list[i]) }
 
+/**
+ * PERF (scroll jank, 2026-09-17). Per-track bit-depth/sample-rate (TrackTech) and release-year
+ * (TrackYear) probes are requested from inside list item bodies, so a fling used to launch one SD
+ * card probe coroutine per row that flew past — thousands of them, from the main thread, mid-fling,
+ * and then minutes of SD I/O afterwards for rows nobody is looking at any more. This tells both
+ * caches "a list is moving": while it is, a request is only recorded, and the recording (capped to
+ * the most recent screenful-and-then-some) is drained the instant scrolling stops.
+ *
+ * Deliberately its own tiny composable: `state.isScrollInProgress` is read HERE, so only this
+ * zero-output function recomposes when a fling starts or stops — putting the read in the list
+ * screen itself would re-run that whole (very large) composable twice per fling.
+ */
+@Composable private fun PauseProbesWhileScrolling(scrolling: Boolean) {
+    DisposableEffect(scrolling) {
+        if (scrolling) { TrackTech.beginScroll(); TrackYear.beginScroll() }
+        onDispose { if (scrolling) { TrackTech.endScroll(); TrackYear.endScroll() } }
+    }
+}
+
+@Composable private fun PauseProbesWhileScrolling(state: LazyListState) =
+    PauseProbesWhileScrolling(state.isScrollInProgress)
+
+@Composable private fun PauseProbesWhileScrolling(state: LazyGridState) =
+    PauseProbesWhileScrolling(state.isScrollInProgress)
+
 @Composable
 private fun <T> AlphabetFastScroller(
     items: List<T>,
@@ -3056,14 +3292,25 @@ private fun <T> AlphabetFastScroller(
     var containerHeight by remember { mutableIntStateOf(1) }
     var scrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
-    // Sync active letter with normal list scrolling when not dragging
-    val visibleIdx by remember { derivedStateOf { firstVisibleIndex() } }
-    LaunchedEffect(visibleIdx, isDragging) {
-        if (!isDragging && visibleIdx in items.indices) {
-            val name = getItemName(items[visibleIdx]).trim()
-            val sortKey = formatArtistSortKey(name, true, ctx)
-            val firstChar = sortKey.firstOrNull()?.uppercaseChar() ?: '#'
-            activeLetter = if (firstChar in 'A'..'Z') firstChar else '#'
+    // Sync active letter with normal list scrolling when not dragging.
+    // PERF (scroll jank, 2026-09-17): this used to be
+    //     val visibleIdx by remember { derivedStateOf { firstVisibleIndex() } }
+    //     LaunchedEffect(visibleIdx, isDragging) { ... }
+    // i.e. the first-visible-item index was read in THIS composable's body. That index changes
+    // continuously during a fling, so the whole rail — all 27 letter Texts plus the gesture
+    // modifiers — recomposed several times a second on every scroll, and the LaunchedEffect was
+    // cancelled and relaunched each time. The index is observed inside the effect now, so a
+    // recomposition only happens when the ACTIVE LETTER actually changes, which is the only thing
+    // the rail draws differently.
+    LaunchedEffect(items, isDragging) {
+        if (isDragging) return@LaunchedEffect
+        snapshotFlow { firstVisibleIndex() }.collect { idx ->
+            if (idx in items.indices) {
+                val name = getItemName(items[idx]).trim()
+                val sortKey = formatArtistSortKey(name, true, ctx)
+                val firstChar = sortKey.firstOrNull()?.uppercaseChar() ?: '#'
+                activeLetter = if (firstChar in 'A'..'Z') firstChar else '#'
+            }
         }
     }
 
@@ -3254,7 +3501,7 @@ private fun MikuSearchBar(
             cursorBrush = androidx.compose.ui.graphics.SolidColor(MikuTealBright),
             decorationBox = { innerTextField ->
                 if (query.isEmpty()) {
-                    Text(placeholder, color = Muted.copy(alpha = 0.7f), fontSize = 13.sp)
+                    Text(placeholder, color = Muted.copy(alpha = 0.85f), fontSize = 13.sp)
                 }
                 innerTextField()
             }
@@ -3348,6 +3595,8 @@ fun MikuEmptyState(
         }
     }
     val scope = rememberCoroutineScope()
+    // Don't queue per-track SD-card probes for rows flying past mid-fling (see the function).
+    PauseProbesWhileScrolling(listState)
 
     Column(Modifier.fillMaxSize()) {
         MikuSearchBar(
@@ -3405,6 +3654,8 @@ fun MikuEmptyState(
     }
     val scope = rememberCoroutineScope()
     val hazeState = remember { HazeState() }
+    // Don't queue per-track SD-card probes for rows flying past mid-fling (see the function).
+    PauseProbesWhileScrolling(listState)
 
     Column(Modifier.fillMaxSize()) {
         MikuSearchBar(
@@ -3412,7 +3663,7 @@ fun MikuEmptyState(
             onQueryChange = { searchQuery = it },
             placeholder = "Search ${artists.size} artists..."
         )
-        Box(Modifier.weight(1f).fillMaxWidth().haze(hazeState)) {
+        Box(Modifier.weight(1f).fillMaxWidth().mikuHazeSource(androidx.compose.ui.platform.LocalContext.current, hazeState)) {
             if (loading && filteredArtists.isEmpty()) {
                 // Still waiting on the first queryTracks() to resolve — a real "0 artists" empty
                 // state would be misleading here; this isn't a verdict on the library yet.
@@ -3475,8 +3726,26 @@ fun MikuEmptyState(
                     items(filteredArtists.size, key = { "${filteredArtists[it].name}#${filteredArtists[it].tracks.firstOrNull()?.id ?: it}" }, contentType = { "artist" }) { i ->
                         val a = filteredArtists[i]
                         val rowCtx = LocalContext.current
-                        val reprTrack = a.coverTrack(rowCtx)
-                        val aQuality = remember(a.tracks) { TrackTech.computeQualityBreakdown(rowCtx, a.tracks) }
+                        // PERF (scroll jank, 2026-09-17), per artist row that scrolls into view:
+                        //  - coverTrack() was called on every recomposition: a canonicalArtistKey
+                        //    lookup plus a SharedPreferences read plus a key-string allocation,
+                        //    for a value that can only change when the artist or its tracks do.
+                        //    remember()ed on exactly that.
+                        //  - computeQualityBreakdown() walked the artist's ENTIRE track list on
+                        //    the MAIN THREAD (hundreds of tracks for a prolific artist), allocated
+                        //    a format string + a counting map per call, registered a Compose
+                        //    snapshot read for every one of those tracks, and launched one IO
+                        //    probe coroutine per unprobed file from inside composition. The
+                        //    remember() key made it survive recomposition but NOT scrolling out
+                        //    of and back into view, so a fling paid all of that per row, twice
+                        //    (down and back). qualityForGroup() is a map lookup that computes the
+                        //    same breakdown once, off the main thread, and wakes the row when it
+                        //    lands — see TrackTech's group-quality cache.
+                        val reprTrack = remember(a.name, a.tracks) { a.coverTrack(rowCtx) }
+                        val aQuality = TrackTech.qualityForGroup(rowCtx, a.tracks)
+                        // One lookup per row instead of two (name colour + heart): each one
+                        // canonicalises the artist name and then scans the liked-artists list.
+                        val artistLiked = LikeStore.isArtistLiked(a.name, rowCtx)
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)
                                 .pressableGlassCard { onOpen(a) }
@@ -3501,25 +3770,31 @@ fun MikuEmptyState(
                             }
                             Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(a.name, color = if (LikeStore.isArtistLiked(a.name, rowCtx)) MikuTeal else Color(0xFFE8F4F2), fontSize = 16.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontFamily = Baloo2Font)
+                                Text(a.name, color = if (artistLiked) MikuTeal else Color(0xFFE8F4F2), fontSize = 16.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontFamily = Baloo2Font)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("${a.tracks.size} tracks · ${a.albumCount} albums", color = Muted, fontSize = 12.5.sp, fontFamily = Baloo2Font)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("·", color = Muted.copy(alpha = 0.5f), fontSize = 12.sp)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        aQuality.specTag,
-                                        color = when (aQuality.highestTier) {
-                                            4 -> Color(0xFFDFB8FF)
-                                            3 -> Color(0xFFFFD166)
-                                            2 -> MikuTealBright
-                                            else -> Muted
-                                        },
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    // Guarded on totalTracks like every other quality widget
+                                    // (AudioQualityCrestOverlay / AudioQualitySpecLine already
+                                    // were): the breakdown now arrives a beat after the row binds,
+                                    // and the placeholder's "No audio" must never flash here.
+                                    if (aQuality.totalTracks > 0) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("·", color = Muted.copy(alpha = 0.85f), fontSize = 12.sp)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            aQuality.specTag,
+                                            color = when (aQuality.highestTier) {
+                                                4 -> Color(0xFFDFB8FF)
+                                                3 -> Color(0xFFFFD166)
+                                                2 -> MikuTealBright
+                                                else -> Muted
+                                            },
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                             Spacer(Modifier.width(6.dp))
@@ -3527,7 +3802,7 @@ fun MikuEmptyState(
                                 Icon(Icons.Default.Shuffle, "Shuffle Artist", tint = MikuTealBright, modifier = Modifier.size(20.dp))
                             }
                             Spacer(Modifier.width(4.dp))
-                            ArtistRainbowHeart(LikeStore.isArtistLiked(a.name, rowCtx)) { LikeStore.toggleArtist(rowCtx, a.name) }
+                            ArtistRainbowHeart(artistLiked) { LikeStore.toggleArtist(rowCtx, a.name) }
                             Spacer(Modifier.width(4.dp))
                             Icon(Icons.Default.ChevronRight, null, tint = Muted)
                         }
@@ -3587,10 +3862,10 @@ private fun ArtistSortSettingsModal(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .hazeChild(
-                    state = hazeState,
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                    style = HazeMaterials.thick(Color(0xFF07191C))
+                .mikuGlassPanel(
+                    androidx.compose.ui.platform.LocalContext.current, hazeState,
+                    HazeMaterials.thick(Color(0xFF07191C)), Color(0xFF07191C),
+                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
                 )
                 .border(1.dp, MikuTeal.copy(alpha = 0.5f), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .clickable(
@@ -3742,6 +4017,8 @@ private fun ArtistSortSettingsModal(
     val albums = remember(a.tracks) { a.tracks.albums() }
     val totalPlays = remember(a.tracks) { a.tracks.sumOf { PlayerPreferences.loadPlayCount(ctx, it.id) } }
     val hazeState = remember { HazeState() }
+    // Don't queue per-track SD-card probes for rows flying past mid-fling (see the function).
+    PauseProbesWhileScrolling(listState)
 
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         // 1. Fullscreen Hero Header Banner (Spotify Style)
@@ -3752,15 +4029,15 @@ private fun ArtistSortSettingsModal(
                 // Background Cover Artwork — marked as the haze blur SOURCE so the text panel
                 // below can show a real frosted-glass view of it instead of a flat dark scrim.
                 // Real artist photo when one is known (see artistart/); the album art below otherwise.
-                ArtistPhotoImage(artist = a, modifier = Modifier.fillMaxSize().haze(hazeState)) {
+                ArtistPhotoImage(artist = a, modifier = Modifier.fillMaxSize().mikuHazeSource(ctx, hazeState)) {
                     if (reprTrack != null) {
                         AlbumArtImage(
                             trackId = reprTrack.id,
-                            modifier = Modifier.fillMaxSize().haze(hazeState),
+                            modifier = Modifier.fillMaxSize().mikuHazeSource(ctx, hazeState),
                             trackPath = reprTrack.path
                         )
                     } else {
-                        Box(Modifier.fillMaxSize().haze(hazeState).background(Color(0xFF0C2B2E)))
+                        Box(Modifier.fillMaxSize().mikuHazeSource(ctx, hazeState).background(Color(0xFF0C2B2E)))
                     }
                 }
 
@@ -3778,10 +4055,10 @@ private fun ArtistSortSettingsModal(
                 Column(
                     modifier = Modifier.align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .hazeChild(
-                            state = hazeState,
-                            shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
-                            style = HazeMaterials.thick(Color(0xFF041416))
+                        .mikuGlassPanel(
+                            androidx.compose.ui.platform.LocalContext.current, hazeState,
+                            HazeMaterials.thick(Color(0xFF041416)), Color(0xFF041416),
+                            shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
                         )
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
@@ -3807,7 +4084,8 @@ private fun ArtistSortSettingsModal(
                     )
 
                     // Glanceable Audio Fidelity Spec Line for Artist
-                    val artistQualityBreakdown = remember(a.tracks) { TrackTech.computeQualityBreakdown(ctx, a.tracks) }
+                    // PERF (2026-09-17): off the main thread + cached (see TrackTech.qualityForGroup).
+                    val artistQualityBreakdown = TrackTech.qualityForGroup(ctx, a.tracks)
                     Spacer(Modifier.height(6.dp))
                     AudioQualitySpecLine(artistQualityBreakdown)
 
@@ -3867,7 +4145,11 @@ private fun ArtistSortSettingsModal(
                     albums.forEachIndexed { i, al ->
                         val albumRepr = al.tracks.firstOrNull()
                         val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-                        val alQuality = remember(al.tracks) { TrackTech.computeQualityBreakdown(ctx, al.tracks) }
+                        // PERF (2026-09-17): this FlowRow composes EVERY album of the artist in a
+                        // single LazyColumn item, so opening a prolific artist ran one full
+                        // O(tracks) breakdown pass per album back-to-back on the main thread.
+                        // Cached/backgrounded like the list rows.
+                        val alQuality = TrackTech.qualityForGroup(ctx, al.tracks)
                         Column(
                             // 108dp (was 112) so THREE album tiles fit per row on the 360dp-wide
                             // M500 (3*108 + 2*4dp gaps = 332 <= 336dp usable) instead of two.
@@ -3885,7 +4167,7 @@ private fun ArtistSortSettingsModal(
                         ) {
                             Box(Modifier.size(108.dp).clip(RoundedCornerShape(14.dp))) {
                                 if (albumRepr != null) {
-                                    AlbumArtImage(trackId = albumRepr.id, modifier = Modifier.fillMaxSize(), trackPath = albumRepr.path)
+                                    AlbumArtImage(trackId = albumRepr.id, modifier = Modifier.fillMaxSize(), trackPath = albumRepr.path, year = albumRepr.year)
                                 } else {
                                     Box(Modifier.fillMaxSize().background(Color(0xFF123438)), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Album, null, tint = MikuTeal.copy(alpha = .6f), modifier = Modifier.size(42.dp))
@@ -3905,7 +4187,8 @@ private fun ArtistSortSettingsModal(
                             Spacer(Modifier.height(6.dp))
                             Text(al.name, color = Color(0xFFE8F4F2), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             val yr = al.tracks.firstOrNull { it.year > 0 }?.year ?: 0
-                            Text(
+                            // Guarded — see the artist row: the breakdown resolves asynchronously.
+                            if (alQuality.totalTracks > 0) Text(
                                 alQuality.specTag,
                                 color = when (alQuality.highestTier) {
                                     4 -> Color(0xFFDFB8FF)
@@ -3950,6 +4233,8 @@ private fun ArtistSortSettingsModal(
         }
     }
     val scope = rememberCoroutineScope()
+    // Don't queue per-track SD-card probes for tiles flying past mid-fling (see the function).
+    PauseProbesWhileScrolling(gridState)
 
     Column(Modifier.fillMaxSize()) {
         MikuSearchBar(
@@ -3991,7 +4276,11 @@ private fun ArtistSortSettingsModal(
                                 )
                                 .padding(8.dp)
                         ) {
-                            val alQuality = remember(al.tracks) { TrackTech.computeQualityBreakdown(ctx, al.tracks) }
+                            // PERF (2026-09-17): same change as the artist row — this walked the
+                            // album's whole track list on the main thread on every tile bind (and
+                            // launched a probe coroutine per unprobed track from composition).
+                            // Now a cached lookup computed once on the background probe pool.
+                            val alQuality = TrackTech.qualityForGroup(ctx, al.tracks)
                             // Album Art Box with Overlays
                             Box(
                                 Modifier
@@ -4001,7 +4290,7 @@ private fun ArtistSortSettingsModal(
                                     .background(Color(0xFF0F2B2E))
                             ) {
                                 if (reprTrack != null) {
-                                    AlbumArtImage(trackId = reprTrack.id, modifier = Modifier.fillMaxSize(), trackPath = reprTrack.path)
+                                    AlbumArtImage(trackId = reprTrack.id, modifier = Modifier.fillMaxSize(), trackPath = reprTrack.path, year = reprTrack.year)
                                 } else {
                                     Box(Modifier.fillMaxSize().background(Color(0xFF123438)), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Album, null, tint = MikuTeal.copy(alpha = .6f), modifier = Modifier.size(46.dp))
@@ -4051,7 +4340,8 @@ private fun ArtistSortSettingsModal(
                                 DataChip(tag, ReleaseTagColor)
                             }
                             if (al.hasDiscImage) DataChip(if (al.unsplitImageCount > 0) "💿 FULL-CD RIP" else "💿 CD RIP · CUE SPLIT", DiscImageColor)
-                            Text(
+                            // Guarded — see the artist row: the breakdown resolves asynchronously.
+                            if (alQuality.totalTracks > 0) Text(
                                 alQuality.specTag,
                                 color = when {
                                     alQuality.isVinylRip -> Color(0xFFFFB300)
@@ -4102,6 +4392,8 @@ private fun ArtistSortSettingsModal(
     }
     val totalPlays = remember(sortedTracks) { sortedTracks.sumOf { PlayerPreferences.loadPlayCount(ctx, it.id) } }
     val hazeState = remember { HazeState() }
+    // Don't queue per-track SD-card probes for rows flying past mid-fling (see the function).
+    PauseProbesWhileScrolling(listState)
 
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         // Hero Album Banner Header (Spotify Style) — full-bleed blurred album art as the backdrop
@@ -4112,11 +4404,11 @@ private fun ArtistSortSettingsModal(
                 if (reprTrack != null) {
                     AlbumArtImage(
                         trackId = reprTrack.id,
-                        modifier = Modifier.matchParentSize().haze(hazeState),
+                        modifier = Modifier.matchParentSize().mikuHazeSource(ctx, hazeState),
                         trackPath = reprTrack.path
                     )
                 } else {
-                    Box(Modifier.matchParentSize().haze(hazeState).background(Color(0xFF123F44)))
+                    Box(Modifier.matchParentSize().mikuHazeSource(ctx, hazeState).background(Color(0xFF123F44)))
                 }
                 Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x99123F44), Color(0xCC041416)))))
 
@@ -4128,15 +4420,16 @@ private fun ArtistSortSettingsModal(
                 }
                 Column(
                     Modifier.fillMaxWidth()
-                        .hazeChild(state = hazeState, style = HazeMaterials.regular(Color(0xFF041416)))
+                        .mikuGlassPanel(ctx, hazeState, HazeMaterials.regular(Color(0xFF041416)), Color(0xFF041416), fallbackAlpha = 0.82f)
                         .statusBarsPadding().padding(16.dp)
                 ) {
-                    val albumQualityBreakdown = remember(sortedTracks) { TrackTech.computeQualityBreakdown(ctx, sortedTracks) }
+                    // PERF (2026-09-17): off the main thread + cached (see TrackTech.qualityForGroup).
+                    val albumQualityBreakdown = TrackTech.qualityForGroup(ctx, sortedTracks)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         // Large Cover Artwork (120x120dp) with Glanceable Quality Crest Overlay
                         Box(Modifier.size(120.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF0C2B2E))) {
                             if (reprTrack != null) {
-                                AlbumArtImage(trackId = reprTrack.id, modifier = Modifier.fillMaxSize(), trackPath = reprTrack.path)
+                                AlbumArtImage(trackId = reprTrack.id, modifier = Modifier.fillMaxSize(), trackPath = reprTrack.path, year = reprTrack.year)
                             } else {
                                 Icon(Icons.Default.Album, null, tint = MikuTeal, modifier = Modifier.size(50.dp).align(Alignment.Center))
                             }
@@ -4871,7 +5164,7 @@ fun AudioQualitySpecLine(
             }
         }
         Spacer(Modifier.width(8.dp))
-        RainbowHeart(LikeStore.isLiked(t.id)) { LikeStore.toggle(ctx, t) }
+        RainbowHeart(LikeStore.isLikedEffective(ctx, t)) { LikeStore.toggleEffective(ctx, t) }
     }
     if (showSheet) TrackActionModalSheet(t) { showSheet = false }
 }
@@ -4893,7 +5186,7 @@ fun AudioQualitySpecLine(
                         t.album + if (t.year > 0) "  ·  ${t.year}" else "",
                         color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                RainbowHeart(LikeStore.isLiked(t.id)) { LikeStore.toggle(ctx, t) }
+                RainbowHeart(LikeStore.isLikedEffective(ctx, t)) { LikeStore.toggleEffective(ctx, t) }
             }
 
             Spacer(Modifier.height(14.dp))
@@ -5187,7 +5480,7 @@ private fun MikuVibePromptCard(
                             if (promptText.isEmpty()) {
                                 Text(
                                     "e.g. Heavy metal riffs, late night drive, 80s anime...",
-                                    color = Color.White.copy(alpha = 0.4f),
+                                    color = Color.White.copy(alpha = 0.5f),
                                     fontSize = 11.5.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -5508,13 +5801,9 @@ enum class SettingsCategory(val title: String, val icon: String) {
                             ) { com.miku.player.ui.NowPlayingLook.setWavyBar(ctx, it) }
                         }
                         item {
-                            var shaderEngine by remember { mutableStateOf(PlayerPreferences.loadVizEngine(ctx) == "shader") }
-                            SettingsToggleRow(
-                                title = "Miku Shaders visualizer engine",
-                                subtitle = if (ProjectMNative.available) "GLES2 GLSL presets (light, ~5 MB) instead of projectM (native, ~185 MB). Swipe the stage to change presets."
-                                    else "projectM native engine is unavailable on this build — Miku Shaders is always used",
-                                checked = shaderEngine || !ProjectMNative.available
-                            ) { shaderEngine = it; PlayerPreferences.saveVizEngine(ctx, if (it) "shader" else "projectm") }
+                            // The "Miku Shaders" engine toggle is GONE (2026-09-17). There is one visualiser engine now,
+                            // projectM, and the Miku look is delivered as our own .milk presets inside it rather than a
+                            // second GLES2 renderer with its own preset list, its own settings and its own toggle.
                         }
                         item { SettingsSection("Phone Remote") }
                         item { com.miku.player.remote.MikuRemoteSettingsCard(ctx) }
@@ -5751,9 +6040,7 @@ private fun gracefulAppRestart(ctx: android.content.Context) {
  */
 @Composable private fun RootFeaturesSection(ctx: android.content.Context) {
     val scope = rememberCoroutineScope()
-    var pulsarOn by remember { mutableStateOf(PlayerPreferences.loadPulsarEnabled(ctx)) }
     var cpuPerfOn by remember { mutableStateOf(PlayerPreferences.loadCpuPerfEnabled(ctx)) }
-    val ledWritable = remember { PulsarLight.isHardwareWritable() }
     var cpuSupported by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) { cpuSupported = CpuPerformance.isSupported() }
 
@@ -5777,19 +6064,6 @@ private fun gracefulAppRestart(ctx: android.content.Context) {
         )
     }
 
-    Spacer(Modifier.height(10.dp))
-
-    SettingsToggleRow(
-        title = "Pulsar RGB Master Control",
-        subtitle = if (ledWritable) "Front indicator colour and animation engine"
-                   else "Not available on this unit — no writable LED node, so the setting is stored but the light will not respond",
-        checked = pulsarOn
-    ) { pulsarOn = it; scope.launch { PulsarLight.setEnabled(ctx, it) } }
-
-    if (pulsarOn) {
-        PulsarSettingsCard(ctx)
-        Spacer(Modifier.height(10.dp))
-    }
 
     if (cpuSupported == true) {
         SettingsToggleRow(
@@ -5810,108 +6084,6 @@ private fun gracefulAppRestart(ctx: android.content.Context) {
     }
 }
 
-@Composable private fun PulsarSettingsCard(ctx: android.content.Context) {
-    val scope = rememberCoroutineScope()
-    var mode by remember { mutableStateOf(PulsarLight.getMode(ctx)) }
-    var brightness by remember { mutableStateOf(PulsarLight.getBrightness(ctx)) }
-    var bpmSync by remember { mutableStateOf(PulsarLight.isBpmSyncEnabled(ctx)) }
-    var animSpeed by remember { mutableStateOf(PulsarLight.getAnimationSpeed(ctx)) }
-    // Real probe: are any LED sysfs nodes actually writable? The status chip below used to read a
-    // hardcoded "✨ ACTIVE" whether or not a single byte ever reached the diode.
-    val ledWritable = remember { PulsarLight.isHardwareWritable() }
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xFF072428), Color(0xFF041417))))
-            .border(1.dp, MikuTealBright.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
-            .padding(14.dp)
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Pulsar Cyber RGB Engine", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-            Text(
-                if (ledWritable) "✨ LED NODE WRITABLE" else "LED NODE NOT WRITABLE",
-                color = if (ledWritable) MikuTealBright else Color(0xFFFFB300),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Black
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(mode.description, color = Muted, fontSize = 11.sp)
-        if (!ledWritable) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "These settings are saved, but this unit exposes no writable LED node to the player, so the chassis light will not change.",
-                color = Color(0xFFFFB300),
-                fontSize = 10.sp
-            )
-        }
-
-        Spacer(Modifier.height(10.dp))
-        // Mode Selector Chips
-        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(PulsarLight.Mode.values().filter { it != PulsarLight.Mode.OFF }) { m ->
-                val isSel = m == mode
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSel) MikuTealBright.copy(alpha = 0.3f) else Color(0xFF0A3036))
-                        .border(1.dp, if (isSel) MikuTealBright else Color.Transparent, RoundedCornerShape(8.dp))
-                        .clickable {
-                            mode = m
-                            scope.launch { PulsarLight.setMode(ctx, m, brightness) }
-                        }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(m.label, color = if (isSel) Color.White else Muted, fontSize = 11.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Peak Brightness", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            Text("$brightness / 255", color = MikuTealBright, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-        }
-        androidx.compose.material3.Slider(
-            value = brightness.toFloat(),
-            onValueChange = {
-                brightness = it.toInt()
-                scope.launch { PulsarLight.setMode(ctx, mode, brightness) }
-            },
-            valueRange = 10f..255f,
-            colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = MikuTealBright, activeTrackColor = MikuTeal, inactiveTrackColor = Surface1)
-        )
-
-        if (mode == PulsarLight.Mode.CHROMA_RAINBOW) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Spectrum Cycle Speed", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                Text("${String.format("%.1f", animSpeed)}x", color = MikuPink, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-            }
-            androidx.compose.material3.Slider(
-                value = animSpeed,
-                onValueChange = {
-                    animSpeed = it
-                    scope.launch { PulsarLight.setAnimationSpeed(ctx, it) }
-                },
-                valueRange = 0.5f..3.0f,
-                colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = MikuPink, activeTrackColor = MikuPink, inactiveTrackColor = Surface1)
-            )
-        }
-
-        if (mode == PulsarLight.Mode.AUDIOPHILE_AUTO) {
-            SettingsToggleRow(
-                title = "Live BPM Rhythm Sync",
-                subtitle = "Cosine modulation in sync with playing track tempo",
-                checked = bpmSync
-            ) {
-                bpmSync = it
-                scope.launch { PulsarLight.setBpmSyncEnabled(ctx, it) }
-            }
-        }
-    }
-}
 
 @Composable private fun MikuSyncCard(ctx: android.content.Context) {
     val syncState by MikuSyncTransceiver.state.collectAsState()
@@ -6183,8 +6355,6 @@ private fun gracefulAppRestart(ctx: android.content.Context) {
                         .border(1.dp, MikuTealBright.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
                         .padding(18.dp)
                 ) {
-                    ConsentFeatureRow("⚡", "Pulsar RGB LED Synchronization", "Writes directly to the front notification LED kernel nodes to pulse signature Miku colors to audio FFT.")
-                    Spacer(Modifier.height(14.dp))
                     ConsentFeatureRow("🏎️", "Qualcomm High-Performance Governor", "Pins Snapdragon 680 performance cores to eliminate buffer underruns during bit-perfect DSD256 decoding.")
                     Spacer(Modifier.height(14.dp))
                     ConsentFeatureRow("🛡️", "Hardware Pocket Lock Controls", "Controls touchscreen digitizer inhibition and button routing when the Fn physical switch is toggled.")
@@ -6709,7 +6879,7 @@ private fun alarmSummary(a: Alarm): String {
                 autoCorrect = false
             ),
             decorationBox = { innerTextField ->
-                if (value.isEmpty()) Text(placeholder, color = Muted.copy(alpha = 0.7f), fontSize = 13.sp)
+                if (value.isEmpty()) Text(placeholder, color = Muted.copy(alpha = 0.85f), fontSize = 13.sp)
                 innerTextField()
             }
         )
@@ -6909,7 +7079,15 @@ object TransportShapes {
     // The raw fraction only updates every 500ms poll tick, which steps the line visibly — glide
     // between samples so it reads as continuous playback, not a ticking gauge.
     val targetProgress = (pos.toFloat() / dur.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
-    val progress by animateFloatAsState(targetProgress, tween(520, easing = LinearEasing), label = "barProgress")
+    // PERF (scroll jank, 2026-09-17): kept as a State and NOT unwrapped with `by`. This animation
+    // re-targets on every 500ms position poll, so it produces a new value on essentially every
+    // frame for as long as anything is playing. It used to be read as a plain Float in this
+    // function's body (`Modifier.fillMaxWidth(progress)` further down), which put a ~60Hz
+    // invalidation on NowPlayingBar's own recomposition scope: the entire docked bar — artwork,
+    // marquee AnnotatedString, chips, buttons — recomposed every frame, forever, on the same main
+    // thread the library lists scroll on. The value is now read in the DRAW phase only (see the
+    // progress line below): identical animation, zero recomposition.
+    val progress = animateFloatAsState(targetProgress, tween(520, easing = LinearEasing), label = "barProgress")
     // Palette comes from the app-wide theme (extracted from the real art once it's loaded) and
     // glides between tracks — no more "stays teal because the art wasn't cached at first compose".
     LaunchedEffect(track.id) { MikuArtTheme.update(ctx, track) }
@@ -7004,13 +7182,20 @@ object TransportShapes {
                     )
                 )
                 Column(Modifier.fillMaxWidth()) {
-                    // Live playback progress line
-                    Box(Modifier.fillMaxWidth().height(3.dp).background(Color(0xFF07201F))) {
-                        Box(
-                            Modifier.fillMaxWidth(progress).height(3.dp)
-                                .background(Brush.horizontalGradient(listOf(palette.color1, MikuTealBright)))
-                        )
+                    // Live playback progress line. Was a nested Box sized with
+                    // `Modifier.fillMaxWidth(progress)` — a COMPOSITION-phase read of a per-frame
+                    // animation (see the note on `progress` above). Same pixels, drawn from the
+                    // draw phase, so only this 3dp strip is invalidated per frame.
+                    val progressBrush = remember(palette.color1) {
+                        Brush.horizontalGradient(listOf(palette.color1, MikuTealBright))
                     }
+                    Box(
+                        Modifier.fillMaxWidth().height(3.dp).background(Color(0xFF07201F))
+                            .drawBehind {
+                                val w = size.width * progress.value.coerceIn(0f, 1f)
+                                if (w > 0f) drawRect(progressBrush, size = Size(w, size.height))
+                            }
+                    )
 
                     // ROW 1 — thumb + one long marquee line with the full width of the bar.
                     Row(
@@ -7062,7 +7247,7 @@ object TransportShapes {
                         Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 3.dp, bottom = 5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RainbowHeart(LikeStore.isLiked(track.id), size = 30.dp) { LikeStore.toggle(ctx, track) }
+                        RainbowHeart(LikeStore.isLikedEffective(ctx, track), size = 30.dp) { LikeStore.toggleEffective(ctx, track) }
                         Spacer(Modifier.width(4.dp))
                         Row(
                             Modifier.weight(1f).height(20.dp).clipToBounds(),

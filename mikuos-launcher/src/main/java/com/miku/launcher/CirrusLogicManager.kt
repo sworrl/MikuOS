@@ -46,19 +46,51 @@ object CirrusLogicManager {
         WIRED_AND_USB("wired_usb", "Wired DAC + USB-C External DAC", "Mirrors real-time audio across internal CS43198 DAC and external Type-C DAC")
     }
 
-    private fun readSysfs(ctx: Context, node: String): String? {
-        return try {
-            val file = File("$SYSFS_BASE/$node")
-            if (file.exists() && file.canRead()) {
-                file.readText().trim()
-            } else {
-                val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
-                prefs.getString(node, null)
-            }
-        } catch (_: Throwable) {
-            val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
-            prefs.getString(node, null)
+    /**
+     * Where a value came from. This is the whole point of the class's read path: the DAC controls
+     * used to fall back to our OWN SharedPreferences mirror and hand the result back through the
+     * "honest" display readers, so the UI re-read what WE had last written and called it a
+     * hardware state. Re-reading proved nothing.
+     */
+    enum class Source {
+        /** Read back out of the kernel sysfs node — the DAC's actual state. */
+        SYSFS,
+        /** Read from the vendor.audio.hiby.* Settings.Global row the HiBy audio HAL consumes. */
+        VENDOR_SETTING,
+        /** Our own prefs mirror: what the user ASKED for. Says nothing about the hardware. */
+        USER_REQUEST
+    }
+
+    /** A value plus where it came from, so a surface can say "measured" vs "requested". */
+    data class Reading<T>(val value: T, val source: Source) {
+        /** True when this came from a real source, not from our own prefs mirror. */
+        val isMeasured: Boolean get() = source != Source.USER_REQUEST
+        /** True only when the kernel node itself was read back. */
+        val isKernelVerified: Boolean get() = source == Source.SYSFS
+    }
+
+    /**
+     * REAL kernel read only. Null when the node is missing / unreadable / empty. It must never
+     * fall back to anything we wrote ourselves.
+     */
+    private fun readKernelNode(node: String): String? = try {
+        val file = File("$SYSFS_BASE/$node")
+        if (file.exists() && file.canRead()) file.readText().trim().takeIf { it.isNotEmpty() } else null
+    } catch (_: Throwable) { null }
+
+    /** The prefs mirror: what the user last ASKED for. Only ever a [Source.USER_REQUEST] tier. */
+    private fun readRequestedPref(ctx: Context, node: String): String? = try {
+        ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
+            .getString(node, null)?.trim()?.takeIf { it.isNotEmpty() }
+    } catch (_: Throwable) { null }
+
+    /** A vendor.audio.hiby.* Settings.Global row (the HAL reads these). Null when unset. */
+    private fun readVendorSetting(ctx: Context, vararg keys: String): String? {
+        for (k in keys) {
+            val v = try { Settings.Global.getString(ctx.contentResolver, k) } catch (_: Throwable) { null }
+            if (!v.isNullOrBlank()) return v.trim()
         }
+        return null
     }
 
     fun getOutputMode(ctx: Context): OutputMode {
@@ -67,6 +99,16 @@ object CirrusLogicManager {
         return OutputMode.values().firstOrNull { it.sysfsValue == saved } ?: OutputMode.AUTO
     }
 
+    /**
+     * Route switching. Every branch pushes its key=value pair to the audio HAL through
+     * [AudioManager.setParameters], which is the channel that reaches the DAC on this unit.
+     *
+     * Each branch also used to run a RootShell twin of the same write (`echo … > out_mode;
+     * setprop …`). There is no su on MikuOS, so that line never executed; the HAL push beside it
+     * was already doing the whole job. Removed rather than kept "in case root appears", because a
+     * dead shell fork per route change is pure cost and reading it suggests the HAL push is only
+     * half the story. See [MikuHalAudio].
+     */
     suspend fun setOutputMode(ctx: Context, mode: OutputMode) = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
         val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
@@ -77,7 +119,6 @@ object CirrusLogicManager {
 
         when (mode) {
             OutputMode.BAL_HEADPHONE_OUT -> {
-                RootShell.execFast("echo bal_po > $SYSFS_BASE/out_mode; settings put global vendor.audio.hiby.hw.output_mode bal_po; setprop vendor.audio.hiby.hw.output_mode bal_po")
                 am?.setParameters("routing=4;vendor.audio.hiby.hw.output_mode=bal_po")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && am != null) {
                     val wiredDev = am.availableCommunicationDevices.firstOrNull {
@@ -88,7 +129,6 @@ object CirrusLogicManager {
                 }
             }
             OutputMode.HEADPHONE_OUT -> {
-                RootShell.execFast("echo po > $SYSFS_BASE/out_mode; settings put global vendor.audio.hiby.hw.output_mode po; setprop vendor.audio.hiby.hw.output_mode po")
                 am?.setParameters("routing=4;vendor.audio.hiby.hw.output_mode=po")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && am != null) {
                     val wiredDev = am.availableCommunicationDevices.firstOrNull {
@@ -99,7 +139,6 @@ object CirrusLogicManager {
                 }
             }
             OutputMode.BLUETOOTH -> {
-                RootShell.execFast("settings put global vendor.audio.hiby.hw.output_mode bt; setprop vendor.audio.hiby.hw.output_mode bt")
                 am?.setParameters("routing=128;vendor.audio.hiby.hw.output_mode=bt")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && am != null) {
                     val btDev = am.availableCommunicationDevices.firstOrNull {
@@ -109,11 +148,9 @@ object CirrusLogicManager {
                 }
             }
             OutputMode.LINE_OUT -> {
-                RootShell.execFast("echo lo > $SYSFS_BASE/out_mode; settings put global vendor.audio.hiby.hw.output_mode lo; setprop vendor.audio.hiby.hw.output_mode lo")
                 am?.setParameters("routing=8;vendor.audio.hiby.hw.output_mode=lo")
             }
             OutputMode.USB_DAC -> {
-                RootShell.execFast("settings put global vendor.audio.hiby.hw.output_mode usb; setprop vendor.audio.hiby.hw.output_mode usb")
                 am?.setParameters("routing=16384;vendor.audio.hiby.hw.output_mode=usb")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && am != null) {
                     val usbDev = am.availableCommunicationDevices.firstOrNull {
@@ -123,7 +160,6 @@ object CirrusLogicManager {
                 }
             }
             OutputMode.AUTO -> {
-                RootShell.execFast("echo auto > $SYSFS_BASE/out_mode; settings put global vendor.audio.hiby.hw.output_mode auto; setprop vendor.audio.hiby.hw.output_mode auto")
                 am?.setParameters("vendor.audio.hiby.hw.output_mode=auto")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && am != null) {
                     am.clearCommunicationDevice()
@@ -155,24 +191,19 @@ object CirrusLogicManager {
             val target = getAudioShareTarget(ctx)
             when (target) {
                 AudioShareTarget.DUAL_44_AND_BT -> {
-                    RootShell.execFast("echo bal_po > $SYSFS_BASE/out_mode; setprop vendor.audio.dual_output 1; setprop vendor.audio.bt_dual_stream 1")
                     am?.setParameters("vendor.audio.dual_output=1;vendor.audio.bt_dual_stream=1;vendor.audio.hiby.hw.output_mode=bal_po")
                 }
                 AudioShareTarget.DUAL_35_AND_BT -> {
-                    RootShell.execFast("echo po > $SYSFS_BASE/out_mode; setprop vendor.audio.dual_output 1; setprop vendor.audio.bt_dual_stream 1")
                     am?.setParameters("vendor.audio.dual_output=1;vendor.audio.bt_dual_stream=1;vendor.audio.hiby.hw.output_mode=po")
                 }
                 AudioShareTarget.DUAL_PHYSICAL -> {
-                    RootShell.execFast("echo dual_po > $SYSFS_BASE/out_mode; setprop vendor.audio.dual_output 1")
                     am?.setParameters("vendor.audio.dual_output=1")
                 }
                 AudioShareTarget.WIRED_AND_USB -> {
-                    RootShell.execFast("setprop vendor.audio.usb_mirror 1")
                     am?.setParameters("vendor.audio.usb_mirror=1")
                 }
             }
         } else {
-            RootShell.execFast("setprop vendor.audio.dual_output 0; setprop vendor.audio.bt_dual_stream 0; setprop vendor.audio.usb_mirror 0")
             am?.setParameters("vendor.audio.dual_output=0;vendor.audio.bt_dual_stream=0;vendor.audio.usb_mirror=0")
             // Restore current single output mode
             setOutputMode(ctx, getOutputMode(ctx))
@@ -194,19 +225,31 @@ object CirrusLogicManager {
         }
     }
 
-    fun getDigitalFilter(ctx: Context): DigitalFilter {
-        val kernelVal = readSysfs(ctx, "digital_filter")
-        if (!kernelVal.isNullOrBlank()) {
-            DigitalFilter.values().firstOrNull { it.id == kernelVal.lowercase() }?.let { return it }
+    /**
+     * Tiered read: kernel node, then the vendor Settings.Global row the HAL consumes, then our own
+     * prefs mirror (tagged [Source.USER_REQUEST] — a request, NOT a hardware state). Null when no
+     * tier has anything. Display surfaces use this and must honour [Reading.isMeasured].
+     */
+    fun readDigitalFilter(ctx: Context): Reading<DigitalFilter>? {
+        readKernelNode("digital_filter")?.let { v ->
+            DigitalFilter.values().firstOrNull { it.id == v.lowercase() }
+                ?.let { return Reading(it, Source.SYSFS) }
         }
-        val cr = ctx.contentResolver
-        val raw = try {
-            Settings.Global.getString(cr, "vendor.audio.hiby.hw.digital_filter")
-                ?: Settings.Global.getString(cr, "vendor.audio.hiby.digital_filter")
-                ?: Settings.Global.getString(cr, "hw.digital_filter")
-        } catch (_: Throwable) { null } ?: ""
-        return DigitalFilter.values().firstOrNull { it.id == raw.trim().lowercase() } ?: DigitalFilter.FAST_LINEAR
+        readVendorSetting(ctx, "vendor.audio.hiby.hw.digital_filter",
+            "vendor.audio.hiby.digital_filter", "hw.digital_filter")?.let { v ->
+            DigitalFilter.values().firstOrNull { it.id == v.lowercase() }
+                ?.let { return Reading(it, Source.VENDOR_SETTING) }
+        }
+        readRequestedPref(ctx, "digital_filter")?.let { v ->
+            DigitalFilter.values().firstOrNull { it.id == v.lowercase() }
+                ?.let { return Reading(it, Source.USER_REQUEST) }
+        }
+        return null
     }
+
+    /** Control-UI getter: falls back to a preset so the picker has a selection. Never a measurement. */
+    fun getDigitalFilter(ctx: Context): DigitalFilter =
+        readDigitalFilter(ctx)?.value ?: DigitalFilter.FAST_LINEAR
 
     suspend fun setDigitalFilter(ctx: Context, filter: DigitalFilter) = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
@@ -214,31 +257,36 @@ object CirrusLogicManager {
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.digital_filter", filter.id) }
         runCatching { Settings.Global.putString(cr, "hw.digital_filter", filter.id) }
 
-        RootShell.execFast(
-            "echo ${filter.id} > $SYSFS_BASE/digital_filter; " +
-            "settings put global vendor.audio.hiby.hw.digital_filter ${filter.id}; " +
-            "settings put global vendor.audio.hiby.digital_filter ${filter.id}; " +
-            "settings put global hw.digital_filter ${filter.id}; " +
-            "setprop vendor.audio.hiby.hw.digital_filter ${filter.id}; " +
-            "setprop vendor.audio.hiby.digital_filter ${filter.id}"
-        )
+        // The HAL parameter is the route that actually lands on this hardware. What used to be
+        // here was a RootShell line (echo > sysfs / setprop), and there is no su on MikuOS, so the
+        // Settings row above changed while the DAC did not and the UI echoed the choice back as
+        // applied. See [MikuHalAudio].
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.hw.digital_filter", filter.id)
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.digital_filter", filter.id)
         ctx.sendBroadcast(Intent("com.m500.hardware.action.FILTER_CHANGED").apply {
             putExtra("filter", filter.id)
         })
     }
 
-    fun getGainMode(ctx: Context): GainMode {
-        val kernelVal = readSysfs(ctx, "gain")
-        if (!kernelVal.isNullOrBlank()) {
-            GainMode.values().firstOrNull { it.sysfsValue == kernelVal.lowercase() }?.let { return it }
+    /** Tiered read — see [readDigitalFilter]. Null when nothing anywhere reports a gain. */
+    fun readGainMode(ctx: Context): Reading<GainMode>? {
+        readKernelNode("gain")?.let { v ->
+            GainMode.values().firstOrNull { it.sysfsValue == v.lowercase() }
+                ?.let { return Reading(it, Source.SYSFS) }
         }
-        val cr = ctx.contentResolver
-        val raw = try {
-            Settings.Global.getString(cr, "vendor.audio.hiby.hw.gain")
-                ?: Settings.Global.getString(cr, "vendor.audio.hiby.gain")
-        } catch (_: Throwable) { null } ?: ""
-        return GainMode.values().firstOrNull { it.sysfsValue == raw.trim().lowercase() } ?: GainMode.HIGH
+        readVendorSetting(ctx, "vendor.audio.hiby.hw.gain", "vendor.audio.hiby.gain")?.let { v ->
+            GainMode.values().firstOrNull { it.sysfsValue == v.lowercase() }
+                ?.let { return Reading(it, Source.VENDOR_SETTING) }
+        }
+        readRequestedPref(ctx, "gain")?.let { v ->
+            GainMode.values().firstOrNull { it.sysfsValue == v.lowercase() }
+                ?.let { return Reading(it, Source.USER_REQUEST) }
+        }
+        return null
     }
+
+    /** Control-UI getter: falls back to a preset so the toggle has a selection. Never a measurement. */
+    fun getGainMode(ctx: Context): GainMode = readGainMode(ctx)?.value ?: GainMode.HIGH
 
     suspend fun setGainMode(ctx: Context, mode: GainMode) = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
@@ -247,24 +295,32 @@ object CirrusLogicManager {
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.hw.gain", mode.sysfsValue) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.gain", mode.sysfsValue) }
 
-        RootShell.execFast(
-            "echo ${mode.sysfsValue} > $SYSFS_BASE/gain; " +
-            "settings put global vendor.audio.hiby.hw.gain ${mode.sysfsValue}; " +
-            "settings put global vendor.audio.hiby.gain ${mode.sysfsValue}; " +
-            "setprop vendor.audio.hiby.hw.gain ${mode.sysfsValue}; " +
-            "setprop vendor.audio.hiby.gain ${mode.sysfsValue}"
-        )
+        // The HAL parameter is the route that actually lands on this hardware. What used to be
+        // here was a RootShell line (echo > sysfs / setprop), and there is no su on MikuOS, so the
+        // Settings row above changed while the DAC did not and the UI echoed the choice back as
+        // applied. See [MikuHalAudio].
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.hw.gain", mode.sysfsValue)
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.gain", mode.sysfsValue)
         ctx.sendBroadcast(Intent("com.m500.hardware.action.GAIN_CHANGED").apply {
             putExtra("gain", mode.sysfsValue)
         })
     }
 
-    fun isDreEnabled(ctx: Context): Boolean {
-        val kernelVal = readSysfs(ctx, "dre_mode")
-        if (kernelVal != null) return kernelVal == "dremode_enable" || kernelVal == "1" || kernelVal.equals("on", true)
-        val cr = ctx.contentResolver
-        return try { Settings.Global.getInt(cr, "vendor.audio.hiby.hw.dre", 0) == 1 } catch (_: Throwable) { false }
+    private fun parseEnabled(v: String, onToken: String): Boolean =
+        v == onToken || v == "1" || v.equals("on", true) || v.contains("enable")
+
+    /** Tiered read — see [readDigitalFilter]. Null when nothing anywhere reports DRE. */
+    fun readDre(ctx: Context): Reading<Boolean>? {
+        readKernelNode("dre_mode")?.let { return Reading(parseEnabled(it, "dremode_enable"), Source.SYSFS) }
+        readVendorSetting(ctx, "vendor.audio.hiby.hw.dre", "vendor.audio.hiby.dre_mode")
+            ?.let { return Reading(parseEnabled(it, "dremode_enable"), Source.VENDOR_SETTING) }
+        readRequestedPref(ctx, "dre_mode")
+            ?.let { return Reading(parseEnabled(it, "dremode_enable"), Source.USER_REQUEST) }
+        return null
     }
+
+    /** Control-UI getter: false when unknown, so the switch has a position. Never a measurement. */
+    fun isDreEnabled(ctx: Context): Boolean = readDre(ctx)?.value ?: false
 
     suspend fun setDreEnabled(ctx: Context, enabled: Boolean) = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
@@ -273,15 +329,26 @@ object CirrusLogicManager {
         val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
         prefs.edit().putString("dre_mode", sysfsStr).apply()
         runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.dre", v) }
-        RootShell.execFast("echo $sysfsStr > $SYSFS_BASE/dre_mode; settings put global vendor.audio.hiby.hw.dre $v; setprop vendor.audio.hiby.hw.dre $v")
+        // The HAL parameter is the route that actually lands on this hardware. What used to be
+        // here was a RootShell line (echo > sysfs / setprop), and there is no su on MikuOS, so the
+        // Settings row above changed while the DAC did not and the UI echoed the choice back as
+        // applied. See [MikuHalAudio].
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.hw.dre", v)
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.dre_mode", sysfsStr)
     }
 
-    fun isHighPowerEnabled(ctx: Context): Boolean {
-        val kernelVal = readSysfs(ctx, "high_power_mode")
-        if (kernelVal != null) return kernelVal == "hpower_enable" || kernelVal == "1" || kernelVal.equals("on", true)
-        val cr = ctx.contentResolver
-        return try { Settings.Global.getInt(cr, "vendor.audio.hiby.hw.high_power", 0) == 1 } catch (_: Throwable) { false }
+    /** Tiered read — see [readDigitalFilter]. Null when nothing anywhere reports high power. */
+    fun readHighPower(ctx: Context): Reading<Boolean>? {
+        readKernelNode("high_power_mode")?.let { return Reading(parseEnabled(it, "hpower_enable"), Source.SYSFS) }
+        readVendorSetting(ctx, "vendor.audio.hiby.hw.high_power", "vendor.audio.hiby.high_power_mode",
+            "vendor.audio.hiby.high_power")?.let { return Reading(parseEnabled(it, "hpower_enable"), Source.VENDOR_SETTING) }
+        readRequestedPref(ctx, "high_power_mode")
+            ?.let { return Reading(parseEnabled(it, "hpower_enable"), Source.USER_REQUEST) }
+        return null
     }
+
+    /** Control-UI getter: false when unknown, so the switch has a position. Never a measurement. */
+    fun isHighPowerEnabled(ctx: Context): Boolean = readHighPower(ctx)?.value ?: false
 
     suspend fun setHighPowerEnabled(ctx: Context, enabled: Boolean) = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
@@ -290,15 +357,26 @@ object CirrusLogicManager {
         val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
         prefs.edit().putString("high_power_mode", sysfsStr).apply()
         runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.high_power", v) }
-        RootShell.execFast("echo $sysfsStr > $SYSFS_BASE/high_power_mode; settings put global vendor.audio.hiby.hw.high_power $v; setprop vendor.audio.hiby.hw.high_power $v")
+        // The HAL parameter is the route that actually lands on this hardware. What used to be
+        // here was a RootShell line (echo > sysfs / setprop), and there is no su on MikuOS, so the
+        // Settings row above changed while the DAC did not and the UI echoed the choice back as
+        // applied. See [MikuHalAudio].
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.hw.high_power", v)
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.high_power_mode", sysfsStr)
     }
 
-    fun getBalance(ctx: Context): Int {
-        val kernelVal = readSysfs(ctx, "lr_balance")?.toIntOrNull()
-        if (kernelVal != null) return kernelVal
-        val cr = ctx.contentResolver
-        return try { Settings.Global.getInt(cr, "vendor.audio.hiby.hw.balance", 0) } catch (_: Throwable) { 0 }
+    /** Tiered read — see [readDigitalFilter]. Null when nothing anywhere reports a balance. */
+    fun readBalance(ctx: Context): Reading<Int>? {
+        readKernelNode("lr_balance")?.toIntOrNull()?.let { return Reading(it, Source.SYSFS) }
+        readVendorSetting(ctx, "vendor.audio.hiby.hw.balance")?.toIntOrNull()
+            ?.let { return Reading(it, Source.VENDOR_SETTING) }
+        readRequestedPref(ctx, "lr_balance")?.toIntOrNull()
+            ?.let { return Reading(it, Source.USER_REQUEST) }
+        return null
     }
+
+    /** Control-UI getter: 0 (centre) when unknown, so the slider has a position. Never a measurement. */
+    fun getBalance(ctx: Context): Int = readBalance(ctx)?.value ?: 0
 
     suspend fun setBalance(ctx: Context, balance: Int) = withContext(Dispatchers.IO) {
         val clamped = balance.coerceIn(-10, 10)
@@ -306,7 +384,12 @@ object CirrusLogicManager {
         val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
         prefs.edit().putString("lr_balance", clamped.toString()).apply()
         runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.balance", clamped) }
-        RootShell.execFast("echo $clamped > $SYSFS_BASE/lr_balance; settings put global vendor.audio.hiby.hw.balance $clamped; setprop vendor.audio.hiby.hw.balance $clamped")
+        // The HAL parameter is the route that actually lands on this hardware. What used to be
+        // here was a RootShell line (echo > sysfs / setprop), and there is no su on MikuOS, so the
+        // Settings row above changed while the DAC did not and the UI echoed the choice back as
+        // applied. See [MikuHalAudio].
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.hw.balance", clamped)
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.lr_balance", clamped)
     }
 
     fun getDsdGainCompensate(ctx: Context): Boolean {
@@ -318,59 +401,50 @@ object CirrusLogicManager {
         val cr = ctx.contentResolver
         val v = if (enabled) 1 else 0
         runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.dsd_gain_comp", v) }
-        RootShell.execFast("settings put global vendor.audio.hiby.hw.dsd_gain_comp $v; setprop vendor.audio.hiby.hw.dsd_gain_comp $v")
+        // The HAL parameter is the route that actually lands on this hardware. What used to be
+        // here was a RootShell line (echo > sysfs / setprop), and there is no su on MikuOS, so the
+        // Settings row above changed while the DAC did not and the UI echoed the choice back as
+        // applied. See [MikuHalAudio].
+        MikuHalAudio.push(ctx, "vendor.audio.hiby.hw.dsd_gain_comp", v)
     }
 
     // ---- Honest (nullable) readers for DISPLAY surfaces ------------------------------------
-    // The getters above fall back to a preset (FAST_LINEAR / HIGH / false) so the control UI has
-    // something to select. Telemetry/status displays must use these instead: null = the value
-    // could not be read from sysfs, the Miku prefs mirror, or Settings.Global — render "—".
+    // These report REAL sources ONLY: the kernel sysfs node, or the vendor.audio.hiby.* Settings
+    // .Global row the HiBy audio HAL consumes. They used to go through a reader that fell back to
+    // our own "miku_dac_settings" SharedPreferences — the exact values our own setters had just
+    // written — so "re-reading the DAC" returned our last write and proved nothing. null now means
+    // the hardware genuinely cannot be read; render "—", never a guess.
+    // For "what the user asked for", use the read*() functions and check Reading.isMeasured.
 
-    fun getDigitalFilterOrNull(ctx: Context): DigitalFilter? {
-        readSysfs(ctx, "digital_filter")?.takeIf { it.isNotBlank() }?.let { v ->
-            DigitalFilter.values().firstOrNull { it.id == v.lowercase() }?.let { return it }
-        }
-        val cr = ctx.contentResolver
-        val raw = try {
-            Settings.Global.getString(cr, "vendor.audio.hiby.hw.digital_filter")
-                ?: Settings.Global.getString(cr, "vendor.audio.hiby.digital_filter")
-                ?: Settings.Global.getString(cr, "hw.digital_filter")
-        } catch (_: Throwable) { null } ?: return null
-        return DigitalFilter.values().firstOrNull { it.id == raw.trim().lowercase() }
-    }
+    fun getDigitalFilterOrNull(ctx: Context): DigitalFilter? =
+        readDigitalFilter(ctx)?.takeIf { it.isMeasured }?.value
 
-    fun getGainModeOrNull(ctx: Context): GainMode? {
-        readSysfs(ctx, "gain")?.takeIf { it.isNotBlank() }?.let { v ->
-            GainMode.values().firstOrNull { it.sysfsValue == v.lowercase() }?.let { return it }
-        }
-        val cr = ctx.contentResolver
-        val raw = try {
-            Settings.Global.getString(cr, "vendor.audio.hiby.hw.gain")
-                ?: Settings.Global.getString(cr, "vendor.audio.hiby.gain")
-        } catch (_: Throwable) { null } ?: return null
-        return GainMode.values().firstOrNull { it.sysfsValue == raw.trim().lowercase() }
-    }
+    fun getGainModeOrNull(ctx: Context): GainMode? =
+        readGainMode(ctx)?.takeIf { it.isMeasured }?.value
 
-    fun isDreEnabledOrNull(ctx: Context): Boolean? {
-        readSysfs(ctx, "dre_mode")?.let { v ->
-            return v == "dremode_enable" || v == "1" || v.equals("on", true)
-        }
-        val cr = ctx.contentResolver
-        return try {
-            Settings.Global.getString(cr, "vendor.audio.hiby.hw.dre")?.trim()?.let { it == "1" }
-        } catch (_: Throwable) { null }
-    }
+    fun isDreEnabledOrNull(ctx: Context): Boolean? =
+        readDre(ctx)?.takeIf { it.isMeasured }?.value
 
+    fun isHighPowerEnabledOrNull(ctx: Context): Boolean? =
+        readHighPower(ctx)?.takeIf { it.isMeasured }?.value
+
+    fun getBalanceOrNull(ctx: Context): Int? =
+        readBalance(ctx)?.takeIf { it.isMeasured }?.value
+
+    /** Raw kernel node dump. "N/A" = that node could not be read; no prefs mirror is consulted. */
     fun getLiveHardwareAudit(ctx: Context): Map<String, String> {
         val audit = mutableMapOf<String, String>()
-        audit["kernel_sysfs_filter"] = readSysfs(ctx, "digital_filter") ?: "N/A"
-        audit["kernel_sysfs_gain"] = readSysfs(ctx, "gain") ?: "N/A"
-        audit["kernel_sysfs_dre"] = readSysfs(ctx, "dre") ?: "N/A"
-        audit["kernel_sysfs_turbo"] = readSysfs(ctx, "audio_turbo") ?: "N/A"
-        audit["kernel_sysfs_out_mode"] = readSysfs(ctx, "out_mode") ?: "N/A"
-        audit["kernel_sysfs_balance"] = readSysfs(ctx, "lr_balance") ?: "N/A"
-        audit["prop_hw_filter"] = RootShell.execOut("getprop vendor.audio.hiby.hw.digital_filter") ?: "N/A"
-        audit["prop_hw_gain"] = RootShell.execOut("getprop vendor.audio.hiby.hw.gain") ?: "N/A"
+        audit["kernel_sysfs_filter"] = readKernelNode("digital_filter") ?: "N/A"
+        audit["kernel_sysfs_gain"] = readKernelNode("gain") ?: "N/A"
+        // Both spellings are tried: the setters write "dre_mode", the original audit read "dre".
+        audit["kernel_sysfs_dre"] = readKernelNode("dre_mode") ?: readKernelNode("dre") ?: "N/A"
+        audit["kernel_sysfs_turbo"] = readKernelNode("audio_turbo") ?: readKernelNode("turbo") ?: "N/A"
+        audit["kernel_sysfs_out_mode"] = readKernelNode("out_mode") ?: "N/A"
+        audit["kernel_sysfs_balance"] = readKernelNode("lr_balance") ?: "N/A"
+        // getprop never needed root; reading it through a su shell that does not exist turned two
+        // readable properties into "N/A" on every audit. SystemProperties.get is the direct read.
+        audit["prop_hw_filter"] = MikuHalAudio.sysProp("vendor.audio.hiby.hw.digital_filter") ?: "N/A"
+        audit["prop_hw_gain"] = MikuHalAudio.sysProp("vendor.audio.hiby.hw.gain") ?: "N/A"
         return audit
     }
 }

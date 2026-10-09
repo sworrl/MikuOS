@@ -122,6 +122,13 @@ object MikuWeatherTileEngine {
                 loaded = true
             )
         }
+
+        // Apply the zone from the CACHED snapshot too, not only after a live fetch. Two reasons.
+        // On a cold boot there is a cached reading long before there is a network, and the clock
+        // being right is more urgent than the forecast being fresh. And a fetch is throttled, so
+        // an install or a restart would otherwise sit on a stale zone until the next refresh window
+        // came around, which is exactly the "it never changed" the user reported.
+        runCatching { MikuTimeZoneSync.apply(app, snap?.tzId, snap?.placeName) }
     }
 
     // ------------------------------------------------------------------ user settings
@@ -190,6 +197,16 @@ object MikuWeatherTileEngine {
             var snap = MikuWeatherTileSources.fetchOpenMeteo(loc.lat, loc.lon)
             val notes = mutableListOf<String>()
 
+            // 1b. Follow the clock to wherever we actually are. Open-Meteo is asked with
+            // timezone=auto and answers with the IANA zone for these coordinates, which we have
+            // been parsing into snap.tzId and ignoring. NITZ cannot do this job on a data-only SIM
+            // whose PS registration is denied, so this is the only thing that moves the zone when
+            // the device travels. See MikuTimeZoneSync for the guards; it is a no-op when the zone
+            // already matches, when the user pinned it, or when Android's own auto zone is off.
+            // Placed after the fetch succeeded on purpose: a position good enough to render weather
+            // for is the bar for being good enough to move the clock.
+            runCatching { MikuTimeZoneSync.apply(app, snap.tzId, loc.name) }
+
             // 2. Real AQI from Open-Meteo air quality (null → "—", never a placeholder).
             val air = MikuWeatherTileSources.fetchOpenMeteoAir(loc.lat, loc.lon)
             if (air == null) notes.add("air quality unavailable")
@@ -243,8 +260,20 @@ object MikuWeatherTileEngine {
     }
 
     /**
-     * Manual override → the Observatory's manual city (shared UX) → LocationManager last-known
-     * (no update requests) → the Observatory's already-resolved fix → null (honest "no location").
+     * Manual override → the Observatory's manual city (shared UX) → a real GPS fix → LocationManager
+     * last-known → the Observatory's already-resolved fix → null (honest "no location").
+     *
+     * GPS sits above last-known deliberately. The M500 has real GNSS hardware and it was going
+     * entirely unused: this code only ever read `getLastKnownLocation`, which is a passive read of
+     * a cache something else has to fill, and nothing on this device fills it. `dumpsys location`
+     * showed `locations = 0` on every provider across ten hours. So position always fell through to
+     * Wi-Fi scanning, which is the source that can be a whole timezone wrong when the access points
+     * it hears travel with the owner.
+     *
+     * Asking the satellites is bounded, not subscribed: see MikuGpsFix for why that distinction is
+     * the whole point, given GPS was pulled out of this launcher once already for flattening the
+     * battery. Wi-Fi stays underneath it because a pocket player is indoors most of the time and a
+     * fix needs sky.
      */
     @SuppressLint("MissingPermission")
     private suspend fun resolveLocation(app: Context): WxLocation? {
@@ -263,6 +292,13 @@ object MikuWeatherTileEngine {
                     return WxLocation(lat, lon, name.ifBlank { String.format(Locale.US, "%.3f, %.3f", lat, lon) }, "Observatory manual")
                 }
             }
+        }
+
+        // A real fix, from the satellites, if one can be had inside the timeout. Cached for two
+        // hours so a device sitting on a desk never powers the GNSS a second time.
+        runCatching { MikuGpsFix.acquire(app) }.getOrNull()?.let { l ->
+            val name = placeNameFor(app, l.latitude, l.longitude)
+            return WxLocation(l.latitude, l.longitude, name, "GPS")
         }
 
         // One-shot last-known read. Newest fix wins; no provider is asked for updates.
