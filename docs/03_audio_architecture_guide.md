@@ -208,6 +208,115 @@ adb shell cat /sdcard/MikuLibrary/library.json | python3 -m json.tool
 
 ---
 
+## 10. The FM tuner's audio path
+
+The tuner is **not** a discrete chip. It is the Qualcomm WCN SoC's FM core, reached over the
+same HCI transport Bluetooth uses (`fm_hci` / `radio_helium` / `android_hardware_fm` in logcat,
+`FmReceiver.getSocName()` returns `cherokee`) and exposed as a V4L2 node at `/dev/radio0`. The
+framework side is the device's `/system/framework/qcom.fmradio.jar` plus `libqcomfm_jni.so`.
+Only a platform-signed app named `com.caf.fmradio` can open it; see the SELinux row in the
+gotchas table.
+
+Powering the tuner on is not the same as getting sound out of it, and the two failures look
+identical from the app's side: the chip reports `FMRxOn`, tunes, locks RDS and reports stereo
+while the output is silent.
+
+### What the HAL actually wants
+
+```
+handle_fm = <HiBy output device code> | 0x100000      # 0x100000 = AUDIO_DEVICE_OUT_FM
+```
+
+The QTI audio HAL starts its FM session only when that bit is set, and stops it when it is not:
+
+```c
+if (val & AUDIO_DEVICE_OUT_FM)  fm_start(adev, val & ~AUDIO_DEVICE_OUT_FM);
+else                            fm_stop(adev);
+```
+
+So `handle_fm=1` is not "FM on". It is `AUDIO_DEVICE_OUT_EARPIECE` with the FM bit clear, which
+is an instruction to shut the session down.
+
+The device codes are HiBy's own. They are neither `audio_devices_t` nor `AudioDeviceInfo.TYPE_*`
+and they invert 3 and 4 relative to the framework, because HiBy needed a code for the 4.4 mm
+balanced output that the framework has no type for:
+
+| Output | Address string | Code | `handle_fm` / `fm_routing` |
+|---|---|---|---|
+| 4.4 mm balanced | `balance` | 3 | `0x100003` |
+| 3.5 mm single-ended | `h2w` | 4 | `0x100004` |
+| Bluetooth A2DP | `a2dp` | 8 | `0x100008` |
+| Speaker | anything else | 2 | `0x100002` |
+
+The balanced output enumerates as a `TYPE_WIRED_HEADPHONES` device whose **productName is the
+literal string `balance`**. That product name is the only way to distinguish it from the 3.5 mm
+jack, which enumerates with the same type.
+
+Related keys:
+
+| Key | Direction | Meaning |
+|---|---|---|
+| `handle_fm` | set | Start on `code \| 0x100000`, stop on the bare `code` |
+| `fm_routing` | set | Move a running session to another output |
+| `fm_volume` | set | Linear gain. `exp(getStreamVolumeDb(STREAM_MUSIC, index, device) * ln(10)/20)` |
+| `fm_mute` | set | 1 or 0 |
+| `fm_status` | **get** | `1` while the hardware loopback is up. The only root-free confirmation the session started |
+
+`fm_status` is a read. Writing it does nothing.
+
+### Two more things that have to happen
+
+**SLIMbus.** `FmReceiver.EnableSlimbus(1)` is what carries the FM core's audio to the codec. It
+answers asynchronously through the `FmRxEvEnableSlimbus` callback. Without it the HAL has a
+session and nothing arriving on it.
+
+**The driver mute.** HiBy added public V4L2 statics to `qcom.fmradio.FmReceiverJNI`, and the
+driver comes up muted. `FmReceiver.setMuteMode()` does **not** clear that: it goes over HCI to
+the FM core, while the audio passes through the V4L2 layer's own mute. The one that opens the
+audio is `FmReceiverJNI.setV4L2RadioFmMute(0)`. Muting during route setup and clearing it about
+300 ms later is also where the absence of a power-on pop comes from.
+
+### The capture bridge is Bluetooth-only
+
+FM reaches the DAC through an ADSP hardware loopback on every output except A2DP, which the
+ADSP cannot feed. So the `AudioRecord(RADIO_TUNER=1998)` to `AudioTrack` bridge is the audio
+path **only** on Bluetooth. Running it alongside the loopback is not louder, it is an echo one
+capture buffer behind.
+
+Capture and loopback do coexist safely, which is how FM recording works while FM is playing.
+Miku FM keeps the capture open for the live spectrum and the WAV recorder, and writes it to an
+AudioTrack only on A2DP. That capture lights the Android 14 microphone indicator, correctly.
+
+### Tuning goes through V4L2 too
+
+`FmReceiver.setStation()` goes over HCI, returns true and produces a `FmRxEvRadioTuneStatus`
+callback, so it looks like it worked. After one, `FmReceiverJNI.getV4L2RadioFrequency()` still
+read the bottom of the band.
+
+Stock FM2's `tune()` takes a HiBy branch on this hardware and does not call `setStation()` at
+all. It posts a runnable that calls `FmReceiverJNI.setV4L2RadioFrequency(kHz * 16)` and then
+**synthesises** the `FmRxEvRadioTuneStatus` callback itself, because the V4L2 path does not
+produce one. `setStation()` is the fallback for hardware without HiBy's hooks.
+
+Miku FM issues both and reports the V4L2 read-back in its diagnostics panel, so the two can be
+compared rather than assumed equal.
+
+### Other HiBy V4L2 statics worth knowing about
+
+| Method | Returns |
+|---|---|
+| `getInternalAntenna()` | Whether the board has an antenna that is not the headphone cable |
+| `getV4L2RadioFmSignal()` | `int[]` of `signal, rssi, snr, multipath, freqOffset, freq, valid` |
+| `getV4L2RadioFrequency()` | Tuned frequency in 1/16 kHz units |
+| `setV4L2RadioChannelMode()` | Force mono or stereo |
+| `setV4L2FmSearchStationFreqSeek()` | HiBy's own seek, in V4L2 units |
+
+All of these are hidden API, callable because the app is platform-signed. There is no way to
+read a **station list** back out of the jar: `srchListCallback` parses one internally and
+nothing public exposes the result, so a band scan has to be built from repeated hardware seeks.
+
+---
+
 ## Sources
 - [HiBy Digital M500 × Hatsune Miku 4G Review — Headfonics](https://headfonics.com/hiby-digital-m500-x-hatsune-miku-4g-review/) (DAC, gain, op-amps, output power)
 - [HiBy M500 Hatsune Miku Edition Review — Headfonia](https://www.headfonia.com/hiby-m500-hatsune-miku-edition-review/3/)

@@ -483,6 +483,10 @@ Things this project had to find out the expensive way, written down so nobody ha
 | Installing an app kills its own playback | `installPackageLI` stops the player, so do not deploy while someone is listening |
 | A `.gitignore` of `*` hides untracked files from `git status` | Nothing ever prompts for them. The TV companion and three launcher files each sat unrecorded for days; only force-adding by name finds them |
 | The DAC's sysfs nodes are denied even to a root-less `adb shell` | So there is no read-back. `AudioManager.setParameters` is the only channel that reaches these DACs, and a `su` echo was always a no-op |
+| `handle_fm` is an output-device bitmask, not a boolean | `handle_fm=1` has `AUDIO_DEVICE_OUT_FM` clear, so it tells the audio HAL to **stop** FM. The tuner tuned, locked RDS and reported stereo for a day while the HAL was being asked to shut the session down |
+| The FM driver comes up muted and `setMuteMode()` does not clear it | That mute is in HiBy's V4L2 layer, not the FM core. `FmReceiverJNI.setV4L2RadioFmMute(0)` is the one that opens the audio |
+| `FmReceiver.setStation()` returns true and tunes nothing on this board | Stock tunes with `FmReceiverJNI.setV4L2RadioFrequency(kHz * 16)` and fakes the tune callback itself. The HCI call reports success while the V4L2 read-back still shows the bottom of the band |
+| FM reaches the DAC through an ADSP loopback on every output but Bluetooth | So the `AudioRecord`-to-`AudioTrack` bridge is A2DP-only. Running it as well is not louder, it is an echo one capture buffer behind |
 
 ---
 
