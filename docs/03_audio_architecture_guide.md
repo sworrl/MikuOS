@@ -350,14 +350,38 @@ a fallback for the other, and reports them separately in its diagnostics sheet:
 | `RSSI · Qualcomm (HCI)` | `FmReceiver.getRssi()` | WCN FM core |
 | `SINR · Qualcomm (HCI)` | `FmReceiver.getSINR()` | WCN FM core |
 
-If only the Si4705 row moves with frequency, only the Si4705 has an antenna and the Qualcomm
-path is not a second usable tuner. If both move, there are genuinely two receivers available and
-the UI can offer them.
+**Measured 2026-10-09. Only the Si4705 has an antenna:**
 
-The reference measurement for all of this is **stock FM2**, which is reported to produce audio
-on this hardware with no headphones attached. Re-signed with the platform key it can be flashed
-in place of Miku FM and its session logged call for call; that comparison is the next step
-rather than further inference.
+| MHz | Si4705 RSSI | Qualcomm RSSI | Qualcomm SINR |
+|---|---|---|---|
+| 88.3 | 19 | 0 | 0 |
+| 91.2 | 12 | 0 | 0 |
+| 97.8 | 9 | 0 | 0 |
+| 103.8 | 3 | 0 | 0 |
+| 107.9 | 2 | 0 | 0 |
+
+The Qualcomm FM core answers every command it is given and receives nothing at any frequency.
+There is no second usable tuner, so there is nothing to offer in the UI.
+
+That result sharpens the audio problem rather than solving it. The Qualcomm core is the part
+wired to the audio path, because `EnableSlimbus` is an HCI command to it and the HAL's FM
+backend is the SLIMbus FM port in Qualcomm's design. So the likely shape of the fault is: the
+part that is connected to the speaker is deaf, and the part that can hear has no proven path to
+the speaker. Constant frequency-independent noise is exactly what that produces.
+
+Two leads were tried and are closed:
+
+- **HiBy's driver sysfs** (`radio_switch`, `radio_freq`, `radio_seek_start`, `radio_info` under
+  `/sys/bus/i2c/devices/2-0063`) is denied to the platform-signed app in the `vendor_fm_app`
+  domain, not only to `adb shell`. It exists and is not reachable from userspace.
+- **Stock FM2 as a reference.** Re-signed with the platform key and flashed in place of Miku FM,
+  it never powers the tuner on a re-keyed image: `isAntennaAvailable` is false and
+  `FmReceiver.enable` is never called. It cannot be used to show what a working session looks
+  like here.
+
+What stock did give up before stalling is its exact HAL ordering, which Miku FM now matches:
+`fm_routing` first (the call that actually runs `fm_stop` then `fm_start`), then `fm_volume`,
+then `handle_fm`, which is a no-op by the time it arrives.
 
 ### Other HiBy V4L2 statics worth knowing about
 

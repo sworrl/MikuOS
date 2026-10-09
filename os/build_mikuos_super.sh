@@ -32,7 +32,7 @@ REKEY_NOOP="${REKEY_NOOP:-0}"
 # device, byte-identical to the build output, and `dumpsys package com.caf.fmradio` still
 # listed the OLD five permissions and never granted it, through two reboots. The permission
 # the vendor jar needs was simply not there as far as PMS was concerned.
-MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.4}"
+MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.6}"
 DEVICE_IDENTITY="m500_mikuOS-v${MIKUOS_VERSION}"
 RESIGN_SH="$SCRIPT_DIR/resign_system.sh"
 APKSIGNER="${APKSIGNER:-$(ls ~/Android/Sdk/build-tools/*/apksigner 2>/dev/null | tail -1)}"
