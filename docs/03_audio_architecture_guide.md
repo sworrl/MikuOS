@@ -312,6 +312,53 @@ produce one. `setStation()` is the fallback for hardware without HiBy's hooks.
 Miku FM issues both and reports the V4L2 read-back in its diagnostics panel, so the two can be
 compared rather than assumed equal.
 
+### Open: which tuner has the antenna, and which carries the audio (provisional)
+
+**Status 2026-10-09: unresolved, actively being chased. Everything in this subsection is
+preliminary and may be revised.**
+
+What is established:
+
+- The Si4705 on `/dev/radio0` **receives**. Its RSSI, read with `getV4L2RadioFmSignal()`, moves
+  across the band: 19 at 88.1, 13 at 91.2, 14 at 91.5, 0 at 97.8, 2 at 101.3, 3 at 103.8, 3 at
+  105.7. A part with no RF would not produce that spread.
+- It also **tunes**: `getV4L2RadioFrequency()` tracks what `setV4L2RadioFrequency()` was given.
+- The audio HAL routes correctly (`fm_start` / `PAL_DEVICE_OUT_WIRED_BALANCE`) and the output is
+  audible, because muting stops it.
+- The audio is nevertheless **constant static that does not change with frequency**, including
+  at the frequency where RSSI is highest.
+
+So the RF side works, the routing works, and what comes out is not what is being received. The
+gap is between the Si4705's audio output and whichever codec port the HAL loopback reads.
+
+Candidate explanations, none confirmed:
+
+1. The loopback is reading the **Qualcomm** FM core's port rather than the Si4705's. We enable
+   the Qualcomm side too (`FmReceiver.enable`, `EnableSlimbus(1)`), and a core with no antenna
+   feeding an enabled port would sound exactly like this.
+2. The Si4705's own output is not enabled or sits at zero volume. `FmReceiverJNI` exposes
+   `setV4L2RadioFmVolume()` and **stock never calls it**; an enabled codec port with nothing
+   driving it is also a good description of constant frequency-independent noise.
+3. A mixer path that stock brings up by some route we have not found.
+
+To tell these apart, Miku FM now reads **both** signal paths every poll instead of using one as
+a fallback for the other, and reports them separately in its diagnostics sheet:
+
+| Row | Source | Part |
+|---|---|---|
+| `RSSI · Si4705 (radio0)` | `FmReceiverJNI.getV4L2RadioFmSignal()[1]` | Si4705 |
+| `RSSI · Qualcomm (HCI)` | `FmReceiver.getRssi()` | WCN FM core |
+| `SINR · Qualcomm (HCI)` | `FmReceiver.getSINR()` | WCN FM core |
+
+If only the Si4705 row moves with frequency, only the Si4705 has an antenna and the Qualcomm
+path is not a second usable tuner. If both move, there are genuinely two receivers available and
+the UI can offer them.
+
+The reference measurement for all of this is **stock FM2**, which is reported to produce audio
+on this hardware with no headphones attached. Re-signed with the platform key it can be flashed
+in place of Miku FM and its session logged call for call; that comparison is the next step
+rather than further inference.
+
 ### Other HiBy V4L2 statics worth knowing about
 
 | Method | Returns |
