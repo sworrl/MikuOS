@@ -19,7 +19,20 @@ OUTPUT_SUPER="$OUTPUT_DIR/mikuos_system_bundle.img"
 # mechanics corrupt the image.
 REKEY="${REKEY:-1}"
 REKEY_NOOP="${REKEY_NOOP:-0}"
-MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.0}"
+# BUMP THIS ON ANY CHANGE TO A SYSTEM APP IN THE IMAGE.
+#
+# DEVICE_IDENTITY below becomes ro.build.version.incremental, which is part of
+# ro.build.fingerprint. PackageManager only invalidates its parsed-package cache
+# (/data/system/package_cache) and fully re-scans the system partitions when that
+# fingerprint CHANGES. Rebuild the image with the same version and keep /data, and PMS
+# trusts the cache: the new APK's CODE runs (it is loaded from the file at runtime) while
+# everything derived from its MANIFEST stays as it was parsed months ago.
+#
+# That cost 2026-10-09. The FM tuner's new ACCESS_WIFI_STATE was present in the APK on the
+# device, byte-identical to the build output, and `dumpsys package com.caf.fmradio` still
+# listed the OLD five permissions and never granted it, through two reboots. The permission
+# the vendor jar needs was simply not there as far as PMS was concerned.
+MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.1}"
 DEVICE_IDENTITY="m500_mikuOS-v${MIKUOS_VERSION}"
 RESIGN_SH="$SCRIPT_DIR/resign_system.sh"
 APKSIGNER="${APKSIGNER:-$(ls ~/Android/Sdk/build-tools/*/apksigner 2>/dev/null | tail -1)}"
@@ -838,6 +851,41 @@ label "$OUTPUT_DIR/system.img" system/etc/init/miku_adb.rc u:object_r:system_fil
 debugfs -w -R "write $TMP_RC etc/init/miku_vendor_adb.rc" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
 debugfs -w -R "set_inode_field etc/init/miku_vendor_adb.rc mode 0100644" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
 label "$OUTPUT_DIR/vendor.img" etc/init/miku_vendor_adb.rc u:object_r:vendor_file:s0
+
+# ============================================================================
+# FRONT PULSAR INDICATOR — turn the vendor's standby glow OFF.
+#
+# The solid blue light is NOT ours and is NOT an activity indicator. HiBy's
+# /vendor/etc/init/hw/init.hiby.led.rc does, at boot:
+#     setprop vendor.audio.hiby.hw.led on
+#     setprop vendor.audio.hiby.hw.sample_quality none
+#     setprop vendor.audio.hiby.charging no
+# and its rule  led=on && sample_quality=none && charging=no  writes
+# `led_pattern 1` — the steady blue "powered, nothing special playing" state.
+# On stock, HiBy Music updated sample_quality per track so the colour tracked the
+# format (2 low / 3 standard / 4 high / 5 DSD / 8 MQA / 9 MQA-Studio / 10 MQB,
+# 6-7 charging). MikuOS replaced HiBy Music, so nothing updates it any more and it
+# is pinned on "none" — a light that says nothing, forever.
+#
+# No app can change this: /sys/class/leds is SELinux-denied to apps, and
+# LightsManager reports zero lights even with CONTROL_DEVICE_LIGHTS granted
+# (verified 2026-09-13). Only init may write vendor_audio_prop — hence this rc.
+# The vendor's own led=off rule writes `led_pattern 0`, which is the real off.
+#
+# To make the light MEANINGFUL instead of off, set sample_quality per track from a
+# privileged context rather than removing this — see the pattern map above.
+# ============================================================================
+TMP_LED_RC="$(mktemp)"
+cat > "$TMP_LED_RC" <<'LEDRCEOF'
+# MikuOS: silence the vendor standby glow (see build_mikuos_super.sh for why).
+on property:sys.boot_completed=1
+    setprop vendor.audio.hiby.hw.led off
+LEDRCEOF
+debugfs -w -R "rm etc/init/miku_led.rc" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+debugfs -w -R "write $TMP_LED_RC etc/init/miku_led.rc" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+debugfs -w -R "set_inode_field etc/init/miku_led.rc mode 0100644" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+label "$OUTPUT_DIR/vendor.img" etc/init/miku_led.rc u:object_r:vendor_file:s0
+rm -f "$TMP_LED_RC"
 rm -f "$TMP_RC"
 
 # Pre-authorize THIS build host's adb key so a fresh /data wipe never shows the

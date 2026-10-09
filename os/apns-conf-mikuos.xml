@@ -32263,6 +32263,8 @@
         roaming_protocol="IPV4V6"
         bearer="0"
         carrier_enabled="true"
+        mvno_type="spn"
+        mvno_match_data="Google Fi"
   />
   <apn carrier="Google Fi"
         mcc="310"
@@ -32273,6 +32275,8 @@
         roaming_protocol="IPV4V6"
         bearer="0"
         carrier_enabled="true"
+        mvno_type="spn"
+        mvno_match_data="Google Fi"
   />
   <!-- Google Fi DATA-ONLY SIM (MikuOS-injected 2026-08-30): data-only Fi SIMs are T-Mobile-
        network-only (no multi-IMSI/Tycho) and provision against the plain h2g2 APN. -->
@@ -32285,6 +32289,8 @@
         roaming_protocol="IPV4V6"
         bearer="0"
         carrier_enabled="true"
+        mvno_type="spn"
+        mvno_match_data="Google Fi"
   />
   <apn carrier="Google Fi Data"
         mcc="310"
@@ -32295,5 +32301,7 @@
         roaming_protocol="IPV4V6"
         bearer="0"
         carrier_enabled="true"
+        mvno_type="spn"
+        mvno_match_data="Google Fi"
   />
 </apns>
