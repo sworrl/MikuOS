@@ -85,7 +85,13 @@ class ControlAgent {
     this.tokenBytes = b64urlToBytes(token);
     this.hooks = hooks;
     this.key = null;
+    // Two separate counters on purpose. lastSeq is only the poll cursor: it has to advance
+    // the moment a command is received, or the next poll asks for it again while it is still
+    // being carried out and the replay guard refuses the duplicate - which works, but prints a
+    // refusal for every single command and would bury a real one. lastExecutedSeq is what the
+    // replay guard actually compares against.
     this.lastSeq = 0;
+    this.lastExecutedSeq = 0;
     this.seenNonces = new Set();
     this.queue = Promise.resolve();   // commands run strictly one at a time
     this.pending = [];                // events waiting for the next flush
@@ -110,6 +116,7 @@ class ControlAgent {
     try {
       const head = await this.request("GET", "/api/v1/state?tail=0");
       this.lastSeq = Math.max(0, (head.next_seq ?? 1) - 1);
+      this.lastExecutedSeq = this.lastSeq;
       if (this.lastSeq > 0) {
         this.hooks.log("info", `Control channel: skipping ${this.lastSeq} command(s) issued before this tab opened.`);
       }
@@ -131,7 +138,11 @@ class ControlAgent {
           this.renderBanner("ok", "control channel: connected");
         }
         this.backoff = BACKOFF_START_MS;
-        for (const envelope of r.commands ?? []) this.enqueue(envelope);
+        for (const envelope of r.commands ?? []) {
+          // Advance the cursor at intake, before the command has run.
+          this.lastSeq = Math.max(this.lastSeq, envelope.seq);
+          this.enqueue(envelope);
+        }
       } catch (e) {
         this.alive = false;
         this.renderBanner("bad", `control channel: ${e.message}`);
@@ -191,7 +202,9 @@ class ControlAgent {
     const env = JSON.parse(dec.decode(raw));
     if (env.v !== 1) throw new Error(`command #${envelope.seq} is envelope v${env.v}, not v1`);
     if (env.seq !== envelope.seq) throw new Error("command seq disagrees with its signed payload");
-    if (env.seq <= this.lastSeq) throw new Error(`command #${env.seq} is not newer than #${this.lastSeq}; replay refused`);
+    if (env.seq <= this.lastExecutedSeq) {
+      throw new Error(`command #${env.seq} is not newer than #${this.lastExecutedSeq}; replay refused`);
+    }
     if (Math.abs(Date.now() - env.issued) > MAX_COMMAND_AGE_MS) {
       throw new Error(`command #${env.seq} was issued ${Math.round((Date.now() - env.issued) / 1000)}s ago; too old`);
     }
@@ -206,12 +219,12 @@ class ControlAgent {
       env = await this.verify(envelope);
     } catch (e) {
       // Still advance past it, or one bad envelope blocks the queue forever.
-      this.lastSeq = Math.max(this.lastSeq, envelope.seq);
+      this.lastExecutedSeq = Math.max(this.lastExecutedSeq, envelope.seq);
       this.hooks.log("error", `control: ${e.message}`);
       this.emit({ kind: "refused", seq: envelope.seq, why: e.message });
       return;
     }
-    this.lastSeq = env.seq;
+    this.lastExecutedSeq = env.seq;
     this.hooks.log("info", `control #${env.seq}: ${env.cmd}${Object.keys(env.args ?? {}).length ? " " + JSON.stringify(env.args) : ""}`);
     try {
       const out = await this.run(env);
