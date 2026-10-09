@@ -1,450 +1,654 @@
-<p align="center">
-  <img src="assets/readme_banner.webp" alt="MikuOS">
-</p>
-
 <h1 align="center">MikuOS</h1>
 
-<p align="center"><em>A platform-signed Android 14 replacement OS for the HiBy Digital M500 x Hatsune Miku DAP. Bit-perfect audio, no fabricated readings, no root required.</em></p>
+<p align="center"><em>A platform-signed Android 14 replacement for the HiBy Digital M500 x Hatsune Miku. You own the keys, the DACs, and every number on the screen.</em></p>
 
 <p align="center">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Android%2014%20(SDK%2034)-3ddc84">
-  <img alt="Target" src="https://img.shields.io/badge/target-HiBy%20M500%20(khaje)-39C5BB">
-  <img alt="Audio" src="https://img.shields.io/badge/audio-dual%20CS43198%20%C2%B7%20DirectPCM-FF2277">
-  <img alt="Root" src="https://img.shields.io/badge/root-optional%2C%20never%20required-lightgrey">
+  <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue">
+  <img alt="Base" src="https://img.shields.io/badge/base-Android%2014%20(QSSI)-3ddc84">
+  <img alt="Device" src="https://img.shields.io/badge/device-HiBy%20M500%20(khaje)-39C5BB">
+  <img alt="Signing" src="https://img.shields.io/badge/signing-your%20own%20platform%20key-FF5FA2">
+  <img alt="Root" src="https://img.shields.io/badge/root-not%20required-success">
+  <img alt="Status" src="https://img.shields.io/badge/status-daily%20driver-B388FF">
 </p>
 
-MikuOS replaces the stock HiBy software on the M500 with a suite of six platform-signed Android apps and a rebuilt system image. It keeps the vendor's audio HAL and kernel, swaps out everything the user touches, and is built around one rule that the whole project answers to: **the audio path stays bit-perfect, and nothing on screen shows you a number it did not actually measure.**
+> **Work in progress, and help is wanted.** This is one person and one device. Issues and pull
+> requests are welcome. The [What is verified](#what-is-verified) table below is the honest line
+> between what has been confirmed on hardware and what has not, and the things that would help
+> most are listed under [Contributing](#contributing).
 
-**Why it exists.** The M500 is a genuinely good piece of audio hardware (dual Cirrus Logic CS43198 DACs, balanced out, a real volume wheel) running a stock Android build that does not do it justice. There is no status bar, no navigation bar, no auto-brightness, a music app that hides most of what it can do, and an OS that spent its idle time draining the battery. MikuOS is what the device should have shipped with.
+MikuOS replaces the software on a HiBy Digital M500 x Hatsune Miku DAP. Home screen, system UI,
+navigation, settings, hardware controls and [Miku Music](https://github.com/sworrl/MikuMusic) are
+ours, re-signed with a platform key you generate yourself, so they run with platform permissions on
+a device that is not rooted and does not need to be.
 
-**Scope.** One device. The M500 is a Qualcomm SM6225 ("bengal", fastboot product `khaje`) and everything here is built and tested against that unit and only that unit. It is not a GSI and will not boot on anything else.
+**Why it exists.** The M500 is a very good piece of audio hardware running software that gets in its
+way. Playback goes through Android's mixer, so a 44.1kHz file is resampled before it reaches a pair
+of DACs chosen specifically for not needing that. The launcher cannot be replaced properly. The
+system UI shows readings it did not take. None of that is a hardware limit, all of it is fixable,
+and the fix is to replace the software rather than patch around it.
 
-**What works today.** Everything marked ✅ below is running on the author's M500 right now. The [Tested / Not-Tested](#tested--not-tested) section is the exact line between verified and unproven.
+**No root.** Every earlier attempt at this reached for Magisk. MikuOS does not. The apps are signed
+with the same platform key as the framework they run beside, so they simply HAVE the permissions
+instead of asking a root daemon for them. A `su` failure in this codebase is treated as a bug in the
+code, not a reason to install a root daemon.
+
+<p align="center">
+  <img src="docs/screenshots/09-launcher-home.png" width="30%" alt="MikuOS launcher: clock, weather with real AQI and sun times, DAC and battery tiles">
+  <img src="docs/screenshots/07-hardware-observatory.png" width="30%" alt="Hardware observatory: CS43198 x2, NOS filter, high gain, DRE, real per-core CPU clocks">
+  <img src="docs/screenshots/08-bpm-game-played.png" width="30%" alt="The BPM rhythm game mid-run: note highway, locked tempo, crowd meter">
+</p>
 
 ---
 
 ## Contents
 
-- [The device](#the-device)
-- [What's in the box](#whats-in-the-box)
-- [Features](#features)
-- [Tested / Not-Tested](#tested--not-tested)
-- [Install (web installer)](#install-web-installer)
-- [Install (by hand)](#install-by-hand)
-- [Build the apps](#build-the-apps)
-- [Build the system image](#build-the-system-image)
-- [Architecture](#architecture)
+- [What is verified](#what-is-verified)
+- [Installing](#installing)
+- [What is in the OS](#what-is-in-the-os)
+- [Miku Music](#miku-music)
+- [The launcher](#the-launcher)
+- [System UI](#system-ui)
+- [Settings and hardware](#settings-and-hardware)
+- [The bit-perfect audio path](#the-bit-perfect-audio-path)
 - [The poor man's ambient light sensor](#the-poor-mans-ambient-light-sensor)
-- [Root is optional](#root-is-optional)
-- [Permissions](#permissions)
-- [Known limitations](#known-limitations)
+- [Making it fast](#making-it-fast)
+- [Building an image](#building-an-image)
+- [Flashing](#flashing)
+- [Signing and keys](#signing-and-keys)
+- [Hard-won platform facts](#hard-won-platform-facts)
 - [Repo structure](#repo-structure)
-- [Troubleshooting](#troubleshooting)
+- [The device](#the-device)
+- [What we keep from HiBy and what we replace](#what-we-keep-from-hiby-and-what-we-replace)
+- [Known limitations](#known-limitations)
 - [Contributing](#contributing)
 - [Legal](#legal)
+- [Attributions](ATTRIBUTIONS.md)
+- [Full source OS roadmap](docs/11_full_source_os_roadmap.md)
 
 ---
 
-## The device
+## What is verified
 
-Everything below was read off a running M500, not from a spec sheet.
+The line between confirmed on real hardware and not. It is the first section on purpose.
 
-| | |
-|---|---|
-| **SoC** | Qualcomm SM6225 (Snapdragon 680), board `bengal`, 8 cores, arm64-v8a |
-| **Memory** | 4 GB RAM, 64 GB storage, microSD |
-| **Display** | 720 x 1280, 360 dpi, 3.2" portrait |
-| **DAC** | Dual Cirrus Logic CS43198 |
-| **Outputs** | 3.5 mm single-ended, 4.4 mm balanced, USB UAC2 DAC out, internal speaker |
-| **Power** | CellWise CW2015 fuel gauge, MP2731 charger |
-| **Controls** | Power, volume wheel, play/pause, next/prev, and a physical Fn slide switch |
-| **Sensors** | No ambient light sensor. See [the poor man's ALS](#the-poor-mans-ambient-light-sensor). |
-| **Android** | 14 (SDK 34) framework on a HiBy Android 13 vendor base, kernel 5.15.153 |
-| **Bootloader** | fastboot product `khaje`, A/B slots, dynamic `super` partition |
-| **Signing** | Falcon Technix platform key, replacing the public AOSP test keys |
+Legend: ✅ confirmed on a real M500 · ⚠️ implemented, not proven · ❌ tried, does not work.
 
----
-
-## What's in the box
-
-MikuOS is six Android apps in one Gradle project, plus the scripts that bake them into a system image.
-
-| Module | Package | Version | What it is |
-|---|---|---|---|
-| `app` | `com.miku.player` | 2.0.266 | **Miku Music.** The player. Also published on its own at [sworrl/MikuMusic](https://github.com/sworrl/MikuMusic). |
-| `mikuos-launcher` | `com.miku.launcher` | 0.1.49 | Home screen, status bar, lockscreen, always-on display, weather, observatories |
-| `mikuos-systemui` | `com.miku.systemui` | 0.1.18 | Navigation gestures, notification shade, quick settings, power menu |
-| `mikuos-settings` | `com.miku.settings` | 0.1.8 | System settings |
-| `hardware-settings` | `com.m500.hardware` | 1.0.8 | Ambient light, Fn pocket lock, USB DAC, cell radio saver, DAC controls |
-| `fmradio` | `com.caf.fmradio` | 1.0.0 | FM tuner, shipped under the vendor package name so SELinux grants it the tuner |
-
-The M500 ships with **no navigation bar and no status bar**. MikuOS provides both; the launcher draws the status bar and the SystemUI module is an accessibility service that owns navigation.
-
----
-
-## Features
-
-### Audio
-
-| | Status | Notes |
+| Thing | State | How it was checked |
 |---|---|---|
-| Bit-perfect DirectPCM to the CS43198 | ✅ | 24 and 32 bit integer passthrough at the file's native rate. No mixer, no resampling. |
-| DTA direct output | ✅ | App is added to the platform allow-list before the first AudioTrack is built; the framework checks that per track at construction. |
-| Highest quality enforced, not offered | ✅ | HIGH DAC gain re-applied on every start and pushed into the HAL; full volume range unlocked past HiBy's per-jack cap. |
-| DAC controls that actually land | ✅ | Digital filter, DRE, high power, DSD gain compensation, all via the HAL parameter path. |
-| USB DAC mode | ✅ | Reads the real gadget state and ALSA stream params; says whether audio is actually flowing. |
-| Bluetooth codec lockdown | ✅ | Asks for LDAC 990; any downgrade needs an explicit on-screen confirm. |
+| Platform-signed apps, no root | ✅ | Running daily. `su` is never invoked anywhere in the shipped code |
+| Re-keyed system image boots | ✅ | Known-good image `mikuos_super_rekey1_GOOD_20260827.img`, boot-verified |
+| APEX re-signing to a custom key | ✅ | Proven on `com.android.mediaprovider`, compressed `.capex` included |
+| Bit-perfect DIRECT output to the DACs | ✅ | 44.1 / 48 / 192kHz, 24-bit packed, confirmed with `dumpsys media.audio_flinger` |
+| Gesture navigation replacing the stock nav bar | ✅ | An accessibility service IS the navigation on this device |
+| Suppressing the stock nav pill | ✅ | `StatusBarManager` disable flags. `NavigationBar0` reports `isVisible=false` after a reboot |
+| OS-wide idle dim on real system brightness | ✅ | Four-tier ladder writing `Settings.System.SCREEN_BRIGHTNESS` |
+| Fn-key pocket lock without root | ✅ | HiBy's framework honors `Settings.Global button_lock` |
+| Camera used as an ambient light sensor | ✅ | See below. The device has no ALS at all |
+| Custom LED behavior | ✅ | `miku_led.rc` baked into vendor, needs a reflash to take |
+| Last.fm scrobbling | ✅ | Browser token flow, per-user session key. App key lives in `local.properties`, never the repo |
+| GPS as the primary position source | ⚠️ | Single-shot, timed out, cached two hours. The path is verified falling back correctly indoors; an actual satellite fix still needs testing outdoors |
+| Wi-Fi positioning without Google location | ✅ | BeaconDB then Apple WPS, with travelling-AP exclusion. Now the fallback rather than the primary |
+| Automatic time zone while travelling | ✅ | Taken from the weather position, since NITZ needs a carrier registration this SIM is denied. Verified correcting America/Denver to America/New_York on-device |
+| WireGuard client in the launcher | ⚠️ | Implemented, the VPS-relay path for CGNAT is the untested part |
+| Bluetooth LDAC push | ⚠️ | Codec enforcement is implemented, unproven until an LDAC sink is on hand |
+| Web installer (WebUSB fastboot) | ⚠️ | Hosted at `mikuos.falcontechnix.com` in bring-your-own-images mode. `EXPECTED_PRODUCTS` still unconfirmed |
+| Full AOSP-from-source build | ❌ | The tree and `device/hiby/m500` exist and the lunch target is defined, but `out/` is empty: this has NEVER produced an image. What ships is the stock image re-keyed. Plan, costs and timeline in [the roadmap](docs/11_full_source_os_roadmap.md) |
+| Reading the DAC state back | ✅ | Not from sysfs, which SELinux denies to `platform_app`. From `vendor.audio.hiby.*`, which is the namespace the vendor's own audio HAL reads and writes. The panel names which source answered |
+| GSI (generic system image) | ❌ | Vendor mandates six legacy HIDL services Android 14 dropped. Abandoned for a stock-QSSI base |
+| FM tuner | ❌ | Has never worked on-device. SELinux keys `/dev/radio0` on the package name, not the signature |
+| Kernel 5.15.209 | ❌ | A/B proven to break charging: `mp2731` never qualifies the input and the device drains on the cable. Stock 5.15.153 stays |
 
-### System
+---
 
-| | Status | Notes |
+## Installing
+
+There is no prebuilt image to download, and there will not be one. A MikuOS super image contains
+HiBy Digital's system and vendor firmware, which is not ours to hand out. You build it from the
+stock firmware you already have on your own device. See [Building an image](#building-an-image).
+
+Once you have an image, there are two ways to put it on the device.
+
+**From a browser.** `mikuos.falcontechnix.com` serves the WebUSB installer. It talks fastboot from
+Chrome, takes the images you supply, splits super into 64MB chunks and resumes if the transfer
+drops. It does not host any images. Treat it as a flashing tool, not a download.
+
+**From a shell.** The scripts under `os/` do the same job with more output when something
+goes wrong, which is the reason to prefer them the first time.
+
+```bash
+# Keeps /data: likes, history, WiFi, installed apps
+./os/flash_mikuos_keepdata.sh
+
+# Wipes /data
+./os/flash_mikuos_clean.sh
+```
+
+Read [Flashing](#flashing) before either one. The failure modes on this device are specific and a
+couple of them look like a dead device when they are not.
+
+---
+
+## What is in the OS
+
+| Component | Package | What it does |
 |---|---|---|
-| Navigation | ✅ | Edge-swipe back, home pill, top-edge pull for the shade. Overlays sit above third-party apps, so the shade pulls down over Spotify too. |
-| Notification shade + quick settings | ✅ | |
-| Status bar | ✅ | Clock, signal, battery, now playing, audio quality. Battery reads the sticky broadcast on first draw, never a default. |
-| Lockscreen + always-on display | ✅ | Reads whatever holds the media session, so Spotify shows up in the Miku layout. |
-| Fn switch pocket lock | ✅ | Root-free. Touch, transport keys, volume wheel and power are disabled via the input manager and the screen blanks. The switch itself is never disabled, so unlock always works. |
-| Ambient auto-brightness | ✅ | Camera-derived. [Details below](#the-poor-mans-ambient-light-sensor). |
-| Idle power | ✅ | The launcher's 24/7 GPS listener is gone; live GPS is reference-counted and only runs while the map is open. Cell radio powers down after 10 min out of service on Wi-Fi. |
-| Plug-wake screen strobing | ✅ | Gated through theater mode, the only gate the HiBy framework honors. |
-| WireGuard client | ✅ | In the launcher. |
-| Media ingest over rsync | ✅ | |
-| First-run onboarding | ✅ | |
-| FM tuner | ✅ | WAV recording, spectrum computed from the live FM audio. |
-| Auto-rotate | ✅ | Defaults off. Baked into the image. |
+| **Miku Music** | `com.miku.player` | The player. Bit-perfect, libprojectM, cassette deck. [Its own repo](https://github.com/sworrl/MikuMusic) |
+| **Launcher** | `com.miku.launcher` | Home screen, app drawer, lockscreen, AOD, weather, GPS map, network and battery observatories, the ingest engine, the BPM game |
+| **System UI** | `com.miku.systemui` | Gesture navigation, notification shade, quick settings, power menu, recents, idle dim, the Pulsar LED |
+| **Settings** | `com.miku.settings` | The MikuOS settings app |
+| **Hardware** | `com.m500.hardware` | DAC filter, DRE, gain, high-power mode, thermal, the camera light meter |
 
-### Honesty
-
-Every gauge, badge and status line either shows a value read from a real source or shows a dash. That sounds obvious. It was not true for a long time, and fixing it took several passes across all six modules. Things that used to be invented and are now measured: a status bar battery that read 100% while the gauge said 48; signal bars that showed full strength whenever the modem had never reported; a charging screen that dropped the sign off the current; a lockscreen that credited any untagged track to Hatsune Miku and wrote that into history; a USB DAC page claiming lock and zero underruns as fixed text; sine-wave VU meters; a BPM screen that defaulted to a hardcoded track and broadcast 165 BPM with nothing playing.
-
-For the player's own feature list, see [sworrl/MikuMusic](https://github.com/sworrl/MikuMusic).
+The launcher and system UI are Gradle modules of the Miku Music build, so they share its theme,
+motion and audio code. They live in that repo and ship from this one.
 
 ---
 
-## Tested / Not-Tested
+## Miku Music
 
-**Verified on the author's M500 (khaje), kernel 5.15.153, MikuOS image built 2026-09:**
+The player is the reason the rest of it exists. It is a native Kotlin and Compose app, not a fork
+of HiBy's.
 
-- Full flash via the web installer, update path and clean-wipe path
-- Cold boot, first-boot provisioner, adb pre-auth
-- DirectPCM at 16/44.1, 24/48, 24/96, 24/192, and DSD
-- Both jacks, USB DAC out, Bluetooth LDAC
-- Fn lock across screen on and off
-- Ambient brightness: set to 20, wake, metered 8 lux, raised to 82 (logged)
-- Miku Music cold-launched four times with listening stats on, zero crashes
-- 24 h idle with the launcher GPS fix in place
+<p align="center">
+  <img src="docs/screenshots/03-tape-mode.png" width="30%" alt="Tape mode: a cassette drawn to the IEC 60094-7 mechanical spec, 24-bit 96kHz, handwritten masking tape label">
+  <img src="docs/screenshots/15-tape-mode-alt.png" width="30%" alt="The same view on a different track: the tape lands somewhere else, at a different angle, on a different shell">
+  <img src="docs/screenshots/02-fullscreen-visualizer.png" width="30%" alt="Fullscreen libprojectM visualizer">
+</p>
 
-**Not tested, and stated plainly:**
+Those first two are the same screen on two different tracks. The masking tape's position, angle,
+paper, torn edges and grime are rolled per track from the track id, so the strip lands somewhere
+plausible rather than in the same spot every time. The two drive holes are drawn last, over the top
+of it, because they are holes through the shell and nothing can sit on them.
 
-- Any device other than the author's own M500
-- Kernel 5.15.209 is built and boots but is **disqualified** (see [Known limitations](#known-limitations))
-- A fresh system image built from this exact tree on a clean checkout; the author's builds come from a working tree with a few local artifacts the tree does not contain (GApps download cache, stock APK set)
-- The Cloudflare entitlement worker under `tools/entitlement-worker` is written and not deployed
-- The BLE remote's companion PWA under `tools/remote-pwa` needs HTTPS hosting that is not set up
+<p align="center">
+  <img src="docs/screenshots/01-now-playing-hires.png" width="30%" alt="Now playing at 24-bit 192kHz with the wavy scrubber and an album-derived palette">
+  <img src="docs/screenshots/04-library.png" width="30%" alt="Library stats: 17048 tracks, 415 artists, 1777 albums, 98 percent FLAC">
+  <img src="docs/screenshots/05-artists.png" width="30%" alt="Artist list with per-artist format badges">
+</p>
 
-If you run MikuOS on your own M500 and something in the first list does not hold, that is a bug. Open an issue with `logcat` and the output of `fastboot getvar all`.
+**Library.** Around 17,000 tracks and 415 artists on the author's card. The library is cached in a
+flat store keyed on `MediaStore.getGeneration`, so a launch where nothing changed skips the
+MediaStore walk entirely. A rescan is debounced and single-flighted, because a naive implementation
+kicked off five concurrent walks and ANR-killed the playback service.
 
----
+**Real format data, not guesses.** Sample rate and bit depth come from `MediaMetadataRetriever` on
+the actual file, stored in an on-device database. Nothing is inferred from a file extension. Where
+the value is not known, the UI shows a dash.
 
-## Install (web installer)
+**Disc images and cue sheets.** A single-file album with a `.cue` is split on the cue. Around 489
+disc images have no cue sheet at all, and those are matched against MusicBrainz track durations.
 
-Browser-based, over WebUSB. Needs Chrome or Edge on a desktop and a USB cable. Firefox does not do WebUSB.
+**Tape mode.** A Compact Cassette drawn in millimetre coordinates to the IEC 60094-7 mechanical
+spec: 101.6 by 63.5mm shell, hubs 42.5mm apart on the 28.4mm line, guide rollers at the bottom
+corners, head and capstan openings on the bottom edge, rotated onto the portrait panel. The reels
+turn at a rate derived from playback position, the masking tape label carries handwriting in one of
+several marker styles, and the volume fader is part of the deck rather than a system modal.
 
-1. **Charge past 50%.** Fastboot does not charge the battery on this device and the flash takes about ten minutes. If the bootloader reports 0 mV, that is a fake reading from a device that has been in fastboot too long, not a dead battery; power-cycle it.
-2. Reboot to the bootloader: `adb reboot bootloader`
-3. Open the installer, pick the device, and confirm it reports product **`khaje`**. The installer refuses anything else.
-4. Choose **update** to keep your music and settings, or **clean install** to wipe. Update is the normal path.
-5. Let it run. The super image is sent in 64 MiB chunks with per-chunk verification, and the flash is resumable if the cable is knocked.
+**Visualizer.** libprojectM at master (4.2.0), with 9,825 presets shipped in the APK assets. All of
+them have been loaded once on the GL thread by a self-test broadcast to find the ones that fail.
 
-The installer is a static site under `tools/web-installer` (vendored `fastboot.js`, no server). To host your own copy, serve that directory over HTTPS and point `release.json` at your image; `make_release_manifest.py` writes the manifest with the hashes.
+**Listening stats and scrobbling.** A local listen database drives a stats screen and an annual
+recap. Last.fm scrobbling uses the browser token flow: the app never sees a password, each user
+signs in to their own account, and the session key stays in that device's encrypted preferences.
 
----
-
-## Install (by hand)
-
-If you would rather drive fastboot yourself, `os/` has the scripts the author uses. Read [this warning](#the-64-mib-chunk-rule) first.
-
-```sh
-# keep /data
-os/flash_mikuos_keepdata.sh
-
-# wipe /data (uses `fastboot -w`, NOT `fastboot erase userdata` - see Troubleshooting)
-os/flash_mikuos_clean.sh
-```
-
-Both expect the built images in `out/` (see [Build the system image](#build-the-system-image)) and a device already in fastboot.
-
-### The 64 MiB chunk rule
-
-Sending the 5.4 GB `super` image in larger chunks wedges this device's USB gadget mid-flash, and a wedged gadget needs a **physical power cycle** to clear; `fastboot reboot` will not do it. The scripts and the installer chunk correctly. If you flash by hand:
-
-```sh
-fastboot -S 64M flash super out/mikuos_super.img
-```
-
-Never run two fastboot processes at once against this device.
+**Other things that are in there.** A skeuomorphic booklet and sleeve viewer that reads scans out of
+the album folder. Artist photos matched against Wikidata and Wikipedia on an exact match only, with
+a local override and a reject button. An affinity and co-occurrence model behind a radio station
+mode and an optional smart shuffle, both gated on having real play counts. An alarm clock that wakes
+the device and rings over the lockscreen. A BLE remote peripheral, off by default, paired with a six
+digit code.
 
 ---
 
-## Build the apps
+## The launcher
 
-All six apps build from one Gradle project at the repo root.
+<p align="center">
+  <img src="docs/screenshots/09-launcher-home.png" width="30%" alt="Launcher home with clock and weather tile">
+  <img src="docs/screenshots/14-lockscreen.png" width="30%" alt="Lockscreen: clock, hourly forecast strip, transport and a BPM badge reading a dash because the tempo is not known">
+  <img src="docs/screenshots/13-network-observatory.png" width="30%" alt="Network observatory: link rate, signal, channel and the scan list">
+</p>
 
-**Prerequisites**
+Network names, addresses and the town are blurred in these captures. `tools/blur_pii.py` is the
+helper that does it, so the same regions can be stripped again from a fresh screenshot rather than
+being redacted by hand.
 
-- JDK 17
-- Android SDK with platform 34 and NDK (for the projectM native build in `app`)
-- CMake 3.22+
-- The libprojectM source: `app/src/main/cpp/vendor/projectm` must point at a checkout of [projectM-visualizer/projectm](https://github.com/projectM-visualizer/projectm) at 4.2.0 or later. It is a symlink in the author's tree; clone it there or symlink your own.
-- For the FM module: `libqcomfm_jni.so` pulled from your own device (see `fmradio/src/main/jniLibs/arm64-v8a/README.md`)
+**Weather and location.** Open-Meteo for forecast, with real AQI. The interesting part is location.
 
-**Signing.** The apps are platform-signed. Create `keystore.properties` next to `build.gradle.kts`:
+The device has real GNSS hardware and for a long time nothing used it. The launcher only ever read
+`getLastKnownLocation`, which is a passive read of a cache something else has to fill, and nothing
+on this device fills it: no maps app, no navigation, nothing subscribing. `dumpsys location`
+reported zero fixes across ten hours. So the launcher now asks the satellites itself, as a single
+bounded shot rather than a subscription, because GPS was pulled out of this launcher once already
+for flattening the battery. One fix, a hard timeout, cached for two hours, and the radio goes back
+to sleep either way.
 
-```properties
-platform.storeFile=path/to/your-platform.jks
-platform.storePassword=...
-platform.keyAlias=platform
-platform.keyPassword=...
-```
+A fix needs sky and this is a pocket player, so when GPS comes back empty the launcher falls through
+to its own Wi-Fi positioning: it scans, then asks BeaconDB and falls back to Apple's WPS, both
+keyless.
 
-Without it, Gradle builds with the debug key and the apps will not install as system apps on a MikuOS image, because the image was signed with a different platform key. Signing material is gitignored and must never be committed.
+That naive version was wrong in a way worth writing down. It kept reporting the author's old address
+from across the country, and it was right to, because the access points it could hear travelled with
+him: four Starlink terminals, a phone hotspot, and his own gear, all mapped at the old location. The
+locator now keeps a list of SSIDs that move and excludes them from the fix.
 
-**Build**
+**The BPM game.** Tap along to the beat of whatever is playing, against a note highway that takes
+its colors from the album art. It keeps a crowd meter and it will heckle you.
 
-```sh
-JAVA_HOME=~/.local/toolchains/jdk17 ./gradlew assembleDebug        # all six
-JAVA_HOME=~/.local/toolchains/jdk17 ./gradlew :app:assembleDebug   # just the player
-```
+**The clock follows you.** The system time zone used to sit wherever it was last set, because
+Android's automatic time zone is driven by NITZ and NITZ needs a carrier registration this
+data-only SIM is usually denied. The launcher already asks Open-Meteo with `timezone=auto` for the
+weather, and Open-Meteo already answers with the IANA zone for those coordinates, so that value now
+sets the system zone. It applies from the cached reading as well as a fresh one, so a cold boot
+does not wait for the network to know what time it is. `settings put global miku_auto_timezone 0`
+pins the zone if you would rather set it by hand.
 
-APKs land in `<module>/build/outputs/apk/debug/`.
+**Observatories.** Network and battery screens that show measured values. The battery one reads the
+CellWise CW2015 fuel gauge and the MP2731 PMIC.
 
-**The projectM stale-build trap.** `vendor/projectm` is a symlink and Gradle will not traverse it, so after updating projectM the native build silently reports `BUILD SUCCESSFUL` doing nothing and ships the old `.so`. After any projectM update:
-
-```sh
-rm -rf app/.cxx app/build/intermediates/cmake
-```
-
-**Deploy to a device**
-
-```sh
-adb install -r app/build/outputs/apk/debug/MikuMusic-v*.apk
-```
-
-Never uninstall the player to reinstall it. A debug/release uninstall cycle wipes liked songs and listening history. `install -r` over the top is always safe.
-
----
-
-## Build the system image
-
-`os/build_mikuos_super.sh` takes stock M500 partition images and produces a MikuOS `super.img`. It is a long script with a lot of hard-won gates in it. In order, it:
-
-1. **Expands** the stock ext4 images to make working space.
-2. **Un-shares** ext4 `shared_blocks`. Stock images use them, and writing to a shared-blocks filesystem with `debugfs` silently corrupts random other files. This step **must** run before any write, and used to run after, which was the cause of a whole class of flaky boots.
-3. **Injects** the six MikuOS APKs into `system`, plus the first-boot provisioner, boot voice, animation overlay, and APN config.
-4. **Re-keys** the platform: replaces the AOSP public test keys throughout `system` and `product` with the MikuOS key set, preserving the `security.selinux` xattr on every file it touches (stripping it hangs the boot). NetworkStack and the mainline APEX modules are deliberately excluded; re-keying those bootloops.
-5. **Verifies** every injected file owns real data blocks. `debugfs` also silently no-ops on a full filesystem, so this gate catches an image that looks built and is not.
-6. **Shrinks** the images to minimal size and packs `super`.
-
-Inputs it needs that this repo does not ship: the stock partition images from your own device, your platform keys, and optionally a GApps package. Outputs go to `out/`. Read the header of the script before running it; it names every path.
-
-An optional Wi-Fi pre-seed for first boot comes from `os/mikuos-dev-wifi.conf` (gitignored; see the `.example`).
+**The ingest engine.** Watches for an SD card mount and runs a scan, with a daily pass as a backstop.
+An early version answered `ACTION_MEDIA_SCANNER_FINISHED` by starting another scan, which is an
+endless rescan loop that pinned MediaProvider and the card. Do not start work from the broadcast that
+signals that work finished.
 
 ---
 
-## Architecture
+## System UI
 
-### Directory structure
+**Navigation is an accessibility service.** The M500 has no stock navigation bar or status bar in
+the configuration MikuOS ships, so the gesture pill is drawn by `com.miku.systemui` and the
+accessibility service performs the global actions. It follows your finger and shifts color to stay
+legible against what is behind it.
 
-```
-MikuOS/
-├── app/                      Miku Music (com.miku.player)
-│   └── src/main/
-│       ├── java/com/miku/player/
-│       │   ├── api/          local HTTP API + web remote
-│       │   ├── bpm/          on-device tempo analysis
-│       │   ├── booklet/      album booklet / PDF viewer
-│       │   ├── discsplit/    CUE and cue-less disc image splitting
-│       │   ├── radio/        FM tuner engine + Miku Radio station mode
-│       │   ├── remote/       BLE GATT peripheral (phone as remote)
-│       │   ├── scrobble/     Last.fm with offline queue
-│       │   ├── stats/        per-listen database
-│       │   ├── taste/        affinity model + co-occurrence graph
-│       │   ├── visualizer/   Miku Shaders (GLES2 feedback engine)
-│       │   ├── TapeMode.kt   the cassette deck
-│       │   └── ...
-│       ├── cpp/              libprojectM 4.2 JNI bridge, M500 audio HAL shim
-│       ├── assets/presets/   Milkdrop presets
-│       └── res/font/         Audiowide, Orbitron, Righteous, Baloo 2, Mochiy Pop, DotGothic16, Monoton, Permanent Marker, Kalam
-├── mikuos-launcher/          home, status bar, lockscreen, AOD, weather, observatories, VPN, ingest
-├── mikuos-systemui/          accessibility-service navigation, shade, QS, power menu
-├── mikuos-settings/
-├── hardware-settings/        ambient light, Fn lock daemon, USB DAC, cell radio saver, DAC controls
-├── fmradio/                  FM tuner UI under the vendor package name
-├── qcom-fmradio-stubs/       compile-time stubs for the vendor FM API
-├── os/                       system image build + flash scripts, APN config
-├── tools/
-│   ├── web-installer/        WebUSB flasher (static site)
-│   ├── remote-pwa/           Web Bluetooth remote for the player
-│   ├── entitlement-worker/   Cloudflare Worker (not deployed)
-│   ├── rsync/                media ingest daemon config
-│   └── *.sh, *.py            signing, verification, unbrick, library DB
-├── docs/                     hardware report, audio architecture, signing/PKI, reverse-engineering reference
-└── assets/                   README images
-```
+There was a duplicate for a long time: AOSP's own `NavigationBar0` and `SecondaryHomeHandle0`, plain
+and unresponsive, drawn system-wide underneath ours. Hiding the insets per-app does not remove it,
+and the framework RRO route does not work either, because idmap only maps two of the three
+resources and `config_showNavigationBar` is the one it excludes. What does work is the
+`StatusBarManager` disable flags, and after a reboot `NavigationBar0` reports `isVisible=false`.
 
-### How navigation works with no system bars
+**One rule about the navigation service.** Never `am force-stop com.miku.systemui`. Android drops a
+force-stopped package from `enabled_accessibility_services`, which means the device loses its
+navigation until you re-enable it by hand.
 
-The M500's stock framework ships without a status bar or navigation bar. `mikuos-systemui` is an **accessibility service**, which is the one process type Android lets draw over every other app and receive every touch. It puts four transparent overlays on the edges: left and right for back, bottom for the home pill, and a 40 dp strip at the top for the shade pull. Because they are accessibility overlays they sit above third-party apps, so the shade pulls down over Spotify. The power menu rides the long-press-power-to-assistant path, since that is the only long-press hook the HiBy framework exposes.
+**Idle dim** walks real system brightness down a four-tier ladder and puts it back on touch.
 
-### How the audio lock works
+**The Pulsar LED.** The stock vendor init writes `led_pattern 1` at idle and nothing ever updates
+`sample_quality` once HiBy Music is gone, so the light sits solid blue forever. Patterns 2 through 10
+are the format colors. Only init can write those properties, which is why the fix is a baked
+`miku_led.rc` and needs a reflash rather than a setting.
 
-HiBy's framework has a per-jack volume cap and a "raise lock" that only gates the knob's `adjustStreamVolume` path. Miku Music drives the wheel through `setStreamVolume` instead, which the lock does not cover, and asks the HAL for the full range once at startup. DAC settings (`vendor.audio.hiby.*`) are written to `Settings.Global` **and** pushed through `AudioManager.setParameters`, because the HAL reads them from parameters at track construction and only some paths re-read the setting.
+<p align="center">
+  <img src="docs/screenshots/11-pulsar-led.png" width="30%" alt="Pulsar RGB lighting settings">
+  <img src="docs/screenshots/10-settings.png" width="30%" alt="MikuOS settings">
+  <img src="docs/screenshots/12-fn-lock.png" width="30%" alt="Fn lock and hardware key routing settings">
+</p>
 
-### How the Fn lock works
+---
 
-The HiBy framework honors `Settings.Global.button_lock`: with it set, the framework itself ignores every hardware key, screen on or off. `FnLockDaemon` in the hardware module is the always-alive applier; it watches the switch and writes the setting. Touch is disabled through `InputManager.disableInputDevice` on the Goodix controller, and the screen is blanked. The `gpio-keys-hiby` device is **never** disabled, because the Fn switch is on it.
+## Settings and hardware
 
-### Signing
+`com.miku.settings` covers network, Bluetooth, USB, audio, lighting, hardware keys, apps, battery
+and storage. `com.m500.hardware` owns the DAC controls and the camera light meter, and runs the Fn
+lock daemon in a foreground service so the pocket lock stays applied.
 
-The whole OS is signed with the Falcon Technix platform key. The public AOSP test keys are replaced throughout `system` and `product` at image build time, so MikuOS apps get signature-level permissions (`WRITE_SECURE_SETTINGS`, `MANAGE_APP_OPS_MODES`, `DISABLE_INPUT_DEVICE`, and so on) without root. Two things stay on their original signatures: NetworkStack, whose shared UID is split with an APEX and cannot be re-keyed on Android 14 without a PMS fatal, and the mainline APEX modules, which `apexd` rejects when re-signed by hand. `docs/09_mikuos_signing_and_pki_architecture.md` has the full story.
+**The volume wheel.** HiBy's framework puts a per-jack raise-lock on `adjustStreamVolume`, which
+gates the wheel's path specifically. Using `setStreamVolume` instead goes around it.
+
+**Bluetooth pairing.** Bonding needs something to answer `ACTION_PAIRING_REQUEST`. Without a
+responder, `createBond()` looks like it silently fails. The controller now auto-confirms passkey
+confirmation and consent variants.
+
+---
+
+## The bit-perfect audio path
+
+This is the problem the project was started for, and the answer took a while.
+
+Android promotes an `AudioTrack` to `FLAG_DEEP_BUFFER` at around 100ms of buffering. Qualcomm's
+`direct_pcm` output only routes when the flags are NONE. So anything that lands in the deep-buffer
+path is silently opted out of DIRECT output, gets mixed, and gets resampled on the way to a pair of
+DACs bought for not needing that.
+
+The bug in our own sink was subtler than the platform behavior. It asked for a small buffer, then
+clamped it with `max(getAudioTrackMinBufferSize(), ...)`, and on this device the platform minimum is
+roughly twice the deep-buffer threshold. Every track was therefore deep-buffered onto a 192kHz mixer
+no matter what was requested. It now requests the small buffer and only falls back to the platform
+minimum when it has to.
+
+Verified DIRECT at the file's native rate, 24-bit packed, in `dumpsys media.audio_flinger`. There is
+a capture of that output in [`docs/screenshots/bitperfect-audioflinger.txt`](docs/screenshots/bitperfect-audioflinger.txt).
+
+Bluetooth is deliberately excluded from the buffer shrink. A2DP wants the larger buffer and starves
+without it.
 
 ---
 
 ## The poor man's ambient light sensor
 
-The M500 has no ambient light sensor. There is no ALS in the hardware, nothing under `/sys/class/sensors`, and `SensorManager.getDefaultSensor(TYPE_LIGHT)` returns null. Stock firmware has no auto-brightness for that reason, which is a genuine problem outdoors: walk into direct sun with the screen still on an indoor level and it is too dim to read well enough to find the brightness slider.
+The M500 has no ambient light sensor. There is no ALS in the hardware, nothing under
+`/sys/class/sensors`, and `SensorManager.getDefaultSensor(TYPE_LIGHT)` returns null. Stock firmware
+has no auto-brightness for that reason, which is a real problem on a device you use outdoors: walk
+into direct sun with the screen on an indoor level and it is too dim to read well enough to find the
+brightness slider.
 
-So MikuOS measures the light with the only light-sensitive part the device actually has: **the camera**. Auto-exposure is a light meter. Point one at a scene, let it settle, and ask it what exposure it chose; that answer is a measurement of how bright the room is.
+So MikuOS measures the light with the only light-sensitive part the device actually has. The camera.
 
-**How it works** (`hardware-settings`, `AmbientCamera.kt` and `AmbientBrightnessManager.kt`):
+Auto-exposure is a light meter. Point a camera at a scene, let it settle, and ask it what exposure it
+chose. That answer is a measurement of how bright the room is. `com.m500.hardware` opens the camera
+at the smallest resolution it supports, waits for AE to converge, reads back the exposure time, ISO
+and aperture, and converts them to an EV and then to approximate lux. It samples on a long interval
+and only when the screen is on, because a camera left running is a battery and a privacy problem.
 
-1. The screen turns on. `AmbientBrightnessService` holds a runtime-registered `ACTION_SCREEN_ON` receiver (that broadcast cannot be declared in a manifest, so something resident has to own it).
-2. `AmbientCamera` opens the camera, captures **one** frame, and reads back the exposure the auto-exposure algorithm settled on: ISO, exposure time, aperture.
-3. Those go through the photographic exposure equation: `EV100 = log2(N² / t) − log2(S / 100)`, and `lux ≈ 2.5 × 2^EV100`. This is real photometry, the same maths a light meter uses. If the exposure metadata is unavailable it falls back to mean frame luma and marks the reading untrusted.
-4. `AmbientBrightnessManager` maps lux to brightness on a logarithmic curve (perception is logarithmic, and the useful range spans ~5 lux to ~50,000 lux) and applies it.
-
-**The rules it follows, and why:**
-
-- **Sample on wake, never continuously.** In a pocket the lens is covered and reads near-black. A continuous loop would drive brightness *down* right before you pull the device out. Screen-on is the moment the reading is both meaningful and needed, and the camera privacy indicator never flashes at random.
-- **Eager to raise, reluctant to lower.** A wrong bright reading costs a little battery. A wrong dark reading costs an unreadable screen, which is the failure this exists to fix. Lowering needs a trusted exposure-derived reading and is floored at 40/255.
-- **Never fight the user.** A manual brightness change stands until the next wake.
-- **Never sample while the Fn switch is locked.** The lens is covered and the reading means nothing.
-- **Hysteresis of 18/255**, so it does not hunt.
-
-**Verified:** brightness set to 20, device slept and woken in a dim room, camera metered 8 lux from a trusted exposure, brightness raised to 82. `settings get global m500_ambient_last_lux` shows the last reading.
-
-**Limits.** One frame per wake, so it reacts at wake and not before. It meters the *back* of the device, which is usually but not always the light at the front. A lens covered by a finger reads dark, and the eager-to-raise rule is what stops that mattering.
+It is an inference from a real measurement, not a guess. The reading and its confidence are both
+shown, and when AE has not converged it says so instead of printing a number.
 
 ---
 
-## Root is optional
+## Making it fast
 
-Nothing in MikuOS requires root. The platform signature is what grants the system permissions it needs, and every feature ships a working root-free path.
+The player opened in about 30 seconds and scrolled badly. Fixing it turned up one finding that
+dwarfed the rest.
 
-Root is supported as a **power-user enhancement**. Where `su` is present, `RootShell` uses it to reach things the platform will not hand over; the SELinux-locked Pulsar LED nodes are the obvious case. Where it is absent, the probe runs once, logs once, and stops, and the feature either works through its platform path or says it is unavailable in the interface. `RootShell.recheck()` clears that answer for a user who grants root later. Before this was fixed, an animation loop in the hardware daemon was forking a nonexistent `su` thirty times a second; if you see a `RootShell` stack trace flood in `logcat`, you are on an old build.
+**Install release builds, not debug.** On this SoC the debuggable build costs more than
+every app-level optimization put together: JIT only, no AOT, lock verification on, no R8. Same code,
+same device, release instead of debug took launch from 5,692ms to 1,029ms and scrolling from 82%
+janky frames to 8%, P50 from 69 to 117ms down to 32ms.
 
-`os/enable_root.sh` and `os/disable_root.sh` flash a Magisk-patched or stock `init_boot` respectively. That is the whole root story: it is an `init_boot` swap, nothing in `system` changes.
+Four app-level fixes mattered on top of that:
+
+1. The library cache was loaded on the main thread inside a `remember{}` block, which was 7 to 10
+   seconds of the launch. It now loads from IO, and library work runs on a small background pool so
+   it cannot starve the UI thread.
+2. The navigation accessibility service declared `canRetrieveWindowContent=true` with `typeAllMask`,
+   so every Compose app in the OS walked its full semantics tree on every layout pass. That was 43%
+   of the main thread. The service now declares no content retrieval and four event types, and apps
+   clear their semantics at the root when the only enabled service is ours.
+3. Backdrop blur over the whole content area drew the list twice and blurred it every frame. It is
+   gated off by default.
+4. Liked hearts in list rows each ran their own 60Hz animation loop. Only the large ones animate now.
+
+**ART will not JIT a method over 16,384 dex instructions.** It never compiles and runs interpreted
+forever. Compose composables cross that line more easily than you would think: the lockscreen was
+18,785 and the network observatory was 46,419. `tools/scan_jit_limit.sh` fails the build on it.
+
+**Screen-off CPU.** The player's idle controller was checking a flag that did not track the real
+display state, which cost 67% of a core with the screen off. The launcher was capturing audio FFT
+for a BPM badge nobody could see. Measure this with per-thread `/proc` deltas against zero rendered
+frames.
 
 ---
 
-## Permissions
+## Building an image
 
-Miku Music declares the following. Most are signature-level and only work because the app is platform-signed on a MikuOS image.
+You need the stock M500 firmware. It is not in this repo and it is not ours to distribute.
 
-| Permission | Why |
+```bash
+# 1. Put the extracted stock firmware here
+#    m500-system-archive/firmware/extracted_1.00/{boot,init_boot,dtbo,vendor_boot,super}.img
+
+# 2. Bring your own platform key set (see Signing and keys). The generator is not
+#    published: generating keys is four openssl calls and shipping a script that
+#    writes signing keys into a fixed path invites people to reuse someone else's.
+
+# 3. Build the super image
+./os/build_mikuos_super.sh
+```
+
+`build_mikuos_super.sh` unpacks super, resizes the partitions, re-keys the framework and apps to
+your platform key, injects the MikuOS apps and configs, and repacks. It produces
+`mikuos/out/mikuos_system_bundle.img`, about 5GB.
+
+**Order matters and the script is the documentation.** Stock images use ext4 `shared_blocks`. You
+MUST `resize2fs` first, then `e2fsck -E unshare_blocks`, then write with debugfs. Unshare on a full
+filesystem fails with "Could not allocate block", leaves the filesystem still marked with errors,
+and every subsequent debugfs write then corrupts a neighboring file. A build that boots to a hung
+splash is almost always this, not app code.
+
+**Re-sign SystemUI to the platform key.** A Falcon-signed `com.android.systemui` against a
+`REKEY=0` image crash-loops several hundred times and takes navigation, transitions and the tuner
+down with it. That single mismatch was behind a long run of builds that looked cursed for no
+apparent reason. The build re-signs it and gates on it before the image is written.
+
+---
+
+## Flashing
+
+This can brick your device. Read the whole section.
+
+**Use `fastboot -w`, never `fastboot erase userdata`.** Erasing leaves userdata raw and the device
+bootloops. Metadata holds the FBE keys, so erasing it without erasing userdata gives you an
+undecryptable partition.
+
+**Super needs 64MB chunks.** `fastboot -S 64M flash super`. Larger chunks wedge the M500's USB
+gadget partway through a 5GB transfer. Never run two fastboot processes at once. Flash the boot
+class and super as separate invocations.
+
+**A wedged gadget needs a physical power cycle.** Once fastboot goes D-state and transfers 0 bytes,
+no amount of retrying or re-plugging fixes it. Pull the cable, hold power, start over.
+
+**Fastboot does not charge the battery.** A device reading 0mV in fastboot is not dying, it is not
+being told. Do not flash on a low battery.
+
+**An interrupted flash corrupts super.** There is no pstore on this device, so there is no crash log
+waiting for you afterward either.
+
+**On a fresh /data, expect two things that are not bugs in MikuOS.** GMS loses its SafetyCenter
+privileged permission and trips RescueParty into a boot loop, and an app in the stopped state has no
+quick settings tiles until it is launched once.
+
+---
+
+## Signing and keys
+
+MikuOS replaces the public AOSP test keys, which every Android developer on earth already has, with
+a key set you generate. That is the entire security model, so it is worth being precise about it.
+
+Four key roles, matching AOSP: `platform`, `releasekey`, `media`, `shared`. The framework, the system
+apps and our apps are all re-signed to your `platform` key, which is why our apps get platform
+permissions without root. Generate them once, back them up somewhere that is not the build machine,
+and never commit them. The `.gitignore` in this repo is written to make committing them difficult on
+purpose.
+
+Three things that will cost you a day if you do not know them:
+
+**Re-signing strips the SELinux label.** An unlabeled `/system` app cannot be read by its own process
+and init will not process an unlabeled `.rc` file. Every injected file needs its `security.selinux`
+extended attribute set afterwards, and the build script does that with `debugfs ea_set`.
+
+**Do not re-key NetworkStack.** Splitting `android.uid.networkstack` across an APEX boundary is fatal
+to Android 14's package manager, and the failure looks like a boot hang rather than anything
+informative. `REKEY_ROLES` excludes it.
+
+**APEX modules can be re-signed**, including the compressed `.capex` form. That is proven on
+`com.android.mediaprovider`. The thing that actually breaks media when you get it wrong is the
+`mac_permissions` pin, not a UID split.
+
+---
+
+## Hard-won platform facts
+
+Things this project had to find out the expensive way, written down so nobody has to find them twice.
+
+| Fact | Why it matters |
 |---|---|
-| `MODIFY_AUDIO_SETTINGS`, `WRITE_SECURE_SETTINGS`, `WRITE_SETTINGS` | DAC gain/filter/DRE, volume range, HiBy vendor settings |
-| `DISABLE_INPUT_DEVICE`, `DEVICE_POWER` | Fn pocket lock |
-| `MANAGE_APP_OPS_MODES` | Self-grants the appops the HiBy framework gates features on |
-| `BLUETOOTH_*`, `BLUETOOTH_PRIVILEGED` | LDAC codec preference, BLE remote peripheral |
-| `RECORD_AUDIO` | Visualizer audio capture, FM recording |
-| `CAMERA` | Not used by the player; the ambient light sensor lives in `hardware-settings` |
-| `ACCESS_FINE_LOCATION` | Listen locations for stats, GPS observatory. Opt-in. |
-| `MANAGE_EXTERNAL_STORAGE`, `READ_MEDIA_*` | The music library on the SD card |
-| `SCHEDULE_EXACT_ALARM`, `USE_FULL_SCREEN_INTENT`, `WAKE_LOCK` | The alarm clock, which has to ring from deep sleep |
-| `SYSTEM_ALERT_WINDOW` | Fn lock touch-eating overlay, now-playing HUD |
-| `QUERY_ALL_PACKAGES` | The launcher and the car/BT audio router need to see every app |
-| `INTERNET`, `ACCESS_NETWORK_STATE` | Last.fm, weather, artist photos, MusicBrainz. Every one is opt-in or off by default. |
-
----
-
-## Known limitations
-
-Current, and stated plainly rather than left for you to find.
-
-| | |
-|---|---|
-| **Pulsar RGB indicator** | Does not work on this unit without root. SELinux-locked with no consumer service and a missing factory-test config. The setting is stored, the interface says the light will not respond. With root it may. |
-| **Kernel 5.15.209** | Builds and boots, the DAC works, but the MP2731 charger driver never qualifies the input, so it drains on the cable, and the plug-wake path strobes the screen. Disqualified after an A/B test. The release ships stock 5.15.153. |
-| **Visualizer frame rate** | Heavy Milkdrop presets run ~24 fps at half resolution. That is this GPU. Mesh is capped at 24x18 and hard cuts are off; the perf ledger retires the worst presets automatically. |
-| **Google Fi** | A data-only Fi SIM is T-Mobile-only and cannot switch carriers without the Fi app. The `h2g2` APNs are baked in and there is a force-T-Mobile toggle, which needs T-Mobile coverage to help. |
-| **APEX modules** | Keep their original signatures; see [Signing](#signing). |
-| **Fresh-build GMS loop** | A fresh `/data` with GApps can RescueParty-loop because GMS loses the SafetyCenter privapp permission. This is a GApps packaging issue, not a MikuOS bug; the provisioner works around it. |
-| **Miku Shaders** | Five presets. Real Milkdrop presets number in the thousands, and projectM is the engine for those; the shader engine is the lighter option for when the GPU is hot. |
+| `debugfs write` silently no-ops on a file that already exists | Every build.prop edit "succeeded" and none of them applied. Delete first, then write |
+| `debugfs` also no-ops on a full filesystem, producing zero-block inodes | A full image looks like a successful build and boots to nothing |
+| ART refuses to JIT a method over 16384 dex instructions | Compose composables cross it easily and then run interpreted forever. `tools/scan_jit_limit.sh` catches it |
+| Reading animated state in a composable's body recomposes it every frame | 39% janky frames on the shade until the reads moved into layout and draw lambdas |
+| Object-scope Compose state is main-thread-write-only | A `mutableStateMapOf` written from an IO thread crash-looped the app |
+| A force-stopped package is dropped from `enabled_accessibility_services` | `am force-stop com.miku.systemui` kills the device's navigation until you re-enable it by hand |
+| Android promotes an AudioTrack to `FLAG_DEEP_BUFFER` at about 100ms | Which silently opts you out of DIRECT output. This is the whole bit-perfect problem |
+| `VOLUME_CHANGED_ACTION` fires for every stream | And a `Settings.System` observer fires for every setting, which made a volume HUD pop up at random |
+| Never start work from the broadcast that says that work finished | Answering `ACTION_MEDIA_SCANNER_FINISHED` with another scan is an endless loop |
+| A symlinked native dependency is invisible to Gradle's up-to-date check | libprojectM shipped a stale `.so` until `app/.cxx` was wiped |
+| SELinux keys the FM tuner HAL on the package name, not the signature | Platform-signing does not buy access to `/dev/radio0`. Only repackaging does |
+| Installing an app kills its own playback | `installPackageLI` stops the player, so do not deploy while someone is listening |
 
 ---
 
 ## Repo structure
 
-| Path | What |
+| Path | What it is |
 |---|---|
-| `app/` … `fmradio/` | The six apps. Each is a standard Android Gradle module. |
-| `qcom-fmradio-stubs/` | Compile-time stubs so `fmradio` builds without the vendor jar. |
-| `os/` | `build_mikuos_super.sh` and the flash/root/resign scripts. |
-| `tools/web-installer/` | The WebUSB flasher. Static; host it anywhere with HTTPS. |
-| `tools/remote-pwa/` | Web Bluetooth remote for the player. Needs HTTPS hosting. |
-| `tools/entitlement-worker/` | Cloudflare Worker for optional entitlement checks. Not deployed; the client is fail-open. |
-| `tools/rsync/` | rsync daemon config for media ingest. PII-free template. |
-| `tools/*.sh` | `sign_apk.sh`, `verify_signatures.sh`, `unbrick_factory.sh`, `root_device.sh`, `unroot_device.sh`, `package_mikuos_system.sh` |
-| `docs/` | Numbered reports. `06_m500_complete_reverse_engineering_reference.md` and `03_audio_architecture_guide.md` are the ones to read first. |
-| `CHANGELOG.md` | Player changelog. |
+| `app/` | Miku Music, the player. Also published standalone as [MikuMusic](https://github.com/sworrl/MikuMusic) |
+| `mikuos-launcher/` | The launcher: home, weather, ingest observatory, network observatory, WireGuard |
+| `mikuos-systemui/` | The replacement SystemUI. On this device the accessibility service *is* the navigation |
+| `mikuos-settings/` | The settings app and its search indexables provider |
+| `hardware-settings/` | Audio hardware control, QS tiles, the Fn lock daemon, ambient brightness |
+| `fmradio/`, `qcom-fmradio-stubs/` | The FM tuner UI and the QCOM HAL stubs it builds against. See [What is verified](#what-is-verified) — it does not work yet |
+| `os/` | Build and flash scripts. `build_mikuos_super.sh` is the main event; `flash_mikuos*.sh` are the delivery paths |
+| `tools/` | Signing helpers, the JIT scanner, the preset generator, sync tooling, the RROs under `custom_overlays/`, the entitlement Worker, the remote PWA |
+| `docs/` | The reverse-engineering reference, audio architecture, PKI design, security review, roadmaps, screenshots |
+| `assets/` | Artwork. See [Legal](#legal) about what is in here |
 
-Not in the repo, on purpose: signing keys, `local.properties`, the stock partition images, the GApps cache, decompiled HiBy vendor code, and `libqcomfm_jni.so`.
+Everything above builds from one Gradle tree (`settings.gradle.kts`). The apps are
+platform-signed with the Falcon Technix key, which is what replaces the AOSP public test keys and
+is why MikuOS needs no root; see
+[the signing and PKI design](docs/09_mikuos_signing_and_pki_architecture.md).
+
+## The device
+
+HiBy Digital M500 x Hatsune Miku edition, fastboot product `khaje`. Qualcomm SM6225 `bengal`
+(Snapdragon 680), six cores, Android 14 base `UKQ1.241213.001`, kernel
+`5.15.153-android13-8`, security patch 2025-09-03,
+3.2 inch 720x1280 portrait panel at 270dpi. Dual Cirrus Logic CS43198 in the "MIKU DAC"
+configuration, 3.5mm single ended and 4.4mm balanced, plus USB DAC output. Physical power, volume
+wheel, play/pause, next, previous and Fn on the right edge. No ambient light sensor, no pstore.
+Stock kernel 5.15.153 is the one to stay on; see the 5.15.209 row in
+[What is verified](#what-is-verified).
+
+Audio behavior is driven by `vendor.audio.hiby.*` global settings: digital filter, DRE, gain,
+high-power mode. Only init can set them, which is why the LED fix needs a reflash rather than a
+setting.
+
+**Mobile data, if you have a data-only Google Fi SIM.** Install the Google Fi app, run its
+activation most of the way and pick "move number later" when it asks about a number, then ignore it.
+It can be uninstalled afterward. Reboot and data attaches. Do not port a number in, because that
+converts a data-only SIM to a full plan. The APN is baked into the image.
 
 ---
 
-## Troubleshooting
+## What we keep from HiBy and what we replace
 
-**Device shows in `fastboot devices` but every command says `< waiting for device >`.** Something else holds the USB device. On a Proxmox host that is a VM with USB passthrough. Detach it, flash, re-attach.
+MikuOS is not built from AOSP source. It is HiBy's own Android 14 for this device with the parts we
+care about taken out and rebuilt, so most of what runs on the M500 is still theirs.
 
-**Flash hangs at 0 bytes, fastboot is in D state.** The USB gadget is wedged. Physical power cycle. Do not send `super` in chunks bigger than 64 MiB.
+**HiBy's latest release is v1.20** (`eng.HiBy.20260427.123904`, an incremental update), on top of
+the v1.00 base (`eng.HiBy.20260228.173244`). The v1.20 delta is 55.3MB and touches three images:
+`boot.img`, `init_boot.img` and `vbmeta.img`. It is a boot-chain update. Everything in `system`,
+`vendor`, `product` and `system_ext` is unchanged from v1.00, which is the base MikuOS builds on.
 
-**`fastboot erase userdata` then bootloop.** Raw-erased `userdata` has no filesystem and the device will not format it. Use `fastboot -w`, or `os/flash_mikuos_clean.sh` which does.
+### Unchanged, and deliberately so
 
-**Boot hangs after re-signing anything.** The `security.selinux` xattr was stripped. `os/resign_system.sh` preserves it; if you re-signed by hand, re-run through the script.
+| Part | Why it stays |
+|---|---|
+| `vendor`, `vendor_boot`, `vendor_dlkm`, `odm`, `dtbo` | Qualcomm's and Cirrus Logic's audio HAL and DSP live here. This is the part that makes the M500 sound the way it does, and there is no reason to touch it |
+| Kernel `5.15.153-android13-8` (GKI) | Stock. 5.15.209 was tried and disqualified: `mp2731` never qualifies the charger input, so the device drains on the cable |
+| The bootloader | Not modified. Unlocking is the user's own step |
+| Android 14 `UKQ1.241213.001` framework | Re-signed to your key, not replaced. The AOSP behavior underneath is stock |
+| HiBy's framework hooks | Several of them are load-bearing for us: `Settings.Global button_lock` is what makes the root-free Fn pocket lock work, `hiby_volume_dialog_enable` gates their volume HUD, and the `vendor.audio.hiby.*` properties drive filter, DRE, gain and high-power mode |
 
-**`com.android.systemui` crash-loops, no navigation, FM dead.** SystemUI got signed with the Falcon key on an image whose framework was not re-keyed, or vice versa. The build script re-signs SystemUI to whichever platform key the image is on and gates on it before flash; a hand-built image can skip that.
+### Replaced
 
-**Fresh image, "Allow USB debugging" prompt on every wipe.** The host adb key is baked into `/adb_keys` and a `/data` seed by the build script; `ro.adb.secure=0` alone is not reliable. Rebuild with your own `~/.android/adbkey.pub` in place.
+| Part | Stock | MikuOS |
+|---|---|---|
+| Signing keys | Public AOSP test keys, which every Android developer already has | A platform key set you generate. This is the whole security model |
+| Player | HiBy Music | Miku Music, a native Kotlin and Compose app |
+| Home screen | HiBy's launcher, not properly replaceable | `com.miku.launcher` |
+| System UI | Stock | `com.miku.systemui`, including gesture navigation as an accessibility service |
+| Settings | Stock plus HiBy's | `com.miku.settings` and `com.m500.hardware` |
+| Audio path | Mixed and resampled through Android's mixer, so a 44.1kHz file does not reach the DACs at 44.1kHz | DIRECT output at the file's native rate, 24-bit packed |
+| Root | Magisk, in every previous attempt at this | None. Platform-signed apps hold the permissions outright |
+| Pulsar LED | Vendor init pins `led_pattern 1` and nothing updates it once HiBy Music is gone, so it sits solid blue | `miku_led.rc`, baked into vendor |
+| Auto-brightness | None, because there is no ambient light sensor | The camera used as a light meter |
+| APN | No Google Fi entry | `h2g2` baked in for 310240 and 310260 |
 
-**`debugfs` writes report success but the file is unchanged on the device.** `debugfs write` silently no-ops on an existing path and on a full filesystem. The build script uses a delete-then-write helper and gates on free space; if you are hand-editing an image, delete first and check `df`.
+### What this means if you are deciding whether to flash
 
-**Miku Music crashes at launch with "Unsupported concurrent change during composition."** You are on a build older than 2.0.263. Object-scope Compose state was being written from a background thread.
+You keep HiBy's audio hardware behavior exactly. You lose HiBy's apps and their OTA updates, since
+a MikuOS image will not accept HiBy's delta packages. Going back means flashing HiBy's stock
+firmware, which you should keep a copy of before you start.
 
-**Launcher flooding Magisk with greyed-out su prompts.** Old build. See [Root is optional](#root-is-optional).
+---
+
+## Known limitations
+
+- **One device.** Everything here is verified on an M500 and nothing else.
+- **FM has never worked.** The UI opens and the tuner does not. SELinux keys `/dev/radio0` access on
+  the package name, so the fix is to repackage the tuner as `com.caf.fmradio` and platform-sign it.
+  Not done yet.
+- **There are two different part numbers on screen.** The settings entry says CS43131 and the
+  hardware screen says CS43198. One of them is wrong and it has not been chased down.
+- **No AOSP-from-source build yet.** The device tree exists, the sync is unfinished.
+- **The web installer's `EXPECTED_PRODUCTS` list** still needs confirming against a real
+  `fastboot getvar product` before anyone should trust it to refuse the wrong device.
+- **Stock firmware is not included** and will not be. Bring your own.
+- **Some artwork in this repo is not ours.** See [Legal](#legal).
 
 ---
 
 ## Contributing
 
-Issues and pull requests are welcome. Things that would help most:
+**This is a work in progress and help is genuinely welcome.** Open an issue or a pull request.
 
-- Reports from other M500 units, especially the non-Miku edition. The hardware should be identical and the images should boot; nobody has confirmed it.
-- Kernel work on the MP2731 charger path in 5.15.209, which is the only thing keeping the release on 5.15.153.
-- Milkdrop preset curation for the Adreno 610. The perf ledger will tell you which ones it retired.
-- A DAC/HAL-level route for the Pulsar LED that does not need root.
+What would help most, roughly in order:
 
-Attribution goes to the human author only. No AI co-author trailers in commits.
+- **Another M500.** Everything here is verified on exactly one device, which is the single biggest
+  limit on the project.
+- **An LDAC sink**, so the Bluetooth codec path can be proven or disproven instead of sitting at
+  "implemented, unverified".
+- **A route to the FM tuner** that works inside SELinux, or a definitive answer that there is none.
+- **Testing the web installer against a second device**, including a real `fastboot getvar product`.
+- **Original artwork, drawn by a person.** Most of the Miku art in here came out of an image model,
+  and the rest came off the stock device. Neither belongs in the finished thing. Wallpapers at
+  720x1280, a square album-art placeholder, a themed launcher icon set, lockscreen and AOD art, and
+  boot splash art are all wanted. You keep your copyright and you can have it pulled at any time.
+  Terms and the full list are in
+  [ATTRIBUTIONS.md section 7](ATTRIBUTIONS.md#7-we-are-looking-for-real-art).
+- **Anywhere a number on screen is not measured.** A report of one is as useful as a patch.
+
+One house rule, and it is not negotiable: **never display a value you did not measure.** No
+placeholder percentages, no bit depth inferred from a file extension, no BPM guessed from a title.
+If the data is not there, show a dash and say why. Several passes of this codebase have been spent
+removing exactly that kind of thing.
+
+Beyond that: match the surrounding code, comment the WHY rather than the what, and if you work out
+a non-obvious platform behavior, write down what the platform actually does so the next person does
+not have to rediscover it.
 
 ---
 
 ## Legal
 
-MikuOS is released under the [MIT License](LICENSE).
+GPL-3.0-or-later for our code. See [LICENSE](LICENSE). A full component-by-component breakdown of
+every font, library, vendored source tree and image in this project, with its license and its
+origin, is in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
-MikuOS is an independent project. It is not affiliated with, endorsed by, or supported by HiBy Digital or Crypton Future Media. Hatsune Miku is a trademark of Crypton Future Media, Inc. The HiBy vendor partitions, kernel, audio HAL, and `libqcomfm_jni.so` are HiBy's and Qualcomm's and are not redistributed here; you supply them from your own device.
+Hatsune Miku and the associated character designs are the property of Crypton Future Media. This is
+an unaffiliated hobby project for a device Crypton licensed. It is not endorsed by Crypton or by
+HiBy Digital.
 
-Built on [libprojectM](https://github.com/projectM-visualizer/projectm) (LGPL-2.1), [Media3](https://github.com/androidx/media), and AOSP.
+**The artwork is the part that is not settled, and this section used to claim otherwise.** There are
+two problems with it and both are written up in full in
+[ATTRIBUTIONS.md section 3](ATTRIBUTIONS.md#3-artwork).
 
-Maintained by **sworrl** <agent.jearl@gmail.com>.
+The first is that a lot of the Miku art here was generated by an image model rather than drawn by a
+person. It is a derivative work of Crypton's character, it is non-commercial, and it is not the work
+of any human artist. It is also not what this should ship with. There is an open ask for real art
+under [section 7](ATTRIBUTIONS.md#7-we-are-looking-for-real-art), and it is a genuine ask.
+
+The second is that some of the images came off a stock M500. Those are HiBy Digital's files
+depicting Crypton's character, and there is no license here to redistribute either layer. Owning the
+device covers the copy on the device. It does not cover handing copies to whoever clones the repo,
+and gating our code to M500 hardware does not change that. The intended end state is that the build
+pulls those assets from the stock firmware you already own and the repos ship only art we made.
+Until that is done, the honest statement is that they are in here and they should not be. If you are
+HiBy or Crypton and want something removed, open an issue or email github@falcontechnix.com and it
+comes out.
+
+HiBy Digital's firmware, bootloader and audio HAL are theirs and are not redistributed here, which
+is also why there is no prebuilt image to download. The build scripts expect you to supply your own
+copy of the stock firmware you already own. Qualcomm and Google components are under their own
+licenses. libprojectM and jaudiotagger are LGPL-2.1 and are used as libraries. fastboot.js is MIT
+and ships with its own license and notice.
+
+Flashing a replacement OS onto a device can brick it. This one is used daily on the author's own
+M500, which is a statement about one device and not a warranty about yours.
