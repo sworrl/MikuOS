@@ -481,6 +481,8 @@ Things this project had to find out the expensive way, written down so nobody ha
 | A symlinked native dependency is invisible to Gradle's up-to-date check | libprojectM shipped a stale `.so` until `app/.cxx` was wiped |
 | SELinux keys the FM tuner HAL on the package name, not the signature | Platform-signing does not buy access to `/dev/radio0`. Only repackaging does |
 | Installing an app kills its own playback | `installPackageLI` stops the player, so do not deploy while someone is listening |
+| A `.gitignore` of `*` hides untracked files from `git status` | Nothing ever prompts for them. The TV companion and three launcher files each sat unrecorded for days; only force-adding by name finds them |
+| The DAC's sysfs nodes are denied even to a root-less `adb shell` | So there is no read-back. `AudioManager.setParameters` is the only channel that reaches these DACs, and a `su` echo was always a no-op |
 
 ---
 
