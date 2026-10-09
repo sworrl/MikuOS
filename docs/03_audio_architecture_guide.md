@@ -210,12 +210,23 @@ adb shell cat /sdcard/MikuLibrary/library.json | python3 -m json.tool
 
 ## 10. The FM tuner's audio path
 
-The tuner is **not** a discrete chip. It is the Qualcomm WCN SoC's FM core, reached over the
-same HCI transport Bluetooth uses (`fm_hci` / `radio_helium` / `android_hardware_fm` in logcat,
-`FmReceiver.getSocName()` returns `cherokee`) and exposed as a V4L2 node at `/dev/radio0`. The
-framework side is the device's `/system/framework/qcom.fmradio.jar` plus `libqcomfm_jni.so`.
-Only a platform-signed app named `com.caf.fmradio` can open it; see the SELinux row in the
-gotchas table.
+There are **two** FM-capable paths on this board, and conflating them wastes a lot of time.
+
+`/dev/radio0` is bound to `i2c-2` address `0x63`:
+
+    /sys/class/video4linux/radio0/device -> .../i2c-2/2-0063
+
+That is a **Silicon Labs Si4705**, and the kernel logs `si4705_i2c_interrupt` continuously while
+the tuner runs. It is the part that actually receives: its RSSI moves across the band.
+
+Separately, the **Qualcomm WCN FM stack** is present and answers — `fm_hci` and `radio_helium`
+in logcat, and `FmReceiver.getSocName()` returns `cherokee`, which is the Bluetooth SoC name read
+out of `bt_configstore` rather than a statement about the tuner.
+
+The device's `/system/framework/qcom.fmradio.jar` plus `libqcomfm_jni.so` carry the API for both:
+`FmReceiver.*` speaks HCI to the Qualcomm side, and HiBy's `FmReceiverJNI.*V4L2*` additions drive
+the Si4705. Only a platform-signed app named `com.caf.fmradio` can open it; see the SELinux row
+in the gotchas table.
 
 Powering the tuner on is not the same as getting sound out of it, and the two failures look
 identical from the app's side: the chip reports `FMRxOn`, tunes, locks RDS and reports stereo
