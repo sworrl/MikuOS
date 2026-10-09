@@ -3,16 +3,15 @@
 
 export const CONFIG = {
   // ---------------------------------------------------------------------------
-  // TODO (MAINTAINER): fill this in from a real device:
-  //     adb reboot bootloader && fastboot getvar product
   // The installer REFUSES to flash unless `getvar product` matches one of these
-  // strings exactly (case-insensitive). While this is still the placeholder the
-  // installer stays locked and prints the observed value in the log so you can
-  // copy it here. Likely candidates for the HiBy M500 (SM6225 "bengal"):
-  // "bengal", "M500", "su200", "M500_MIKU_4G" - but DO NOT guess; verify.
+  // strings exactly (case-insensitive), and stays locked entirely while the value
+  // is a `__TODO` placeholder.
+  //
+  // CONFIRMED on hardware via `fastboot getvar product`: 2026-08-29, re-verified
+  // 2026-10-09. The HiBy M500 reports the Qualcomm SM6225 platform codename
+  // "khaje"; its build.prop device/name is m500_mikuOS on MikuOS. Do not widen
+  // this list without a reading from a real device.
   // ---------------------------------------------------------------------------
-  // Bootloader `product` for the HiBy M500 — CONFIRMED live 2026-08-29 via `fastboot getvar product`
-  // (Qualcomm SM6225 "khaje" platform codename; build.prop device/name is m500_mikuOS on MikuOS).
   EXPECTED_PRODUCTS: ["khaje"],
 
   // Real `super` partition size on M500_MIKU_4G (fastboot getvar partition-size:super).

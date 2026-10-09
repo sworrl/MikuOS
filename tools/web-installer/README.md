@@ -9,7 +9,7 @@ no backend.
 tools/web-installer/
   index.html                  the wizard (Requirements -> Connect -> Choose -> Flash -> Done + recovery)
   css/style.css               Miku teal (#39C5BB) + neon pink theme
-  js/config.js                device constants, guard rails, partition sequences  <-- TODO lives here
+  js/config.js                device constants, guard rails, partition sequences
   js/flasher.js               flash engine: image sources, SHA-256, 64 MiB sparse chunking, plan, resume
   js/app.js                   UI controller
   js/vendor/fastboot.min.mjs  kdrag0n/fastboot.js 1.1.3 (MIT), unmodified; + LICENSE + NOTICE
@@ -59,10 +59,10 @@ so a wrong upload is caught before anything is written.
 
 ## TODO / placeholders (read before publishing)
 
-1. **`js/config.js` -> `EXPECTED_PRODUCTS`** is a placeholder (`__TODO_FILL_FROM_fastboot_getvar_product__`).
-   Run `fastboot getvar product` on a real M500 and put the exact string there. Until then the
-   installer is locked (it prints the observed value in the log and the guard list) and only the
-   clearly-labelled *Developer override* checkbox lets it proceed.
+1. ~~**`js/config.js` -> `EXPECTED_PRODUCTS`** is a placeholder.~~ **Resolved.** It is `["khaje"]`,
+   read off a real M500 with `fastboot getvar product` on 2026-08-29 and re-verified 2026-10-09.
+   The installer is no longer locked by this. It still refuses any device whose `getvar product`
+   does not match, which is the point of the check.
 2. **Fastboot key combo** on the Requirements page says *Power + Volume Down* (from the older
    web-flasher README and `tools/root_device.sh`). The M500 has a rotary volume wheel, so verify
    on hardware and edit the text in `index.html`.

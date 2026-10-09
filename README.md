@@ -486,6 +486,10 @@ Things this project had to find out the expensive way, written down so nobody ha
 | `handle_fm` is an output-device bitmask, not a boolean | `handle_fm=1` has `AUDIO_DEVICE_OUT_FM` clear, so it tells the audio HAL to **stop** FM. The tuner tuned, locked RDS and reported stereo for a day while the HAL was being asked to shut the session down |
 | The FM driver comes up muted and `setMuteMode()` does not clear it | That mute is in HiBy's V4L2 layer, not the FM core. `FmReceiverJNI.setV4L2RadioFmMute(0)` is the one that opens the audio |
 | `FmReceiver.setStation()` returns true and tunes nothing on this board | Stock tunes with `FmReceiverJNI.setV4L2RadioFrequency(kHz * 16)` and fakes the tune callback itself. The HCI call reports success while the V4L2 read-back still shows the bottom of the band |
+| The M500 has **two** FM paths, and `/dev/radio0` is the Si4705 | `/sys/class/video4linux/radio0/device` resolves to `i2c-2/2-0063`. The Qualcomm WCN FM stack answers too, but `getSocName()` returning `cherokee` is the **Bluetooth** SoC name out of `bt_configstore`, not the tuner |
+| The `RADIO_TUNER` capture is not the tuner audio on wired output | The HAL opens it as usecase 20 `audio-record` with no FM calibration (`ACDB: No calibration found`). Captures at the strongest and deadest frequency are indistinguishable and ignore every mute, while RSSI moves 0 to 19. Do not plot it |
+| `FmReceiver` will not re-enable on the same object after a `disable()` | `FmTransceiver` wants its state machine back at Turned_Off and does not reliably get there, so the second power-on returns false. Build a fresh receiver per power cycle |
+| There is no FM transmit API on this device | `FmReceiverJNI` has a `setTxPowerLevelNative`, but `qcom.fmradio.jar` ships no `FmTransmitter` class to reach it. Both FM paths are receive-only |
 | FM reaches the DAC through an ADSP loopback on every output but Bluetooth | So the `AudioRecord`-to-`AudioTrack` bridge is A2DP-only. Running it as well is not louder, it is an echo one capture buffer behind |
 
 ---
