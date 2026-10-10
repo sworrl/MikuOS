@@ -95,7 +95,10 @@ Legend: ✅ confirmed on a real M500 · ⚠️ implemented, not proven · ❌ tr
 | Full AOSP-from-source build | ❌ | The tree and `device/hiby/m500` exist and the lunch target is defined, but `out/` is empty: this has NEVER produced an image. What ships is the stock image re-keyed. Plan, costs and timeline in [the roadmap](docs/11_full_source_os_roadmap.md) |
 | Reading the DAC state back | ✅ | Not from sysfs, which SELinux denies to `platform_app`. From `vendor.audio.hiby.*`, which is the namespace the vendor's own audio HAL reads and writes. The panel names which source answered |
 | GSI (generic system image) | ❌ | Vendor mandates six legacy HIDL services Android 14 dropped. Abandoned for a stock-QSSI base |
-| FM tuner | ❌ | Has never worked on-device. SELinux keys `/dev/radio0` on the package name, not the signature |
+| FM tuner | ✅ | Audible on 0.1.15, 2026-10-09. Ships as `com.caf.fmradio`, platform-signed and bundled in `system_ext`, which is what SELinux keys on. An `adb install`ed copy in `/data` shadows the bundled one and fails as "TUNER ERROR"; `adb uninstall com.caf.fmradio` falls back to the bundled app |
+| FM station name, RadioText, artist/title | ⚠️ | Needs the patched Si4705 driver (`os/patch_si4705_rds.py`, in 0.1.16). Not yet on hardware. See [Hard-won platform facts](#hard-won-platform-facts) for why stock never showed RDS either |
+| FM stereo indicator | ⚠️ | From the Si4705's own pilot and blend report, which the same driver patch exposes. Not yet on hardware |
+| Playing to every connected output at once | ⚠️ | 4.4mm and a USB headset playing together, confirmed in the log on 2.0.311. Sync between them and per-output volume are still being worked on |
 | Kernel 5.15.209 | ❌ | A/B proven to break charging: `mp2731` never qualifies the input and the device drains on the cable. Stock 5.15.153 stays |
 
 ---
@@ -319,6 +322,21 @@ a capture of that output in [`docs/screenshots/bitperfect-audioflinger.txt`](doc
 Bluetooth is deliberately excluded from the buffer shrink. A2DP wants the larger buffer and starves
 without it.
 
+### Playing to every output at once
+
+With more than one output connected (wired, USB, Bluetooth; never the built-in speaker), Miku
+Music plays to all of them. The original track stays as above, bit-perfect, pinned to the best
+device present: the wired jack first, then USB, then Bluetooth. Every other output gets a mirror:
+the same PCM, teed from the sink right after it is written, into a float `AudioTrack` pinned to
+that device. Mirrors go through the mixer, so a 48kHz-only USB headset still plays a 96kHz file.
+
+The outputs are kept in step by comparing what each one has presented, from
+`AudioTrack.getTimestamp`, and correcting a mirror with a short gap or skip when the median of
+several readings drifts past tolerance. `settings put global miku_audio_share_offset_ms <ms>`
+nudges a mirror later (positive) or earlier. `miku_audio_share_enabled=0` turns it off; unset
+means on. The old "dual audio matrix" sent vendor parameters that do not exist, see
+[Hard-won platform facts](#hard-won-platform-facts).
+
 ---
 
 ## The poor man's ambient light sensor
@@ -507,6 +525,13 @@ Things this project had to find out the expensive way, written down so nobody ha
 | The tuner's audible gain is `fm_volume=0.052481`, and it is easy to overshoot | That is what stock FM2 sends and the only value this device has been measured audible at. A tuner level picked off a taper curve instead sent 0.331, 16 dB hotter, with the Si4705 simultaneously driven to full scale. Louder is not better here |
 | A blanket `**/build/` in `.gitignore` also swallows hand-written build scripts | `mikuos/build/` is not Gradle output. The image build script had no history in the internal repo at all, only the renamed copy published here |
 | FM reaches the DAC through an ADSP loopback on every output but Bluetooth | So the `AudioRecord`-to-`AudioTrack` bridge is A2DP-only. Running it as well is not louder, it is an echo one capture buffer behind |
+| HiBy's Si4705 driver copies **four** bytes of each RDS group to userspace | `si4705_fops_read` fetches all four blocks with `FM_RDS_STATUS` and hands back only A and B. C and D carry every character of the station name and RadioText, so no app could ever show them. `os/patch_si4705_rds.py` changes the copy length to eight (hash-checked against the stock module) |
+| RDS reception is only switched on from `poll()` | `si4705_fops_poll` writes `FM_RDS_CONFIG=0xFF01` when a caller polls for input while the chip is out of sync. Nothing else enables it, and stock FM2 never polls. Also, `read()` returns 0 whether or not it copied a group, so detect new data by what changed in the buffer |
+| The driver reads the stereo pilot and throws it away | `si4705_vidioc_g_tuner` reads `FM_RSQ_STATUS` but never `RESP3` (pilot and blend), and never fills `rxsubchans`. The same patch puts `pilot << 3 \| blend / 16` where the vendor JNI already exposes four bits (`getV4L2RadioFmSignal()[6]`) |
+| The "mono" and "no RDS" callbacks come from the tuner with no antenna | `FmRxEvStereoStatus` and `FmRxEvRdsLockStatus` belong to the Qualcomm WCN core. They report mono and no RDS whatever the Si4705 is receiving |
+| A stereo FM signal needs about 49 dBµV on the Si4705 | It blends to mono below that, and indoors on the headphone-cable antenna 10-20 is typical. Mono there is physics, not a bug |
+| The "dual output" vendor parameters do not exist | `vendor.audio.dual_output`, `bt_dual_stream` and `usb_mirror` appear nowhere in the audio HAL or its configs. Android routes a stream to one device, so playing to several means the player writing one `AudioTrack` per device |
+| Android keeps a separate music volume per output | The volume keys move only the device the policy currently routes music to. Plug in a USB headset and the keys drive it, while a 4.4mm pair the player pinned stays wherever it was last left |
 
 ---
 
@@ -519,8 +544,8 @@ Things this project had to find out the expensive way, written down so nobody ha
 | `mikuos-systemui/` | The replacement SystemUI. On this device the accessibility service *is* the navigation |
 | `mikuos-settings/` | The settings app and its search indexables provider |
 | `hardware-settings/` | Audio hardware control, QS tiles, the Fn lock daemon, ambient brightness |
-| `fmradio/`, `qcom-fmradio-stubs/` | The FM tuner UI and the QCOM HAL stubs it builds against. See [What is verified](#what-is-verified) — it does not work yet |
-| `os/` | Build and flash scripts. `build_mikuos_super.sh` is the main event; `flash_mikuos*.sh` are the delivery paths |
+| `fmradio/`, `qcom-fmradio-stubs/` | The FM tuner app (`com.caf.fmradio`) and the QCOM HAL stubs it builds against. It has to be bundled in the image to reach the tuner; see [What is verified](#what-is-verified) |
+| `os/` | Build and flash scripts. `build_mikuos_super.sh` is the main event; `flash_mikuos*.sh` are the delivery paths; `patch_si4705_rds.py` is the FM driver fix the build applies to `vendor_dlkm` |
 | `tools/` | Signing helpers, the JIT scanner, the preset generator, sync tooling, the RROs under `custom_overlays/`, the entitlement Worker, the remote PWA |
 | `docs/` | The reverse-engineering reference, audio architecture, PKI design, security review, roadmaps, screenshots |
 | `assets/` | Artwork. See [Legal](#legal) about what is in here |
@@ -598,9 +623,12 @@ firmware, which you should keep a copy of before you start.
 ## Known limitations
 
 - **One device.** Everything here is verified on an M500 and nothing else.
-- **FM has never worked.** The UI opens and the tuner does not. SELinux keys `/dev/radio0` access on
-  the package name, so the fix is to repackage the tuner as `com.caf.fmradio` and platform-sign it.
-  Not done yet.
+- **FM needs a decent signal for stereo and RDS.** The antenna is the headphone cable. Indoors in a
+  valley it locks and plays in mono with no station data, and that is the radio telling the truth.
+- **FM is one output at a time.** It runs through an ADSP loopback to a single device, so playing
+  to every output at once covers Miku Music, not the radio.
+- **Per-output volume is not done.** While playing to several outputs, the volume keys still move
+  only one of them.
 - **There are two different part numbers on screen.** The settings entry says CS43131 and the
   hardware screen says CS43198. One of them is wrong and it has not been chased down.
 - **No AOSP-from-source build yet.** The device tree exists, the sync is unfinished.
@@ -621,7 +649,8 @@ What would help most, roughly in order:
   limit on the project.
 - **An LDAC sink**, so the Bluetooth codec path can be proven or disproven instead of sitting at
   "implemented, unverified".
-- **A route to the FM tuner** that works inside SELinux, or a definitive answer that there is none.
+- **FM listening reports from somewhere with a clear line to a transmitter**, to confirm stereo
+  and RDS on the patched driver.
 - **Testing the web installer against a second device**, including a real `fastboot getvar product`.
 - **Original artwork, drawn by a person.** Most of the Miku art in here came out of an image model,
   and the rest came off the stock device. Neither belongs in the finished thing. Wallpapers at

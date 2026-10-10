@@ -32,7 +32,7 @@ REKEY_NOOP="${REKEY_NOOP:-0}"
 # device, byte-identical to the build output, and `dumpsys package com.caf.fmradio` still
 # listed the OLD five permissions and never granted it, through two reboots. The permission
 # the vendor jar needs was simply not there as far as PMS was concerned.
-MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.14}"
+MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.15}"
 DEVICE_IDENTITY="m500_mikuOS-v${MIKUOS_VERSION}"
 RESIGN_SH="$SCRIPT_DIR/resign_system.sh"
 APKSIGNER="${APKSIGNER:-$(ls ~/Android/Sdk/build-tools/*/apksigner 2>/dev/null | tail -1)}"
@@ -140,6 +140,29 @@ for _img in system system_ext product vendor; do
     echo "    -> un-sharing $_img.img"
     e2fsck -fy -E unshare_blocks "$OUTPUT_DIR/$_img.img" || { echo "  !! unshare_blocks failed: $_img"; exit 1; }
 done
+
+echo "  [3] vendor_dlkm: the Si4705 driver hands userspace whole RDS groups and the stereo pilot..."
+# HiBy's radio-si4705-common.ko reads all four RDS blocks from the chip and copies only the
+# first two to the reader, so the station name and RadioText (blocks C/D) never leave the
+# kernel; and it reads the chip's stereo pilot/blend and throws it away. patch_si4705_rds.py
+# fixes both (5 instructions, hash-checked against stock); see its docstring. Same shared_blocks rule as above: unshare before debugfs writes.
+cp "$FW_DIR/vendor_dlkm.img" "$OUTPUT_DIR/vendor_dlkm.img"
+truncate -s +16M "$OUTPUT_DIR/vendor_dlkm.img"
+e2fsck -fy "$OUTPUT_DIR/vendor_dlkm.img" >/dev/null || true
+resize2fs "$OUTPUT_DIR/vendor_dlkm.img" >/dev/null 2>&1 || true
+e2fsck -fy -E unshare_blocks "$OUTPUT_DIR/vendor_dlkm.img" >/dev/null || { echo "  !! unshare_blocks failed: vendor_dlkm"; exit 1; }
+SI4705_TMP="$(mktemp -d)"
+debugfs -R "dump /lib/modules/radio-si4705-common.ko $SI4705_TMP/stock.ko" "$OUTPUT_DIR/vendor_dlkm.img" 2>/dev/null
+python3 -I "$SCRIPT_DIR/patch_si4705_rds.py" "$SI4705_TMP/stock.ko" "$SI4705_TMP/radio-si4705-common.ko" \
+    || { echo "  !! si4705 RDS patch refused"; exit 1; }
+dfput "$OUTPUT_DIR/vendor_dlkm.img" "$SI4705_TMP/radio-si4705-common.ko" /lib/modules/radio-si4705-common.ko \
+    || { echo "  !! could not write the patched si4705 module"; exit 1; }
+label "$OUTPUT_DIR/vendor_dlkm.img" /lib/modules/radio-si4705-common.ko u:object_r:vendor_file:s0
+debugfs -R "dump /lib/modules/radio-si4705-common.ko $SI4705_TMP/check.ko" "$OUTPUT_DIR/vendor_dlkm.img" 2>/dev/null
+cmp -s "$SI4705_TMP/check.ko" "$SI4705_TMP/radio-si4705-common.ko" \
+    || { echo "  !! patched si4705 module did not land in vendor_dlkm"; exit 1; }
+rm -rf "$SI4705_TMP"
+e2fsck -fy "$OUTPUT_DIR/vendor_dlkm.img" >/dev/null || { echo "  !! vendor_dlkm fsck failed"; exit 1; }
 
 echo "[2b] Setting boot 'welcome' voice (trimmed to play immediately, not at ~9s)..."
 # The stock bootanimation_<locale>.mp4 has the "Welcome to HiBy Music, the show
@@ -1306,7 +1329,7 @@ PROD_SZ=$(stat -c%s "$OUTPUT_DIR/product.img")
 EXT_SZ=$(stat -c%s "$OUTPUT_DIR/system_ext.img")
 ODM_SZ=$(stat -c%s "$FW_DIR/odm.img")
 SYS_DLKM_SZ=$(stat -c%s "$FW_DIR/system_dlkm.img")
-VEN_DLKM_SZ=$(stat -c%s "$FW_DIR/vendor_dlkm.img")
+VEN_DLKM_SZ=$(stat -c%s "$OUTPUT_DIR/vendor_dlkm.img")
 
 TOTAL_SZ=$((SYS_SZ + VEN_SZ + PROD_SZ + EXT_SZ + ODM_SZ + SYS_DLKM_SZ + VEN_DLKM_SZ))
 echo "Total Partition Data Size: $TOTAL_SZ bytes ($((TOTAL_SZ / 1024 / 1024)) MB)"
@@ -1336,7 +1359,7 @@ fi
   --partition system_dlkm_a:readonly:$SYS_DLKM_SZ:qti_dynamic_partitions_a \
   --image system_dlkm_a="$FW_DIR/system_dlkm.img" \
   --partition vendor_dlkm_a:readonly:$VEN_DLKM_SZ:qti_dynamic_partitions_a \
-  --image vendor_dlkm_a="$FW_DIR/vendor_dlkm.img" \
+  --image vendor_dlkm_a="$OUTPUT_DIR/vendor_dlkm.img" \
   --output "$OUTPUT_SUPER"
 
 echo "=========================================================="
