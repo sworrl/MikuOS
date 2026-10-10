@@ -405,7 +405,7 @@ fun MikuBatteryObservatoryModal(
                                 Spacer(Modifier.width(8.dp))
                                 Column {
                                     Text(
-                                        text = "MIKU POWER CELL OBSERVATORY",
+                                        text = "BATTERY",
                                         color = Color.White,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Black,
@@ -485,8 +485,8 @@ fun MikuBatteryObservatoryModal(
                                         )
                                     }
                                     Text(
-                                        text = if (telemetry.isCharging) "⚡ ${telemetry.status ?: "Charging"} · ${telemetry.estTimeToFullMin?.let { "${it}m to full" } ?: "time to full —"}"
-                                               else "🔋 ${telemetry.status ?: "On battery"} · runtime ${minutesLabel(telemetry.estTimeToEmptyMin)} · ${telemetry.powerMw.orNa(" mW")}",
+                                        text = if (telemetry.isCharging) "${telemetry.status ?: "Charging"} · ${telemetry.estTimeToFullMin?.let { "${it}m to full" } ?: "time to full —"}"
+                                               else "${telemetry.status ?: "On battery"} · runtime ${minutesLabel(telemetry.estTimeToEmptyMin)} · ${telemetry.powerMw.orNa(" mW")}",
                                         color = if (telemetry.isCharging) Color(0xFF00E676) else Color.White,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
@@ -547,7 +547,7 @@ fun MikuBatteryObservatoryModal(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = if (currentHistory.isEmpty() && voltageHistory.isEmpty()) "⚡ VOLTAGE & CURRENT — NO SAMPLES YET" else "⚡ VOLTAGE & CURRENT (LAST ${maxOf(currentHistory.size, voltageHistory.size)} SAMPLES)",
+                                        text = if (currentHistory.isEmpty() && voltageHistory.isEmpty()) "VOLTAGE & CURRENT (NO SAMPLES YET)" else "VOLTAGE & CURRENT (LAST ${maxOf(currentHistory.size, voltageHistory.size)} SAMPLES)",
                                         color = batteryColor,
                                         fontSize = 7.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -693,7 +693,7 @@ fun MikuBatteryObservatoryModal(
                         // ==========================================
                         Column {
                             Text(
-                                text = "SUBSYSTEM POWER DISTRIBUTION",
+                                text = "POWER BY SUBSYSTEM",
                                 color = MikuCyan,
                                 fontSize = 7.5.sp,
                                 fontWeight = FontWeight.Bold,

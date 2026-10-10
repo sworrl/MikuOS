@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.widget.RemoteViews
+import androidx.compose.ui.graphics.toArgb
 import com.miku.launcher.R
 import com.miku.launcher.weather.MikuWeatherService
 import kotlin.math.roundToInt
@@ -28,6 +29,34 @@ class MikuWeatherWidget : AppWidgetProvider() {
             val mgr = AppWidgetManager.getInstance(app)
             val ids = mgr.getAppWidgetIds(ComponentName(app, MikuWeatherWidget::class.java))
             ids.forEach { render(app, mgr, it) }
+        }
+
+        /**
+         * Alert or weather radio line, read from the Settings.Global keys MikuNwsAlerts publishes
+         * (so it is right even in a fresh process before the alert engine has run).
+         */
+        private fun renderAlertLine(ctx: Context, v: RemoteViews) {
+            val cr = ctx.contentResolver
+            fun g(k: String) = runCatching { android.provider.Settings.Global.getString(cr, k) }.getOrNull().orEmpty()
+            val count = g(com.miku.launcher.weather.MikuNwsAlerts.KEY_COUNT).toIntOrNull() ?: 0
+            val top = g(com.miku.launcher.weather.MikuNwsAlerts.KEY_TOP)
+            val nwr = g(com.miku.launcher.weather.MikuNwsAlerts.KEY_NWR)
+            when {
+                count > 0 && top.isNotBlank() -> {
+                    val sev = g(com.miku.launcher.weather.MikuNwsAlerts.KEY_SEVERITY)
+                    v.setTextViewText(R.id.widget_weather_alert, if (count > 1) "$top +${count - 1}" else top)
+                    v.setTextColor(R.id.widget_weather_alert, com.miku.launcher.weather.alertColor(sev).toArgb())
+                    v.setViewVisibility(R.id.widget_weather_alert, android.view.View.VISIBLE)
+                    v.setTextColor(R.id.widget_weather_temp, 0xFFFF5252.toInt())
+                }
+                nwr.isNotBlank() -> {
+                    // "KWN35 WX3 162.475" -> "WX3 162.475"
+                    v.setTextViewText(R.id.widget_weather_alert, "NOAA " + nwr.substringAfter(' '))
+                    v.setTextColor(R.id.widget_weather_alert, 0xFF8BA6A9.toInt())
+                    v.setViewVisibility(R.id.widget_weather_alert, android.view.View.VISIBLE)
+                }
+                else -> v.setViewVisibility(R.id.widget_weather_alert, android.view.View.GONE)
+            }
         }
 
         private fun render(ctx: Context, mgr: AppWidgetManager, id: Int) {
@@ -55,6 +84,8 @@ class MikuWeatherWidget : AppWidgetProvider() {
                 R.id.widget_weather_temp,
                 if (fresh && w.severeWarning != null) 0xFFFF5252.toInt() else 0xFF39C5BB.toInt()
             )
+
+            renderAlertLine(ctx, v)
 
             v.setOnClickPendingIntent(R.id.widget_weather_root, MikuBatteryWidget.launchLauncher(ctx))
             mgr.updateAppWidget(id, v)

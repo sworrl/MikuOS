@@ -1,0 +1,307 @@
+{
+ "format": {
+  "container": "ogg",
+  "codec": "opus (loops: vorbis + ANDROID_LOOP)",
+  "sample_rate": 48000,
+  "channels": 1,
+  "loudness": "max momentary LUFS for one-shots, integrated for loops"
+ },
+ "apps": {
+  "camera": {
+   "shutter": {
+    "path": "camera/shutter.ogg",
+    "recipe": "shutter_miku",
+    "loop": false,
+    "duration": 0.683,
+    "lufs": -22.2,
+    "true_peak_dbtp": -1.57,
+    "bytes": 7383,
+    "note": "single shot: two-blade shutter plus a short bell sparkle"
+   },
+   "shutter_burst": {
+    "path": "camera/shutter_burst.ogg",
+    "recipe": "shutter_plain",
+    "loop": false,
+    "duration": 0.118,
+    "lufs": -25.6,
+    "true_peak_dbtp": -1.28,
+    "bytes": 2050,
+    "note": "burst mode, dry and about 120 ms so shots do not smear"
+   },
+   "video_start": {
+    "path": "camera/video_start.ogg",
+    "recipe": "video_start",
+    "loop": false,
+    "duration": 1.394,
+    "lufs": -20.0,
+    "true_peak_dbtp": -9.74,
+    "bytes": 17465
+   },
+   "video_stop": {
+    "path": "camera/video_stop.ogg",
+    "recipe": "video_stop",
+    "loop": false,
+    "duration": 1.419,
+    "lufs": -20.0,
+    "true_peak_dbtp": -9.85,
+    "bytes": 17829
+   },
+   "focus_lock": {
+    "path": "camera/focus_lock.ogg",
+    "recipe": "focus_lock",
+    "loop": false,
+    "duration": 0.06,
+    "lufs": -24.0,
+    "true_peak_dbtp": -4.27,
+    "bytes": 1405,
+    "note": "two tiny pips"
+   },
+   "timer_beep": {
+    "path": "camera/timer_beep.ogg",
+    "recipe": "timer_beep",
+    "loop": false,
+    "duration": 0.415,
+    "lufs": -20.0,
+    "true_peak_dbtp": -6.5,
+    "bytes": 3936,
+    "note": "once per second during the self-timer"
+   },
+   "timer_beep_final": {
+    "path": "camera/timer_beep_final.ogg",
+    "recipe": "timer_beep_final",
+    "loop": false,
+    "duration": 0.637,
+    "lufs": -20.0,
+    "true_peak_dbtp": -12.29,
+    "bytes": 8313,
+    "note": "the last beep, right before the shutter"
+   }
+  },
+  "recorder": {
+   "start": {
+    "path": "recorder/start.ogg",
+    "recipe": "rec_start",
+    "loop": false,
+    "duration": 1.475,
+    "lufs": -20.0,
+    "true_peak_dbtp": -12.39,
+    "bytes": 14390
+   },
+   "stop": {
+    "path": "recorder/stop.ogg",
+    "recipe": "rec_stop",
+    "loop": false,
+    "duration": 1.299,
+    "lufs": -20.0,
+    "true_peak_dbtp": -11.75,
+    "bytes": 13233
+   },
+   "pause": {
+    "path": "recorder/pause.ogg",
+    "recipe": "rec_pause",
+    "loop": false,
+    "duration": 0.959,
+    "lufs": -20.0,
+    "true_peak_dbtp": -9.95,
+    "bytes": 8457
+   }
+  },
+  "clock": {
+   "alarm": {
+    "path": "clock/alarm.ogg",
+    "recipe": "alarm_loop",
+    "loop": true,
+    "duration": 24.0,
+    "lufs": -18.0,
+    "true_peak_dbtp": -3.78,
+    "bytes": 177840,
+    "note": "24 s original melody, builds over 12 bars, Ogg Vorbis with ANDROID_LOOP=true"
+   },
+   "timer_done": {
+    "path": "clock/timer_done.ogg",
+    "recipe": "timer_done",
+    "loop": false,
+    "duration": 2.689,
+    "lufs": -20.0,
+    "true_peak_dbtp": -10.73,
+    "bytes": 31233
+   }
+  },
+  "gallery": {
+   "delete": {
+    "path": "gallery/delete.ogg",
+    "recipe": "delete_swoosh",
+    "loop": false,
+    "duration": 0.545,
+    "lufs": -20.0,
+    "true_peak_dbtp": -5.53,
+    "bytes": 4370
+   }
+  },
+  "calculator": {
+   "key": {
+    "path": "calculator/key.ogg",
+    "recipe": "key_click",
+    "loop": false,
+    "duration": 0.02,
+    "lufs": -28.0,
+    "true_peak_dbtp": -3.78,
+    "bytes": 795,
+    "note": "soft enough for every key press"
+   },
+   "equals": {
+    "path": "calculator/equals.ogg",
+    "recipe": "key_equals",
+    "loop": false,
+    "duration": 0.304,
+    "lufs": -24.0,
+    "true_peak_dbtp": -1.95,
+    "bytes": 4633
+   }
+  },
+  "fmradio": {
+   "tune_click": {
+    "path": "fmradio/tune_click.ogg",
+    "recipe": "tune_click",
+    "loop": false,
+    "duration": 0.015,
+    "lufs": -28.1,
+    "true_peak_dbtp": -2.4,
+    "bytes": 745,
+    "note": "one per 0.1 MHz step"
+   },
+   "station_lock": {
+    "path": "fmradio/station_lock.ogg",
+    "recipe": "station_lock",
+    "loop": false,
+    "duration": 0.947,
+    "lufs": -22.0,
+    "true_peak_dbtp": -11.99,
+    "bytes": 10090
+   }
+  },
+  "bpm": {
+   "hit": {
+    "path": "bpm/hit.ogg",
+    "recipe": "hit",
+    "loop": false,
+    "duration": 0.2,
+    "lufs": -20.6,
+    "true_peak_dbtp": -1.36,
+    "bytes": 3430
+   },
+   "hit_perfect": {
+    "path": "bpm/hit_perfect.ogg",
+    "recipe": "hit_perfect",
+    "loop": false,
+    "duration": 0.437,
+    "lufs": -20.0,
+    "true_peak_dbtp": -4.79,
+    "bytes": 4342
+   },
+   "miss": {
+    "path": "bpm/miss.ogg",
+    "recipe": "miss",
+    "loop": false,
+    "duration": 0.16,
+    "lufs": -22.0,
+    "true_peak_dbtp": -5.88,
+    "bytes": 1601
+   },
+   "combo_break": {
+    "path": "bpm/combo_break.ogg",
+    "recipe": "combo_break",
+    "loop": false,
+    "duration": 0.659,
+    "lufs": -20.0,
+    "true_peak_dbtp": -10.66,
+    "bytes": 5552
+   },
+   "full_combo": {
+    "path": "bpm/full_combo.ogg",
+    "recipe": "full_combo_jingle",
+    "loop": false,
+    "duration": 1.506,
+    "lufs": -20.0,
+    "true_peak_dbtp": -11.12,
+    "bytes": 17641
+   },
+   "level_up": {
+    "path": "bpm/level_up.ogg",
+    "recipe": "level_up_jingle",
+    "loop": false,
+    "duration": 1.578,
+    "lufs": -20.0,
+    "true_peak_dbtp": -11.03,
+    "bytes": 18781
+   }
+  },
+  "system": {
+   "notify_sparkle": {
+    "path": "system/notify_sparkle.ogg",
+    "recipe": "notify_sparkle",
+    "loop": false,
+    "duration": 1.396,
+    "lufs": -20.0,
+    "true_peak_dbtp": -11.19,
+    "bytes": 16771,
+    "note": "default notification"
+   },
+   "notify_bubble": {
+    "path": "system/notify_bubble.ogg",
+    "recipe": "notify_bubble",
+    "loop": false,
+    "duration": 0.793,
+    "lufs": -20.0,
+    "true_peak_dbtp": -8.27,
+    "bytes": 8984
+   },
+   "notify_chirp": {
+    "path": "system/notify_chirp.ogg",
+    "recipe": "notify_chirp",
+    "loop": false,
+    "duration": 1.2,
+    "lufs": -20.0,
+    "true_peak_dbtp": -12.36,
+    "bytes": 13724
+   },
+   "ringtone": {
+    "path": "system/ringtone.ogg",
+    "recipe": "ringtone_loop",
+    "loop": true,
+    "duration": 16.0,
+    "lufs": -18.0,
+    "true_peak_dbtp": -5.09,
+    "bytes": 133451,
+    "note": "16 s, Ogg Vorbis with ANDROID_LOOP=true"
+   },
+   "usb_connect": {
+    "path": "system/usb_connect.ogg",
+    "recipe": "usb_connect",
+    "loop": false,
+    "duration": 0.709,
+    "lufs": -22.0,
+    "true_peak_dbtp": -10.52,
+    "bytes": 6928
+   },
+   "usb_disconnect": {
+    "path": "system/usb_disconnect.ogg",
+    "recipe": "usb_disconnect",
+    "loop": false,
+    "duration": 0.779,
+    "lufs": -22.0,
+    "true_peak_dbtp": -10.7,
+    "bytes": 7438
+   },
+   "charge_connect": {
+    "path": "system/charge_connect.ogg",
+    "recipe": "charge_connect",
+    "loop": false,
+    "duration": 0.968,
+    "lufs": -22.0,
+    "true_peak_dbtp": -13.09,
+    "bytes": 10151
+   }
+  }
+ }
+}

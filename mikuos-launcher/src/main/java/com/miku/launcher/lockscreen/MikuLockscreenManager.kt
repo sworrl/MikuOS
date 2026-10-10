@@ -246,8 +246,16 @@ object MikuLockscreenManager {
             appContext.checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         }.getOrDefault(false)
+        // With a PIN or password set (MikuSettings > Security > Screen lock) the stock keyguard
+        // must stay enabled: it is what holds the device locked, and the system ignores the
+        // disable flag for a secure user anyway. MikuSettings turns the flag back on when the
+        // screen lock is removed.
+        val secure = runCatching {
+            (appContext.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager).isDeviceSecure
+        }.getOrDefault(false)
         if (RootShell.isAvailable() || canSecure) {
             try {
+                if (!secure) {
                 Settings.Secure.putInt(appContext.contentResolver, "lockscreen.disabled", 1)
                 Settings.System.putInt(appContext.contentResolver, "lockscreen.disabled", 1)
                 // Authoritative A14 disable (needs WRITE_SECURE_SETTINGS) — the Settings key alone
@@ -257,6 +265,7 @@ object MikuLockscreenManager {
                         .getConstructor(android.content.Context::class.java).newInstance(appContext)
                     lpu.javaClass.getMethod("setLockScreenDisabled", java.lang.Boolean.TYPE, Integer.TYPE)
                         .invoke(lpu, true, 0)
+                }
                 }
                 Settings.System.putString(appContext.contentResolver, Settings.System.TIME_12_24, "24")
                 Settings.Secure.putInt(appContext.contentResolver, "camera_double_tap_power_gesture_disabled", 0)
@@ -269,10 +278,9 @@ object MikuLockscreenManager {
                 )
                 // Use RootShell instead of Runtime.exec to avoid Process resource leaks
                 CoroutineScope(Dispatchers.IO).launch {
-                    RootShell.execFast("cmd lock_settings set-disabled true")
+                    if (!secure) RootShell.execFast("cmd lock_settings set-disabled true")
                     RootShell.execFast("settings put secure camera_double_tap_power_gesture_disabled 0")
-                    // Re-enable notification shade (undo previous over-aggressive disable)
-                    RootShell.execFast("cmd statusbar send-disable-flag none")
+                    // No statusbar disable flags here: MikuSystemUI owns them (MikuNotificationShadeService).
                 }
             } catch (_: Throwable) {}
         } else {

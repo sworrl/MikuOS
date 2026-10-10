@@ -47,7 +47,7 @@ fun MikuVolumeUiSettingRow(
             .padding(14.dp)
     ) {
         Text(
-            text = "VOLUME HUD MODAL STYLE",
+            text = "VOLUME POPUP STYLE",
             color = MikuCyan,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
@@ -56,7 +56,7 @@ fun MikuVolumeUiSettingRow(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Select which holographic volume overlay appears when adjusting volume in any app or homescreen:",
+            text = "Pick the volume popup that shows when you change the volume:",
             color = Color(0xFF9EC4C7),
             fontSize = 11.5.sp,
             lineHeight = 15.sp
@@ -66,8 +66,8 @@ fun MikuVolumeUiSettingRow(
 
         // Option 1: Right-Edge Cyber Bar (Default)
         VolumeStyleOptionCard(
-            title = "Right-Edge Cyber Bar (Default)",
-            description = "Sleek vertical neon bar anchored to the right side of the display with touch dragging",
+            title = "Right-edge bar (default)",
+            description = "A vertical bar on the right edge. You can drag it.",
             isSelected = selectedStyle == VolumeHudStyle.RIGHT_CYBER_BAR,
             onClick = {
                 selectedStyle = VolumeHudStyle.RIGHT_CYBER_BAR
@@ -80,8 +80,8 @@ fun MikuVolumeUiSettingRow(
 
         // Option 2: Center Cyber Arc / Modal (Miku Music Style)
         VolumeStyleOptionCard(
-            title = "Center Cyber Dial / Modal",
-            description = "Centered floating cyberpunk capsule with danger zone meter (original Miku Music style)",
+            title = "Center popup",
+            description = "A centered popup with a loudness warning meter (the original Miku Music style)",
             isSelected = selectedStyle == VolumeHudStyle.CENTER_CYBER_MODAL,
             onClick = {
                 selectedStyle = VolumeHudStyle.CENTER_CYBER_MODAL
@@ -100,14 +100,14 @@ fun MikuVolumeUiSettingRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Legacy HiBy Fullscreen Dialog",
+                    text = "Stock HiBy fullscreen popup",
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = if (useHiby) "Active (HiBy factory fullscreen wheel overlay)" else "Disabled (MikuOS Custom HUD active)",
+                    text = if (useHiby) "On (the stock HiBy wheel popup)" else "Off (the MikuOS popup is used)",
                     color = Color(0xFF7FB9C6),
                     fontSize = 10.sp
                 )

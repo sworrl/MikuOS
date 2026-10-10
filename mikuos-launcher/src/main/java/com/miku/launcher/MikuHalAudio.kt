@@ -24,6 +24,11 @@ import android.util.Log
  * setting has no HAL key, the honest outcome is that it does not apply, and the nullable readers
  * in [CirrusLogicManager] will report null rather than our own last write. Do not add a `su`
  * fallback to paper over that: see m500-no-su-platform-signed-directive.
+ *
+ * CORRECTION (2026-10-10): the HiBy HAL and PAL on v1.00 contain no vendor.audio.hiby keys, so
+ * these pushes do not reach the DAC either (mikuos/docs/hiby-audio-knobs.md, section 5). Filter,
+ * gain, DRE and high power now go through com.miku.sysbridge, see [DacBridge]. The balance and
+ * DSD pushes that still use this are not real knobs on the M500.
  */
 object MikuHalAudio {
 

@@ -256,65 +256,15 @@ object MikuHardwareGestureEngine {
     }
 
     /**
-     * Creates a rich, physical "bumpy but good" textured vibration.
-     * Simulates micro-notches with tactile amplitude crests.
+     * Like / unlike / gear-gesture feedback. These used to be amplitude textures, which the M500's
+     * on/off motor cannot play (the ratchet one never fired at all), so they now map onto the
+     * shared [Haptics] pulses: like = heavy, unlike = tick, gear gesture = click.
      */
-    fun playBumpyLikeTexture(context: Context) {
-        val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
-        if (!vib.hasVibrator()) return
+    fun playBumpyLikeTexture(context: Context) = Haptics.heavy(context)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                // Waveform: 7 micro-ridges that ramp up and down in amplitude with 12ms gaps
-                val timings = longArrayOf(0, 12, 14, 16, 12, 22, 14, 28, 14, 20, 12, 14, 10, 8)
-                val amplitudes = intArrayOf(0, 90, 0, 150, 0, 210, 0, 255, 0, 180, 0, 120, 0, 60)
-                if (vib.hasAmplitudeControl()) {
-                    vib.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
-                } else {
-                    vib.vibrate(VibrationEffect.createWaveform(timings, -1))
-                }
-            } catch (_: Throwable) {
-                vib.vibrate(VibrationEffect.createOneShot(45L, VibrationEffect.DEFAULT_AMPLITUDE))
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            vib.vibrate(longArrayOf(0, 15, 20, 25, 20, 35), -1)
-        }
-    }
+    fun playBumpyDislikeTexture(context: Context) = Haptics.tick(context)
 
-    /**
-     * Downward rumble texture for unliking.
-     */
-    fun playBumpyDislikeTexture(context: Context) {
-        val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                val timings = longArrayOf(0, 24, 16, 18, 14, 12, 10, 8)
-                val amplitudes = intArrayOf(0, 240, 0, 170, 0, 100, 0, 40)
-                if (vib.hasAmplitudeControl()) {
-                    vib.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
-                } else {
-                    vib.vibrate(VibrationEffect.createWaveform(timings, -1))
-                }
-            } catch (_: Throwable) {}
-        }
-    }
-
-    /**
-     * Crisp mechanical ratchet tick for gear gestures.
-     */
-    fun playRatchetTick(context: Context) {
-        val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                val timings = longArrayOf(0, 8, 10, 8, 10, 12)
-                val amplitudes = intArrayOf(0, 180, 0, 220, 0, 255)
-                if (vib.hasAmplitudeControl()) {
-                    vib.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
-                }
-            } catch (_: Throwable) {}
-        }
-    }
+    fun playRatchetTick(context: Context) = Haptics.click(context)
 
     /**
      * [title] and [artist] are nullable because "not tagged" is a real state and the callers used
@@ -405,7 +355,7 @@ fun MikuHeartGestureHudOverlay(modifier: Modifier = Modifier) {
 
                     Column(modifier = Modifier.widthIn(max = 240.dp)) {
                         Text(
-                            text = if (toastState.isLiked) "♥ ADDED TO FAVORITES" else "REMOVED FROM FAVORITES",
+                            text = if (toastState.isLiked) "ADDED TO LIKED SONGS" else "REMOVED FROM LIKED SONGS",
                             color = if (toastState.isLiked) Color(0xFFFF5599) else Color(0xFF9FF3EC),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Black,

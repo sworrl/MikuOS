@@ -135,7 +135,7 @@ fun MikuBrainModal(
                             Spacer(Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    "MIKU BRAIN & BONES",
+                                    "WATCHDOG",
                                     color = MikuCyan,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Black,
@@ -143,7 +143,7 @@ fun MikuBrainModal(
                                     letterSpacing = 1.sp
                                 )
                                 Text(
-                                    "Central Subsystem Watchdog & ANR Guard",
+                                    "Checks each subsystem and watches for ANRs",
                                     color = MikuTextSecondary,
                                     fontSize = 8.sp
                                 )
@@ -230,8 +230,8 @@ fun MikuBrainModal(
                                     // claim "100% CPU clock bandwidth dynamically allocated", a
                                     // figure nothing here measures; the load branch claimed a 60 FPS
                                     // result that is likewise never sampled.
-                                    if (telemetry.isUiUnderLoad) "⚡ UI TOUCH INTERACTION ACTIVE: background I/O is being asked to yield to the UI thread."
-                                    else "🟢 UI IDLE: no recent touch activity, so background I/O runs without yielding.",
+                                    if (telemetry.isUiUnderLoad) "TOUCH ACTIVE: background I/O is yielding to the UI thread."
+                                    else "UI IDLE: no recent touch, so background I/O runs normally.",
                                     color = if (telemetry.isUiUnderLoad) MikuNeonPink else Color.White,
                                     fontSize = 9.5.sp,
                                     fontWeight = FontWeight.Medium
@@ -282,7 +282,7 @@ fun MikuBrainModal(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("MANUAL DIAGNOSTIC PROBE (FALLBACK OVERRIDE)", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Black, fontFamily = AudiowideFont)
+                        Text("RUN CHECKS NOW", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Black, fontFamily = AudiowideFont)
                     }
                 }
             }
@@ -294,7 +294,7 @@ fun MikuBrainModal(
 private fun BoneCard(
     health: MikuBrain.BoneHealth
 ) {
-    val (title, roleDesc, iconEmoji) = when (health.type) {
+    val (title, roleDesc, _) = when (health.type) {
         MikuBrain.BoneType.AUDIO_DSP -> Triple("AUDIO_DSP", "Player state (ExoPlayer)", "🎵")
         MikuBrain.BoneType.LIBRARY_SCANNER -> Triple("LIBRARY_SCANNER", "Library scanner (ScanProgress)", "📚")
         MikuBrain.BoneType.NETWORK_INGRESS -> Triple("NETWORK_INGRESS", "Network link (MikuNetworkService)", "🌐")
@@ -319,8 +319,6 @@ private fun BoneCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(iconEmoji, fontSize = 14.sp)
-                Spacer(Modifier.width(6.dp))
                 Text(
                     title,
                     color = Color.White,

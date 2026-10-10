@@ -51,7 +51,7 @@ class MikuCrashActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.BLACK
         window.navigationBarColor = android.graphics.Color.BLACK
 
-        val crashDetails = intent.getStringExtra("crash_details") ?: "Unknown Subsystem Exception"
+        val crashDetails = intent.getStringExtra("crash_details") ?: "No crash details were passed in"
         val errorType = intent.getStringExtra("error_type") ?: "MikuOS Panic"
 
         setContent {
@@ -124,7 +124,7 @@ fun MikuCrashScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "⚡ CRITICAL OS FAULT: $errorType",
+                            "MikuOS crashed: $errorType",
                             color = com.miku.launcher.ui.MikuIdentity.Coral,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Black
@@ -166,7 +166,7 @@ fun MikuCrashScreen(
                     modifier = Modifier.weight(1f).height(44.dp)
                 ) {
                     Text(
-                        "⚡ RESTART OS",
+                        "RESTART",
                         color = Color.Black,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black
@@ -179,7 +179,7 @@ fun MikuCrashScreen(
                         try {
                             val cb = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             cb.setPrimaryClip(ClipData.newPlainText("MikuOS Crash Log", crashDetails))
-                            Toast.makeText(ctx, "✓ Crash logs copied to clipboard", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(ctx, "Crash log copied", Toast.LENGTH_SHORT).show()
                         } catch (_: Throwable) {}
                     },
                     border = BorderStroke(1.dp, Color(0xFFFF4081)),
@@ -187,7 +187,7 @@ fun MikuCrashScreen(
                     modifier = Modifier.weight(1f).height(44.dp)
                 ) {
                     Text(
-                        "📋 COPY LOGS",
+                        "COPY LOGS",
                         color = Color(0xFFFF4081),
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold

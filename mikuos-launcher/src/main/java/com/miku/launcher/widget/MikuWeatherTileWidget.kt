@@ -160,7 +160,7 @@ fun MikuWeatherTile(modifier: Modifier = Modifier, onOpenObservatory: (() -> Uni
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "feels ${WxFmt.temp(cur?.feelsC, u)} · 💧${WxFmt.pct(cur?.humidityPct)} · 💨${WxFmt.wind(cur?.windKmh, u)} ${WxFmt.compass(cur?.windDirDeg)}",
+                    "feels ${WxFmt.temp(cur?.feelsC, u)} · RH ${WxFmt.pct(cur?.humidityPct)} · ${WxFmt.wind(cur?.windKmh, u)} ${WxFmt.compass(cur?.windDirDeg)}",
                     color = Color.White.copy(alpha = 0.85f),
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -195,8 +195,8 @@ fun MikuWeatherTile(modifier: Modifier = Modifier, onOpenObservatory: (() -> Uni
                 Spacer(Modifier.width(4.dp))
                 Text(WxFmt.aqiCategory(aqi), color = Muted, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
-            Text("🌅 ${WxFmt.clock(astro?.sunriseMs, tz)}", color = Color.White.copy(alpha = 0.85f), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text("🌇 ${WxFmt.clock(astro?.sunsetMs, tz)}", color = Color.White.copy(alpha = 0.85f), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text("Rise ${WxFmt.clock(astro?.sunriseMs, tz)}", color = Color.White.copy(alpha = 0.85f), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text("Set ${WxFmt.clock(astro?.sunsetMs, tz)}", color = Color.White.copy(alpha = 0.85f), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Text("UV ${WxFmt.uv(cur?.uvIndex)}", color = Color.White.copy(alpha = 0.85f), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         }
 
@@ -250,12 +250,15 @@ fun MikuWeatherTile(modifier: Modifier = Modifier, onOpenObservatory: (() -> Uni
             }
         }
 
+        // ---- NWS alert / nearest NOAA weather radio (MikuWeatherAlertsPanel.kt) ----------
+        com.miku.launcher.weather.MikuWeatherAlertTileLine()
+
         // ---- Miku mood / honest status line ---------------------------------------------
         Spacer(Modifier.height(5.dp))
         val status = when {
             snap == null && st.lastError != null -> st.lastError
             snap == null && st.isRefreshing -> "Fetching the first reading…"
-            snap == null -> "No weather data yet — tap to set a location or refresh."
+            snap == null -> "No weather data yet. Tap to set a location or refresh."
             else -> MikuWeatherMood.line(snap)
         }
         Text(
@@ -269,7 +272,7 @@ fun MikuWeatherTile(modifier: Modifier = Modifier, onOpenObservatory: (() -> Uni
         )
         if (snap != null && st.lastError != null) {
             Text(
-                "⚠ ${st.lastError}",
+                "${st.lastError}",
                 color = Pink.copy(alpha = 0.95f),
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,

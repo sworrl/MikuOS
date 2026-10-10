@@ -38,7 +38,7 @@ object EntitlementDecision {
     fun evaluate(c: Context, now: Long = System.currentTimeMillis()): Decision = try {
         evaluateUnsafe(c, now)
     } catch (t: Throwable) {
-        Decision.allowed("evaluation error (${t.javaClass.simpleName}) — fail-open")
+        Decision.allowed("evaluation error (${t.javaClass.simpleName}), allowed")
     }
 
     private fun evaluateUnsafe(c: Context, now: Long): Decision {
@@ -62,7 +62,7 @@ object EntitlementDecision {
             val h = span / 3_600_000
             return Decision.allowed("grace: disallows span ${h}h of ${EntitlementConfig.GRACE_MIN_SPAN_MS / 3_600_000}h", newest.note)
         }
-        if (newest.isExpired(now)) return Decision.allowed("newest disallow verdict expired — re-check needed", newest.note)
+        if (newest.isExpired(now)) return Decision.allowed("newest disallow verdict expired, re-check needed", newest.note)
 
         return Decision(
             blocked = true,

@@ -107,7 +107,7 @@ fun MikuWeatherTileDetailSheet(onDismiss: () -> Unit, onOpenObservatory: (() -> 
                             color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
-                    SheetPill(if (st.isRefreshing) "…" else "↻ REFRESH", Teal) { MikuWeatherTileEngine.refresh(ctx) }
+                    SheetPill(if (st.isRefreshing) "…" else "REFRESH", Teal) { MikuWeatherTileEngine.refresh(ctx) }
                     Spacer(Modifier.width(6.dp))
                     SheetPill(if (u == WxUnits.METRIC) "°C" else "°F", Pink) {
                         MikuWeatherTileEngine.setUnits(ctx, if (u == WxUnits.METRIC) WxUnits.IMPERIAL else WxUnits.METRIC)
@@ -143,8 +143,8 @@ fun MikuWeatherTileDetailSheet(onDismiss: () -> Unit, onOpenObservatory: (() -> 
                             st.location?.let {
                                 Text("Location: ${it.name} · ${String.format(java.util.Locale.US, "%.3f, %.3f", it.lat, it.lon)} · ${it.provider}", color = Muted, fontSize = 9.5.sp)
                             }
-                            if (!st.online) Text("Offline — nothing new can be fetched.", color = Pink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            st.lastError?.let { Text("⚠ $it", color = Pink, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                            if (!st.online) Text("Offline. Nothing new can be fetched.", color = Pink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            st.lastError?.let { Text("$it", color = Pink, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
                         }
                     }
 
@@ -210,7 +210,7 @@ fun MikuWeatherTileDetailSheet(onDismiss: () -> Unit, onOpenObservatory: (() -> 
                                                 h.precipProbPct?.let { "☔$it%" } ?: "☔" + WxFmt.precip(h.precipMm, u),
                                                 color = SkyBlue, fontSize = 9.sp, fontWeight = FontWeight.Bold
                                             )
-                                            Text("💨${WxFmt.wind(h.windKmh, u)}", color = Muted, fontSize = 8.5.sp)
+                                            Text("${WxFmt.wind(h.windKmh, u)}", color = Muted, fontSize = 8.5.sp)
                                         }
                                     }
                                 }
@@ -231,7 +231,7 @@ fun MikuWeatherTileDetailSheet(onDismiss: () -> Unit, onOpenObservatory: (() -> 
                                     Column(Modifier.weight(1f)) {
                                         Text(MikuWmo.text(d.wmoCode), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Text(
-                                            "☔${WxFmt.pct(d.precipProbPct)} · ${WxFmt.precip(d.precipMm, u)} · 💨${WxFmt.wind(d.windMaxKmh, u)} · UV ${WxFmt.uv(d.uvMax)} · 🌅${WxFmt.clock(d.sunriseMs, tz)} 🌇${WxFmt.clock(d.sunsetMs, tz)}",
+                                            "Rain ${WxFmt.pct(d.precipProbPct)} · ${WxFmt.precip(d.precipMm, u)} · Wind ${WxFmt.wind(d.windMaxKmh, u)} · UV ${WxFmt.uv(d.uvMax)} · Sun ${WxFmt.clock(d.sunriseMs, tz)} to ${WxFmt.clock(d.sunsetMs, tz)}",
                                             color = Muted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                                         )
                                     }
@@ -248,7 +248,7 @@ fun MikuWeatherTileDetailSheet(onDismiss: () -> Unit, onOpenObservatory: (() -> 
                         if (onOpenObservatory != null) {
                             SheetCard(title = "OBSERVATORY") {
                                 Text(
-                                    "Open the full Weather Observatory (radar, solar arc, history) →",
+                                    "Open the full weather screen (radar, sun times, history)",
                                     color = Color(0xFF39C5BB), fontSize = 12.sp,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -278,9 +278,9 @@ fun MikuWeatherTileDetailSheet(onDismiss: () -> Unit, onOpenObservatory: (() -> 
                             Text("Windy Point Forecast API key", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             Text(
                                 when {
-                                    st.windyKey.isBlank() -> "No key — Open-Meteo only (free, no account)."
-                                    st.windyKeyFromBuild -> "Using the key baked in at build time (local.properties → miku.windy.key). Enter one here to override."
-                                    else -> "Key saved on this device. Clear the field and save to fall back to the build key / Open-Meteo."
+                                    st.windyKey.isBlank() -> "No key. Open-Meteo only (free, no account)."
+                                    st.windyKeyFromBuild -> "Using the key from the build (local.properties, miku.windy.key). Enter one here to use a different key."
+                                    else -> "Key saved on this device. Clear the field and save to go back to the build key or Open-Meteo."
                                 },
                                 color = Muted, fontSize = 9.5.sp, lineHeight = 12.sp
                             )
@@ -316,7 +316,7 @@ fun MikuWeatherTileDetailSheet(onDismiss: () -> Unit, onOpenObservatory: (() -> 
                         SheetCard(title = "LOCATION") {
                             val manual = st.manualLocation
                             Text(
-                                if (manual != null) "Manual override: ${manual.name}" else "Automatic — last-known device position (no GPS polling)." +
+                                if (manual != null) "Set by hand: ${manual.name}" else "Automatic, from the last known device position (no GPS polling)." +
                                     (st.location?.let { " Currently: ${it.name} (${it.provider})." } ?: " None resolved yet."),
                                 color = if (manual != null) TealBright else Muted, fontSize = 10.sp, lineHeight = 13.sp
                             )
@@ -382,7 +382,7 @@ fun MikuWeatherTileDetailSheet(onDismiss: () -> Unit, onOpenObservatory: (() -> 
                             }
 
                             Spacer(Modifier.height(8.dp))
-                            Text("…or coordinates", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Or enter coordinates", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             var latText by remember { mutableStateOf("") }
                             var lonText by remember { mutableStateOf("") }
                             var coordError by remember { mutableStateOf<String?>(null) }

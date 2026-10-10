@@ -38,13 +38,13 @@ enum class SdrSkin(val label: String, val blurb: String) {
     FILLED("FILLED", "Solid spectrum, band pill"),
 
     /** Trace with the receiver's own channel shaded, so you can see what it is sitting on. */
-    PASSBAND("PASSBAND", "Tuned channel shaded against its neighbours"),
+    PASSBAND("PASSBAND", "Tuned channel shaded against its neighbors"),
 
     /** Perspective surface: sweeps recede into the distance, so time is depth. */
     SURFACE("3D", "Perspective surface, time as depth"),
 
     /** Every catalogued transmitter labelled at its frequency. */
-    ANNOTATED("ANNOTATED", "Call signs on every catalogued peak");
+    ANNOTATED("ANNOTATED", "Call signs on every cataloged peak");
 
     val showsAxis: Boolean get() = this == CLASSIC || this == PASSBAND
     val showsTimestamps: Boolean get() = this == CLASSIC

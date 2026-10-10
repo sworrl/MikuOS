@@ -54,8 +54,8 @@ object MikuUsbPreferences {
 
     enum class DismissOption(val label: String) {
         ONCE("Ask next time"),
-        HOURS_24("Don't ask for 24 Hours"),
-        DAYS_7("Don't ask for 7 Days"),
+        HOURS_24("Don't ask for 24 hours"),
+        DAYS_7("Don't ask for 7 days"),
         FOREVER("Always remember on this PC")
     }
 }

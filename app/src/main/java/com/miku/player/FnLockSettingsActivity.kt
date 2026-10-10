@@ -67,7 +67,7 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
         // Bespoke Hatsune Miku Pose Backdrop
         Image(
             painter = painterResource(id = R.drawable.miku_pose_headphones),
-            contentDescription = "Miku Fn Key Artwork",
+            contentDescription = "Miku artwork",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
@@ -103,7 +103,7 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
                 com.miku.player.ui.MikuBackButton(onClick = onBack)
 
                 Text(
-                    "FN KEY & POCKET GUARD",
+                    "FN KEY & POCKET LOCK",
                     color = MikuCyan,
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.Black,
@@ -146,7 +146,7 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
                             .padding(14.dp)
                     ) {
                         Text(
-                            "PHYSICAL HARDWARE SWITCH CONTROLS",
+                            "FN SWITCH",
                             color = Color.White,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -154,7 +154,7 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Controls how the physical side toggle switch and hardware buttons behave to prevent pocket misfires and accidental track skips.",
+                            "Sets what the side switch locks, so the player doesn't skip tracks or wake up in your pocket.",
                             color = MikuTextSecondary,
                             fontSize = 10.5.sp,
                             lineHeight = 14.5.sp
@@ -173,7 +173,7 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
                             .padding(14.dp)
                     ) {
                         Text(
-                            "SIDE TOGGLE ACTUATION MODE",
+                            "WHAT THE SWITCH LOCKS",
                             color = MikuCyan,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -182,9 +182,9 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
                         Spacer(Modifier.height(10.dp))
 
                         val modes = listOf(
-                            Triple("touch_and_key_lock", "Touchscreen & Key Lock (Recommended)", "Disables touchscreen digitizer and side transport buttons. Keeps volume wheel operational."),
-                            Triple("key_lock", "Key Lock Only", "Disables physical track skip and play/pause buttons while keeping touchscreen active."),
-                            Triple("touch_lock", "Touchscreen Lock Only", "Disables capacitive touch digitizer while allowing physical playback buttons to operate.")
+                            Triple("touch_and_key_lock", "Touchscreen & Key Lock (Recommended)", "Locks the touchscreen and side buttons. The volume wheel still works."),
+                            Triple("key_lock", "Key Lock Only", "Locks the skip and play/pause buttons. The touchscreen still works."),
+                            Triple("touch_lock", "Touchscreen Lock Only", "Locks the touchscreen. The playback buttons still work.")
                         )
 
                         modes.forEach { (id, label, desc) ->
@@ -252,7 +252,7 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
                             .padding(14.dp)
                     ) {
                         Text(
-                            "POCKET SAFEGUARDS & OVERRIDES",
+                            "POCKET OPTIONS",
                             color = MikuCyan,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -268,7 +268,7 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text("Allow Volume Wheel in Pocket", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Text("Allows adjusting audio level via the physical volume dial even when Fn Lock is active.", color = MikuTextSecondary, fontSize = 10.sp)
+                                Text("The volume wheel keeps working while Fn lock is on.", color = MikuTextSecondary, fontSize = 10.sp)
                             }
                             Switch(
                                 checked = allowVolume,
@@ -301,7 +301,7 @@ fun FnLockSettingsScreen(onBack: () -> Unit) {
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text("Lock Power Key When Switched", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Text("Prevents accidental screen wake-ups in pocket when pressing the power button.", color = MikuTextSecondary, fontSize = 10.sp)
+                                Text("Stops the power button from waking the screen in your pocket.", color = MikuTextSecondary, fontSize = 10.sp)
                             }
                             Switch(
                                 checked = lockPower,

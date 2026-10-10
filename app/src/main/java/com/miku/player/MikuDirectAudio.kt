@@ -205,6 +205,38 @@ object MikuDirectAudio {
         pushToHal(ctx, "vendor.audio.hiby.hw.high_power", if (p.highPower) "1" else "0")
         pushToHal(ctx, "vendor.audio.hiby.hw.high_power_mode", hpStr)
         Log.i(TAG, "ensureBestAudio: gain=${p.gain} dre=${p.dre} highPower=${p.highPower} (max=${p.isMax})")
+
+        // The rows and HAL params above never reached the DAC (mikuos/docs/hiby-audio-knobs.md).
+        // This does: com.miku.sysbridge sets persist.vendor.audio.miku.*, which the image's
+        // miku_audio.rc writes to the sysfs nodes. Blocking read-back, so off the main thread.
+        val app = ctx.applicationContext
+        com.miku.player.profiles.HibyDacBridge.init(app)
+        Thread({
+            val bridge = com.miku.player.profiles.HibyDacBridge
+            val hpBefore = bridge.get(bridge.PROP_HIGH_POWER)
+            bridge.set(bridge.PROP_GAIN, p.gain)
+            bridge.set(bridge.PROP_DRE, dreStr)
+            val hp = bridge.set(bridge.PROP_HIGH_POWER, hpStr)
+            // First time high power really engages on this device: the same volume step is now
+            // louder (external amp stage), so bring music down once and say why. Until 0.2.0 the
+            // setting never reached the amp, so nobody has heard this level yet.
+            if (p.highPower && hpBefore != "hpower_enable" &&
+                hp == com.miku.player.profiles.HibyDacBridge.Result.CONFIRMED) {
+                val am = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                if (am != null) {
+                    val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    val safe = (max * 0.3f).toInt().coerceAtLeast(1)
+                    if (am.getStreamVolume(AudioManager.STREAM_MUSIC) > safe) {
+                        am.setStreamVolume(AudioManager.STREAM_MUSIC, safe, 0)
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            android.widget.Toast.makeText(app,
+                                "High power is on now, so the same volume is louder. Volume lowered to be safe.",
+                                android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }, "MikuDacApply").start()
     }
 
     /** Read the HAL's live direct-output state back for truthful verification. */

@@ -60,6 +60,7 @@ fun WavyScrubber(
     modifier: Modifier = Modifier
 ) {
     val d = dur.coerceAtLeast(1L)
+    val hapticCtx = androidx.compose.ui.platform.LocalContext.current   // seek detents
     val prog = (pos.toFloat() / d).coerceIn(0f, 1f)
 
     var phase by remember { mutableFloatStateOf(0f) }
@@ -117,10 +118,10 @@ fun WavyScrubber(
                 var frac = 0f
                 detectHorizontalDragGesturesEdgeSafe(
                     guard,
-                    onDragStart = { o -> frac = (o.x / size.width).coerceIn(0f, 1f); onSeekPreview((frac * d).toLong()) },
+                    onDragStart = { o -> frac = (o.x / size.width).coerceIn(0f, 1f); com.miku.player.Haptics.seekDetent(hapticCtx, (frac * d).toLong(), d, start = true); onSeekPreview((frac * d).toLong()) },
                     onDragEnd = { onSeekCommit((frac * d).toLong()) },
                     onDragCancel = { onSeekCommit((frac * d).toLong()) }
-                ) { change, _ -> frac = (change.position.x / size.width).coerceIn(0f, 1f); onSeekPreview((frac * d).toLong()) }
+                ) { change, _ -> frac = (change.position.x / size.width).coerceIn(0f, 1f); com.miku.player.Haptics.seekDetent(hapticCtx, (frac * d).toLong(), d); onSeekPreview((frac * d).toLong()) }
             }
             .pointerInput(d) {
                 detectTapGestures { o -> onSeekCommit(((o.x / size.width).coerceIn(0f, 1f) * d).toLong()) }

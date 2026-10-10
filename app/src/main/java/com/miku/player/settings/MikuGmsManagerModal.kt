@@ -163,7 +163,7 @@ fun MikuGmsManagerModal(
                 statusMessage = when {
                     actual == enable && enable -> "Enabled $pkg"
                     actual == enable -> "Disabled $pkg"
-                    else -> "Unchanged: $pkg is still ${if (actual) "enabled" else "disabled"} — the OS refused the change (no system privileges)"
+                    else -> "Unchanged: $pkg is still ${if (actual) "enabled" else "disabled"}. The OS refused the change (no system privileges)"
                 }
             }
         }
@@ -171,7 +171,7 @@ fun MikuGmsManagerModal(
 
     fun setBulkState(enable: Boolean) {
         isProcessing = true
-        statusMessage = if (enable) "Bulk enabling Google Ecosystem..." else "Bulk disabling Google Ecosystem..."
+        statusMessage = if (enable) "Turning on all Google apps…" else "Turning off all Google apps…"
         scope.launch(Dispatchers.IO) {
             val attempted = GOOGLE_ECOSYSTEM_TARGETS.filter { installedSet.contains(it.packageName) }
             for (target in attempted) {
@@ -186,8 +186,8 @@ fun MikuGmsManagerModal(
                     attempted.isEmpty() -> "No targeted Google packages are installed"
                     changed == attempted.size && enable -> "All ${attempted.size} Google apps enabled"
                     changed == attempted.size -> "All ${attempted.size} Google apps disabled"
-                    changed == 0 -> "Nothing changed — the OS refused all ${attempted.size} changes (no system privileges)"
-                    else -> "$changed of ${attempted.size} ${if (enable) "enabled" else "disabled"}; the rest were refused by the OS"
+                    changed == 0 -> "Nothing changed. The OS refused all ${attempted.size} changes (no system privileges)"
+                    else -> "$changed of ${attempted.size} ${if (enable) "enabled" else "disabled"}, the rest were refused by the OS"
                 }
             }
         }
@@ -279,7 +279,7 @@ fun MikuGmsManagerModal(
                                 Spacer(Modifier.width(8.dp))
                                 Column {
                                     Text(
-                                        text = "GOOGLE & GMS ECOSYSTEM MANAGER",
+                                        text = "GOOGLE APPS",
                                         color = Color.White,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Black,
@@ -287,7 +287,7 @@ fun MikuGmsManagerModal(
                                         letterSpacing = 0.8.sp
                                     )
                                     Text(
-                                        text = "Granular & Bulk Power State Management",
+                                        text = "Turn Google apps on or off, one at a time or all at once",
                                         color = Color(0xFF4285F4),
                                         fontSize = 7.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -338,13 +338,13 @@ fun MikuGmsManagerModal(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             com.miku.player.CyberTactileButton(
-                                text = "🚫 BULK DISABLE ALL",
+                                text = "TURN ALL OFF",
                                 onClick = { setBulkState(false) },
                                 accentColor = Color(0xFFFF1744),
                                 modifier = Modifier.weight(1f)
                             )
                             com.miku.player.CyberTactileButton(
-                                text = "✅ BULK ENABLE ALL",
+                                text = "TURN ALL ON",
                                 onClick = { setBulkState(true) },
                                 accentColor = Color(0xFF00E676),
                                 modifier = Modifier.weight(1f)

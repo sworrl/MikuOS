@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">M500 Hardware &amp; DAC</string>
     <string name="hardware_settings_title">M500 Hardware &amp; DAC Settings</string>
-    <string name="hardware_settings_summary">Cirrus Logic CS43198 DAC, Filters, Gain, Fn Pocket Lock , Pulsar RGB &amp; USB DACamp; USB DAC</string>
+    <string name="hardware_settings_summary">Cirrus Logic CS43198 DAC, filters, gain, Fn pocket lock, Pulsar RGB &amp; USB DAC</string>
     <string name="fn_settings_title">Hardware Fn Switch &amp; Pocket Lock</string>
-    <string name="fn_settings_summary">Digitizer hardware inhibit, volume wheel retention, physical key lock</string>
+    <string name="fn_settings_summary">Touchscreen lock, volume wheel and key lock</string>
 </resources>

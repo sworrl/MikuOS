@@ -40,7 +40,7 @@ class MikuCompositingPreviewActivity : ComponentActivity() {
                         .padding(horizontal = 28.dp, vertical = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("✧ KDE COMPOSITING ✧", color = Color(0xFFFF80AB), fontSize = 13.sp, fontWeight = FontWeight.Black)
+                    Text("KDE COMPOSITING", color = Color(0xFFFF80AB), fontSize = 13.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(10.dp))
                     Text(label, color = Color(0xFF00E5FF), fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(10.dp))

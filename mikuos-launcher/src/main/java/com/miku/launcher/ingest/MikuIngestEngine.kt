@@ -58,7 +58,7 @@ data class MikuIngestState(
     val isServerReachable: Boolean = false,
     val isNetworkOnline: Boolean = false,
     // "Idle · Ingested" implied an ingest had already happened before anything ran.
-    val statusMessage: String = "Idle · no ingest run yet",
+    val statusMessage: String = "Idle · no sync has run yet",
     val lastScanTime: String = "Never",
     val logMessages: List<String> = emptyList(),
     val isInitialized: Boolean = false,
@@ -92,7 +92,7 @@ object MikuIngestEngine {
 
     /** Settings.Global switch for the network/rsync ingest engine. 0 (default) = OFF: only local SD scans. */
     const val GLOBAL_ENABLED_KEY = "miku_ingest_enabled"
-    private const val OFF_MESSAGE = "Ingest engine OFF · local SD scan updates only"
+    private const val OFF_MESSAGE = "Network sync off · only SD card scans update the library"
 
     fun isEngineEnabled(context: Context): Boolean = try {
         Settings.Global.getInt(context.contentResolver, GLOBAL_ENABLED_KEY, 0) == 1
@@ -108,14 +108,14 @@ object MikuIngestEngine {
             _state.value = _state.value.copy(
                 engineEnabled = enabled,
                 isServerReachable = false,
-                statusMessage = if (enabled) "Ingest engine ON · probing rsync server..." else OFF_MESSAGE
+                statusMessage = if (enabled) "Network sync on · looking for the rsync server…" else OFF_MESSAGE
             )
             if (enabled) {
-                log("Ingest engine ENABLED · network rsync ingest armed")
+                log("Network sync turned on · rsync will run when the server is reachable")
                 setupNetworkWatchdog(appContext)
                 probeAndAutoResume(appContext)
             } else {
-                log("Ingest engine DISABLED · local SD scan updates only")
+                log("Network sync turned off · only SD card scans update the library")
                 teardownNetworkWatchdog(appContext)
             }
         }
@@ -189,7 +189,7 @@ object MikuIngestEngine {
                 val receiver = object : android.content.BroadcastReceiver() {
                     override fun onReceive(c: Context?, intent: Intent?) {
                         val action = intent?.action ?: return
-                        log("Storage mounted · scheduling automatic force scan")
+                        log("Storage mounted · scheduling a scan")
                         scheduleAutoForceScan(appContext, "storage:${action.substringAfterLast('.')}")
                     }
                 }
@@ -221,7 +221,7 @@ object MikuIngestEngine {
             }
             appContext.getSharedPreferences(AUTO_PREFS, Context.MODE_PRIVATE).edit()
                 .putLong(KEY_LAST_AUTO_SCAN, System.currentTimeMillis()).apply()
-            log("AUTO FORCE SCAN ($reason)")
+            log("Auto scan ($reason)")
             triggerForceScan(appContext)
         }
     }
@@ -238,17 +238,17 @@ object MikuIngestEngine {
         try {
             val cb = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    log("Network connection restored · Probing Ingest Server...")
+                    log("Network back · looking for the sync server…")
                     _state.value = _state.value.copy(isNetworkOnline = true)
                     probeAndAutoResume(context)
                 }
 
                 override fun onLost(network: Network) {
-                    log("Network connection dropped / out of range · Ingest paused")
+                    log("Network dropped or out of range · sync paused")
                     _state.value = _state.value.copy(
                         isNetworkOnline = false,
                         isServerReachable = false,
-                        statusMessage = "Network Offline · Waiting for Wi-Fi reconnect..."
+                        statusMessage = "Offline · waiting for Wi-Fi…"
                     )
                 }
             }
@@ -289,7 +289,7 @@ object MikuIngestEngine {
             _state.value = _state.value.copy(isServerReachable = isReachable)
 
             if (isReachable && !prevReachable) {
-                log("Ingest Server ($syncHost:$rsyncPort) reconnected! Auto-resuming scan & sync...")
+                log("Sync server ($syncHost:$rsyncPort) is back. Resuming scan and sync…")
                 triggerRsyncSync(context)
             }
         }
@@ -517,15 +517,29 @@ object MikuIngestEngine {
         }
     }
 
+    /**
+     * Single-flight guard for [triggerRescan]. Four callers can start a scan: the Force scan
+     * button, m500d's INGEST_SCAN broadcast at the end of every pass, the storage-mounted receiver
+     * and the daily catch-up. Only the automatic path looked at isScanning, so a button press
+     * during a relay-triggered scan started a second full walk of the same trees and submitted
+     * every file to MediaScanner twice.
+     */
+    private val rescanRunning = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun triggerRescan(context: Context) {
         val appContext = context.applicationContext
+        if (!rescanRunning.compareAndSet(false, true)) {
+            log("Scan already running · this request was skipped")
+            return
+        }
         scope.launch {
+          try {
             _state.value = _state.value.copy(
                 isScanning = true,
                 scanProgress = 0.05f,
-                statusMessage = "Indexing storage volumes..."
+                statusMessage = "Indexing storage…"
             )
-            log("Initiated manual MediaScanner index across all storage partitions")
+            log("Started a MediaScanner scan of all storage")
 
             val scanPaths = mutableListOf<String>()
 
@@ -538,6 +552,11 @@ object MikuIngestEngine {
             if (storageDir.exists() && storageDir.isDirectory) {
                 storageDir.listFiles()?.forEach { file ->
                     if (file.isDirectory && file.name != "emulated" && file.name != "self") {
+                        // Keep "Music" as spelled here. The folder on the card is MUSIC, but exFAT
+                        // ignores case and every MediaStore row on this device (17,950 on
+                        // 2026-10-10) is stored as /storage/<id>/Music/... MediaStore matches paths
+                        // case-sensitively, so submitting the folder's on-disk spelling would add a
+                        // second row for every track.
                         val sdMusic = File(file, "Music")
                         if (sdMusic.exists()) scanPaths.add(sdMusic.absolutePath)
                         else scanPaths.add(file.absolutePath)
@@ -549,9 +568,14 @@ object MikuIngestEngine {
             val extensions = setOf("flac", "dsf", "dff", "iso", "wav", "m4a", "alac", "mp3", "aac", "ogg", "opus", "ape")
 
             scanPaths.forEach { rootPath ->
-                log("Crawling directory: $rootPath")
+                log("Scanning folder: $rootPath")
                 try {
-                    File(rootPath).walkTopDown().maxDepth(8).forEach { f ->
+                    // Skip hidden folders. m500d stages in-flight albums in .m500staging at the
+                    // card root, and a scan that runs mid-transfer would hand MediaScanner files
+                    // that are about to move, leaving a second row per track for the old path.
+                    File(rootPath).walkTopDown().maxDepth(8)
+                        .onEnter { it.absolutePath == rootPath || !it.name.startsWith(".") }
+                        .forEach { f ->
                         if (f.isFile && extensions.contains(f.extension.lowercase(Locale.ROOT))) {
                             audioFiles.add(f.absolutePath)
                         }
@@ -560,7 +584,7 @@ object MikuIngestEngine {
             }
 
             log("Found ${audioFiles.size} audio files to index into MediaStore")
-            _state.value = _state.value.copy(scanProgress = 0.3f, statusMessage = "Found ${audioFiles.size} audio tracks...")
+            _state.value = _state.value.copy(scanProgress = 0.3f, statusMessage = "Found ${audioFiles.size} audio tracks…")
 
             if (audioFiles.isNotEmpty()) {
                 var scannedCount = 0
@@ -600,18 +624,22 @@ object MikuIngestEngine {
             }.onFailure { log("Final media-scan sweep failed: ${it.javaClass.simpleName}") }
 
             val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-            log("Completed ingestion scan: ${audioFiles.size} files indexed")
+            log("Scan done: ${audioFiles.size} files indexed")
             nudgeMikuMusicLibrary(appContext)
 
             _state.value = _state.value.copy(
                 isScanning = false,
                 scanProgress = 1f,
-                statusMessage = "Scan Complete · ${audioFiles.size} tracks indexed",
+                statusMessage = "Scan done · ${audioFiles.size} tracks indexed",
                 lastScanTime = timeStr
             )
 
             delay(1000)
             refresh(appContext)
+          } finally {
+            rescanRunning.set(false)
+            if (_state.value.isScanning) _state.value = _state.value.copy(isScanning = false)
+          }
         }
     }
 
@@ -622,7 +650,7 @@ object MikuIngestEngine {
      */
     fun triggerForceScan(context: Context) {
         val appContext = context.applicationContext
-        log("FORCE SCAN · local SD + internal MediaScanner, then Miku Music library rescan")
+        log("Force scan · SD card and internal storage through MediaScanner, then a Miku Music library rescan")
         // triggerRescan() nudges Miku Music itself once MediaScanner has finished — nudging here
         // too made the player rescan a still-stale MediaStore and then rescan again seconds later.
         triggerRescan(appContext)
@@ -659,7 +687,7 @@ object MikuIngestEngine {
     fun triggerRsyncSync(context: Context) {
         val appContext = context.applicationContext
         if (!isEngineEnabled(appContext)) {
-            log("Rsync ingest requested but the ingest engine is OFF · enable it from the shade tile first")
+            log("Rsync sync asked for, but network sync is off. Turn it on from the shade tile first.")
             _state.value = _state.value.copy(statusMessage = OFF_MESSAGE)
             return
         }
@@ -667,11 +695,11 @@ object MikuIngestEngine {
             val syncHost = MikuIngestConfig.syncHost(appContext)
             val rsyncPort = MikuIngestConfig.rsyncPort(appContext)
 
-            log("Triggering Rsync Ingest Sync to $syncHost:$rsyncPort")
+            log("Starting rsync sync to $syncHost:$rsyncPort")
             _state.value = _state.value.copy(
                 isScanning = true,
                 scanProgress = 0.15f,
-                statusMessage = "Connecting to Rsync Ingest Server ($syncHost:$rsyncPort)..."
+                statusMessage = "Connecting to the rsync server ($syncHost:$rsyncPort)…"
             )
 
             // NO FAKE SYNC. This used to fire `rsync --version`, discard the result, log "Rsync sync
@@ -685,7 +713,7 @@ object MikuIngestEngine {
             // nothing and it delayed the next attempt at something that might have worked.
             val status = when {
                 syncHost.isBlank() ->
-                    "No sync host configured — set one before an ingest sync can run"
+                    "No sync host set. Set one before a sync can run."
                 else -> {
                     try {
                         val url = java.net.URL("http://$syncHost:8787/api/sync")
@@ -699,12 +727,12 @@ object MikuIngestEngine {
                         val payload = org.json.JSONObject().put("action", "start").toString()
                         conn.outputStream.use { it.write(payload.toByteArray()) }
                         if (conn.responseCode in 200..299) {
-                            "Sync triggered on Host Daemon ($syncHost). It will push via ADB."
+                            "Sync started on the host daemon ($syncHost). It pushes over ADB."
                         } else {
-                            "Host Daemon returned HTTP ${conn.responseCode}"
+                            "Host daemon returned HTTP ${conn.responseCode}"
                         }
                     } catch (t: Throwable) {
-                        "Failed to trigger host daemon: ${t.localizedMessage}"
+                        "Couldn't start the host daemon sync: ${t.localizedMessage}"
                     }
                 }
             }

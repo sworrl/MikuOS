@@ -27,3 +27,8 @@
     public static int v(...);
     public static int d(...);
 }
+
+# Trust agent: its callbacks override the @SystemApi TrustAgentService, which R8 only sees as a
+# compile-only stub. Keep the class and its members so no override is dropped or renamed.
+-keep class com.miku.systemui.trust.** { *; }
+-dontwarn android.service.trust.**

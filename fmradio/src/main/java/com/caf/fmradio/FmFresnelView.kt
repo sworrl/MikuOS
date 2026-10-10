@@ -38,6 +38,8 @@ import kotlin.math.min
 fun FmFresnelProfileView(
     profile: FmFresnel.Profile?,
     modifier: Modifier = Modifier,
+    /** The station as the engine rated it, carrying the measured and predicted levels. */
+    rated: FmStationCatalogue.Station? = null,
 ) {
     Box(
         modifier
@@ -136,12 +138,19 @@ fun FmFresnelProfileView(
                 "PATH TO ${profile.station.call} · ${"%.1f".format(profile.distanceKm)} km",
                 color = MikuTeal.copy(alpha = 0.85f), fontSize = 7.5.sp, fontWeight = FontWeight.Bold
             )
+            // The terrain line is a prediction. A reading from the tuner, when there is one,
+            // is the fact and goes next to it.
             Text(
                 profile.verdict.uppercase() +
-                    if (profile.diffractionLossDb > 0.5)
-                        " · ~${"%.0f".format(profile.diffractionLossDb)} dB"
-                    else "",
-                color = if (profile.blocked) MikuNeonPink else MikuPink,
+                    (if (profile.diffractionLossDb > 0.5)
+                        " · PREDICTS -${"%.0f".format(profile.diffractionLossDb)} dB"
+                    else "") +
+                    (rated?.measuredDbuv?.let { " · MEASURED $it dBµV" } ?: ""),
+                color = when {
+                    rated?.reach == FmReach.Verdict.HEARD -> MikuCyan
+                    profile.blocked -> MikuNeonPink
+                    else -> MikuPink
+                },
                 fontSize = 7.5.sp, fontWeight = FontWeight.Bold
             )
         }
@@ -150,7 +159,7 @@ fun FmFresnelProfileView(
             Text(
                 "worst point ${"%.1f".format(wst.distM / 1000)} km out · terrain " +
                     "${wst.groundM.toInt()} m vs sight line ${wst.sightM.toInt()} m · " +
-                    "${"%.0f".format(wst.fresnelFraction * 100)}% of the first zone",
+                    "${"%.0f".format(wst.fresnelFraction * 100)}% of the first zone · prediction",
                 color = MikuTeal.copy(alpha = 0.5f), fontSize = 6.5.sp,
                 modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = 8.dp, vertical = 2.dp)
             )

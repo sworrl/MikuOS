@@ -1128,7 +1128,7 @@ fun trackMetaSpan(t: Track, resolvedYear: Int? = null): AnnotatedString {
     val res = buildAnnotatedString {
         fun sep() = withStyle(SpanStyle(color = Color(0xFF3A5450))) { append("  ·  ") }
         DiscImage.rowLabel(t)?.let { lbl ->
-            withStyle(SpanStyle(color = DiscImageColor, fontWeight = FontWeight.Bold)) { append("💿 $lbl") }
+            withStyle(SpanStyle(color = DiscImageColor, fontWeight = FontWeight.Bold)) { append(lbl) }
             sep()
         }
         withStyle(SpanStyle(color = Color(0xFFD4E8E5), fontWeight = FontWeight.Normal)) { append(t.artist) }

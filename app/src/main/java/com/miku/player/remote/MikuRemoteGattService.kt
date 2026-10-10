@@ -254,7 +254,7 @@ class MikuRemoteGattService : Service() {
 
     private fun startPeripheral() {
         if (!hasPermissions(this)) {
-            fail("Bluetooth permission not granted — tap the toggle again to grant it.")
+            fail("Bluetooth permission not granted. Tap the toggle again to grant it.")
             stopSelf(); return
         }
         val bm = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
@@ -270,7 +270,7 @@ class MikuRemoteGattService : Service() {
         }
 
         if (!ad.isEnabled) {
-            MikuRemoteStatus.update { it.copy(lastError = "Bluetooth is off — turn it on to advertise.") }
+            MikuRemoteStatus.update { it.copy(lastError = "Bluetooth is off. Turn it on to advertise.") }
             updateNotification()
             return // ACTION_STATE_CHANGED receiver brings us up when BT turns on
         }
@@ -786,7 +786,7 @@ class MikuRemoteGattService : Service() {
                         synchronized(lock) { conns.clear(); notifyQueue.clear(); notifyInFlight = false }
                         try { gattServer?.close() } catch (_: Throwable) {}
                         gattServer = null
-                        MikuRemoteStatus.update { it.copy(advertising = false, connected = emptyList(), lastError = "Bluetooth is off — turn it on to advertise.") }
+                        MikuRemoteStatus.update { it.copy(advertising = false, connected = emptyList(), lastError = "Bluetooth is off. Turn it on to advertise.") }
                         updateNotification()
                     }
                 }

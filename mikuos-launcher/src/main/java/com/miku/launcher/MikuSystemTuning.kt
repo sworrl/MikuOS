@@ -134,7 +134,10 @@ object MikuSystemTuning {
         var ok = 0
         var failed = 0
 
+        // A release build (ro.miku.release=1) leaves adb and developer options to the user.
+        val release = isReleaseBuild()
         for ((key, value) in GLOBAL_INTS) {
+            if (release && key in DEV_ONLY_GLOBALS) continue
             val current = runCatching { Settings.Global.getInt(cr, key, Int.MIN_VALUE) }.getOrDefault(Int.MIN_VALUE)
             if (current == value) { ok++; continue }
             runCatching { Settings.Global.putInt(cr, key, value) }
@@ -188,13 +191,23 @@ object MikuSystemTuning {
             val installed = ctx.packageManager.getInstalledPackages(0).any { it.packageName == pkg }
             if (!installed) {
                 Log.i(TAG, "default IME $pkg not installed, leaving the keyboard setting alone")
-            } else if (Settings.Secure.getString(cr, Settings.Secure.DEFAULT_INPUT_METHOD) != ime) {
+            } else if (Settings.Secure.getString(cr, Settings.Secure.DEFAULT_INPUT_METHOD).let { it.isNullOrEmpty() || it == "null" }) {
+                // Seed only. Running this on every launcher start switched the user's chosen
+                // keyboard back to LatinIME each time.
                 Settings.Secure.putString(cr, Settings.Secure.DEFAULT_INPUT_METHOD, ime)
                 Settings.Secure.putString(cr, "enabled_input_methods", ime)
-                Log.i(TAG, "default IME set to $ime")
+                Log.i(TAG, "default IME seeded to $ime")
             }
         }.onFailure { Log.w(TAG, "IME setting failed: ${it.javaClass.simpleName}: ${it.message}") }
 
         Log.i(TAG, "startup tuning: $ok applied or already set, $failed failed")
     }
+
+    private val DEV_ONLY_GLOBALS = setOf("adb_enabled", "development_settings_enabled")
+
+    /** ro.miku.release=1 is set by build_mikuos_super.sh MIKUOS_RELEASE=1. */
+    fun isReleaseBuild(): Boolean = runCatching {
+        Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
+            .invoke(null, "ro.miku.release") as String
+    }.getOrDefault("") == "1"
 }

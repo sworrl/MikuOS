@@ -54,4 +54,14 @@ object FmWaterfallPalette {
     val LUT: Array<Color> = Array(128) { of(it / 127f) }
 
     fun lut(level: Float): Color = LUT[(level.coerceIn(0f, 1f) * 127f).toInt()]
+
+    /**
+     * The same ramp as packed ARGB ints, 256 steps, for writing straight into a bitmap row.
+     * The live waterfall is a Bitmap rather than a grid of rects, and this is what fills it.
+     */
+    val ARGB: IntArray = IntArray(256) { i ->
+        val c = of(i / 255f)
+        (0xFF shl 24) or ((c.red * 255f + 0.5f).toInt() shl 16) or
+            ((c.green * 255f + 0.5f).toInt() shl 8) or (c.blue * 255f + 0.5f).toInt()
+    }
 }

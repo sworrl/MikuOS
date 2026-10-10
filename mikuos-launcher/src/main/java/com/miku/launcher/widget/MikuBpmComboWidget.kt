@@ -81,7 +81,8 @@ class MikuBpmComboWidget : AppWidgetProvider() {
                 R.id.widget_combo_tap_btn,
                 MikuBpmTapperWidget.tapIntent(ctx, MikuBpmComboWidget::class.java, 7012)
             )
-            v.setOnClickPendingIntent(R.id.widget_combo_root, MikuBatteryWidget.launchLauncher(ctx))
+            // Tapping a BPM widget opens the game itself, not just the home screen.
+            v.setOnClickPendingIntent(R.id.widget_combo_root, com.miku.launcher.bpm.MikuBpmGameActivity.pendingIntent(ctx, "widget"))
             mgr.updateAppWidget(id, v)
         }
     }

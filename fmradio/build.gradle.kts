@@ -18,8 +18,27 @@ android {
         applicationId = "com.caf.fmradio"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1011
-        versionName = "1.0.11-mikuos"
+        versionCode = 1016
+        versionName = "1.2.0-mikuos"
+
+        // projectM background (FmProjectMBackground.kt). arm64 only, like the vendor JNI.
+        ndk { abiFilters += "arm64-v8a" }
+        externalNativeBuild {
+            cmake {
+                cppFlags("-std=c++17 -O3 -ffast-math -fexceptions -frtti")
+                arguments("-DANDROID_STL=c++_static")
+            }
+        }
+    }
+
+    // libfmprojectm builds the SAME vendored libprojectM tree as Miku Music
+    // (app/src/main/cpp/vendor/projectm, referenced by relative path, not copied). Only the JNI
+    // wrapper lives here. See src/main/cpp/CMakeLists.txt.
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     // Platform signing (seinfo=platform is required alongside the package name).
@@ -78,6 +97,8 @@ android {
         }
     }
     lint { checkReleaseBuilds = false; abortOnError = false }
+    // FmReachTest touches FmFresnel, which logs through android.util.Log.
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
@@ -90,4 +111,5 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    testImplementation("junit:junit:4.13.2")
 }

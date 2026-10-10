@@ -115,7 +115,7 @@ fun MikuUsbHostModal(
                                     letterSpacing = 0.5.sp
                                 )
                                 Text(
-                                    "Hardware Audio & Link Controller",
+                                    "Pick what the USB connection does",
                                     color = MikuCyan.copy(alpha = 0.7f),
                                     fontSize = 10.sp
                                 )
@@ -138,7 +138,7 @@ fun MikuUsbHostModal(
                     Spacer(Modifier.height(14.dp))
 
                     Text(
-                        "Configure device mode for the connected host:",
+                        "Mode for the connected computer:",
                         color = Color(0xFFB0BEC5),
                         fontSize = 11.5.sp,
                         textAlign = TextAlign.Start,
@@ -150,11 +150,11 @@ fun MikuUsbHostModal(
                     // Mode Selection Options
                     // 1. USB DAC Master Mode
                     ModeButton(
-                        title = "⚡ USB DAC Mode (Direct ALSA)",
+                        title = "USB DAC (direct ALSA)",
                         // No rate/bit-depth claim: setUsbDacMode only writes Settings.Global work_mode
                         // and sys.usb.config=uac2 — nothing reads back the gadget's advertised format,
                         // and the host picks the rate anyway. "192kHz/32-bit Bit-Perfect" was invented.
-                        subtitle = "Expose the player as a UAC2 audio gadget (host selects the rate)",
+                        subtitle = "The player shows up as a UAC2 sound card. The computer picks the sample rate.",
                         accentColor = MikuCyan,
                         onClick = {
                             // The sheet used to close immediately and save the preference as
@@ -181,9 +181,9 @@ fun MikuUsbHostModal(
 
                     // 2. MTP File Transfer
                     ModeButton(
-                        title = "📁 MTP / File Transfer",
+                        title = "File transfer (MTP)",
                         // "High-speed" was never measured (the negotiated link speed is not read).
-                        subtitle = "MTP file transfer — internal storage & SD card",
+                        subtitle = "Copy files to internal storage and the SD card",
                         accentColor = Color(0xFF80D8FF),
                         onClick = {
                             scope.launch {
@@ -205,8 +205,8 @@ fun MikuUsbHostModal(
 
                     // 3. Charge Only
                     ModeButton(
-                        title = "🔋 Charge Only",
-                        subtitle = "Standard battery charging, data transfer disabled",
+                        title = "Charge only",
+                        subtitle = "Charges the battery, no data",
                         accentColor = Color(0xFF69F0AE),
                         onClick = {
                             scope.launch {
@@ -228,7 +228,7 @@ fun MikuUsbHostModal(
 
                     // Persistence / Dismiss Options
                     Text(
-                        "PERSISTENCE & PROMPT PREFERENCE:",
+                        "REMEMBER THIS CHOICE:",
                         color = Color.White.copy(alpha = 0.6f),
                         fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,

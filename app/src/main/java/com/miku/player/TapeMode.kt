@@ -72,6 +72,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
@@ -157,7 +159,8 @@ private data class TapeTheme(
     val brandTexture: BrandTexture = BrandTexture.SCREENPRINT_NEON,
     val accent: Color = Color(0xFF39C5BB),
     val wallAlpha: Float = 0.88f, val cavityAlpha: Float = 0.30f,
-    val welded: Boolean = false   // premium shells are screwed together; budget shells are melt-welded
+    val welded: Boolean = false,  // premium shells are screwed together; budget shells are melt-welded
+    val motif39: Boolean = false  // the secret MIKU 39 shell's holographic "39" foil badge (drawMiku39Badge)
 )
 private val TAPE_THEMES = listOf(
     TapeTheme("MIKU STUDIO",
@@ -305,6 +308,17 @@ private val TAPE_THEMES = listOf(
         brandText = "MIKU GLOW-90 [DAT]", brandSub = "PHOSPHOR LUMINESCENT MATRIX · HIGH ENERGY FLUX",
         brandFont = DotGothicFont, brandColor = Color(0xFF66FF88), brandSubColor = Color(0xFFA3FFBA), brandTexture = BrandTexture.DOT_MATRIX_IMPRINT,
         accent = Color(0xFF66FF88), wallAlpha = 0.90f, cavityAlpha = 0.40f, welded = true),
+    // ── Secret (index 18). APPEND ONLY: the saved theme is a raw ordinal, so nothing may ever be
+    //    inserted above this line. Gated by MikuUnlocksReader.SECRET_TAPE_MIKU39 and left out of
+    //    the picker entirely until earned (MikuUnlocksReader.SECRET_TAPE_INDICES). ──
+    TapeTheme("MIKU 39",   // translucent mint holo shell, pink hubs; 39 = "san-kyu", thank you
+        shellHi = Color(0xFF8FF0E6), shellLo = Color(0xFF2E9E95), engrave = Color(0x55E12885),
+        bevelHi = Color(0xFFE6FFFC), bevelLo = Color(0xFF0B3B37),
+        hubHi = Color(0xFFFFB3DD), hubLo = Color(0xFFE12885), holes = Color(0xFF3A0A24), ink = Color(0xFF053A35),
+        layout = TapeLayout.CLEAR, plasticType = PlasticType.CLEAR_POLYCARBONATE,
+        brandText = "MIKU 39 · SECRET TRACK", brandSub = "サンキュー · THANK YOU FOR LISTENING",
+        brandFont = OrbitronFont, brandColor = Color(0xFFE12885), brandSubColor = Color(0xFF0E5E56), brandTexture = BrandTexture.DISCO_INLINE_NEON,
+        accent = Color(0xFFE12885), wallAlpha = 0.55f, cavityAlpha = 0.20f, motif39 = true),
 )
 
 /**
@@ -489,7 +503,8 @@ fun TapeScreen(track: Track, player: ExoPlayer, onExit: () -> Unit) {
     val light = if (IdleController.screenActive) lightRaw else 0.5f
     // Theme is STICKY (persisted until deliberately changed) and swapping takes a LONG-PRESS —
     // a single tap can no longer flip your cassette by accident.
-    var themeIdx by remember { mutableStateOf(PlayerPreferences.loadTapeTheme(ctx)) }
+    // Fresh unlock state on every open of Tape Mode, not whatever the reader cached up to 5 s ago.
+    var themeIdx by remember { MikuUnlocksReader.invalidate(); mutableStateOf(PlayerPreferences.loadTapeTheme(ctx)) }
     // A saved ordinal can point at a shell that is still locked behind the BPM game (earned once,
     // then /data wiped, or the value predates the gate). Fall back to the default shell.
     if (MikuUnlocksReader.locked(ctx, MikuUnlocksReader.TAPE_THEME_GATES, themeIdx)) themeIdx = 0
@@ -966,7 +981,7 @@ fun TapeScreen(track: Track, player: ExoPlayer, onExit: () -> Unit) {
                         Spacer(Modifier.height(7.dp))
                         if (upNext.isEmpty()) {
                             Text(
-                                "End of the programme.",
+                                "End of the program.",
                                 color = paperInk.copy(alpha = 0.55f), fontSize = 12.sp,
                                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                                 fontFamily = Baloo2Font
@@ -1013,6 +1028,13 @@ fun TapeScreen(track: Track, player: ExoPlayer, onExit: () -> Unit) {
 
         // Theme Choice Modal (triggered by 900ms long-press on Left Capstan)
         if (showThemeModal) {
+            // Which shells the picker shows. Re-read fresh each time it opens (a reward earned a
+            // moment ago in the game must appear now), and a SECRET shell is left out entirely
+            // until it is earned; visible rewards stay listed, greyed and locked.
+            val visibleThemeIdx = remember {
+                MikuUnlocksReader.invalidate()
+                TAPE_THEMES.indices.filter { !MikuUnlocksReader.hiddenTapeTheme(ctx, it) }
+            }
             Box(
                 Modifier.matchParentSize()
                     .background(Color(0xCC04100F))
@@ -1037,19 +1059,19 @@ fun TapeScreen(track: Track, player: ExoPlayer, onExit: () -> Unit) {
                             Spacer(Modifier.width(8.dp))
                             Text("SELECT TAPE THEME", color = MikuTealBright, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, fontFamily = AudiowideFont)
                         }
-                        Text("${TAPE_THEMES.size} THEMES", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                        Text("${visibleThemeIdx.size} THEMES", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                     }
                     Spacer(Modifier.height(10.dp))
                     Column(
                         Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
                     ) {
-                        TAPE_THEMES.chunked(2).forEachIndexed { rowIdx, pair ->
+                        visibleThemeIdx.chunked(2).forEach { pair ->
                             Row(
                                 Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                pair.forEachIndexed { colIdx, t ->
-                                    val idx = rowIdx * 2 + colIdx
+                                pair.forEach { idx ->
+                                    val t = TAPE_THEMES[idx]
                                     val isSelected = idx == themeIdx
                                     val isLocked = MikuUnlocksReader.locked(
                                         ctx, MikuUnlocksReader.TAPE_THEME_GATES, idx)
@@ -1087,7 +1109,7 @@ fun TapeScreen(track: Track, player: ExoPlayer, onExit: () -> Unit) {
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
                                                 Text(
-                                                    if (isLocked) t.name + "  \uD83D\uDD12" else t.name,
+                                                    if (isLocked) t.name + "  (locked)" else t.name,
                                                     color = if (isSelected) MikuTealBright else Color(0xFFE8F4F2),
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
@@ -1665,6 +1687,9 @@ private fun DrawScope.drawCassetteOverlayMm(t: TapeTheme, counterText: String, l
             mmText("side a", 8f, 22.8f, 2.3f, t.ink, bold = false)
         }
     }
+
+    // 10b) The secret shell's own mark, on the clear band right of the right-hand hub.
+    if (t.motif39) drawMiku39Badge(light)
 
     // 11) The grade stamp — the real IEC type block every cassette carries, filled in with what
     //     THIS file actually measured. Nothing is printed until TrackTech has answered.
@@ -2768,6 +2793,7 @@ private fun MiniCassette(t: TapeTheme, modifier: Modifier = Modifier) {
                 Color(0x33000000)
             )
             drawRoundRect(Color(0xCC0A0A0A), topLeft = Offset(45.3f, 59.6f), size = Size(11f, SHELL_H - 59.6f), cornerRadius = CornerRadius(0.8f, 0.8f))
+            if (t.motif39) drawMiku39Badge(0.5f)
             // Corner fixings — screws or melt welds, the same tell as the full shell
             for ((sx, sy) in listOf(4.3f to 4.3f, SHELL_W - 4.3f to 4.3f, 4.3f to 59.2f, SHELL_W - 4.3f to 59.2f)) {
                 drawCircle(if (t.welded) t.shellLo else t.bevelLo.copy(alpha = 0.8f), 1.5f, Offset(sx, sy))
@@ -2780,6 +2806,51 @@ private fun MiniCassette(t: TapeTheme, modifier: Modifier = Modifier) {
             )
             drawRoundRect(t.bevelHi.copy(alpha = 0.8f), size = Size(SHELL_W, SHELL_H), cornerRadius = CornerRadius(SHELL_R, SHELL_R), style = Stroke(0.6f))
         }
+    }
+}
+
+// The MIKU 39 badge's holographic foil. Built once: the overlay layer redraws with the moving key
+// light, and a Brush per frame would be garbage on every frame for a sheen that never changes.
+private val MIKU39_FOIL = Brush.linearGradient(
+    listOf(Color(0xFF39C5BB), Color(0xFFB9FFF6), Color(0xFFFFA6D6), Color(0xFFE12885), Color(0xFFB388FF), Color(0xFF39C5BB)),
+    start = Offset(66f, 34f), end = Offset(108f, 50f)
+)
+
+/**
+ * "39" on a holographic foil chip, mm space. Sits at x 80..94.5, y 37.2..46.8: right of the right
+ * hub's reach at that height, above the transport row that covers y ~48..60, and clear of the
+ * grade stamp, which lives bottom-LEFT. The foil slides with the key light ([light] 0..1) so it
+ * catches the light the way the window streaks do. The digits are seven-segment strokes rather
+ * than text: no Paint or typeface per frame.
+ */
+private fun DrawScope.drawMiku39Badge(light: Float) {
+    val x0 = 80f; val y0 = 37.2f; val w = 14.5f; val h = 9.6f
+    clipRect(x0, y0, x0 + w, y0 + h) {
+        translate(left = (light - 0.5f) * 14f) {
+            drawRect(MIKU39_FOIL, topLeft = Offset(x0 - 10f, y0), size = Size(w + 20f, h))
+        }
+    }
+    drawRoundRect(Color(0x66FFFFFF), topLeft = Offset(x0, y0), size = Size(w, h), cornerRadius = CornerRadius(1.2f, 1.2f), style = Stroke(0.3f))
+    // 3 = a b c d g, 9 = a b c d f g
+    drawSevenSeg(82.6f, 38.6f, 0b1001111)
+    drawSevenSeg(88.4f, 38.6f, 0b1101111)
+}
+
+/** One seven-segment digit, 4.2 x 7 mm. [mask] bits 0..6 = segments a b c d e f g. */
+private fun DrawScope.drawSevenSeg(x: Float, y: Float, mask: Int) {
+    val dw = 4.2f; val dh = 7f; val mid = y + dh / 2f
+    for (pass in 0..1) {
+        // A pale offset pass under the ink reads as the edge of an embossed foil stamp.
+        val c = if (pass == 0) Color(0x88FFFFFF) else Color(0xFF06302C)
+        val o = if (pass == 0) 0.28f else 0f
+        val sw = 1.0f
+        if (mask and 1 != 0) drawLine(c, Offset(x + o, y + o), Offset(x + dw + o, y + o), sw, StrokeCap.Round)
+        if (mask and 2 != 0) drawLine(c, Offset(x + dw + o, y + o), Offset(x + dw + o, mid + o), sw, StrokeCap.Round)
+        if (mask and 4 != 0) drawLine(c, Offset(x + dw + o, mid + o), Offset(x + dw + o, y + dh + o), sw, StrokeCap.Round)
+        if (mask and 8 != 0) drawLine(c, Offset(x + o, y + dh + o), Offset(x + dw + o, y + dh + o), sw, StrokeCap.Round)
+        if (mask and 16 != 0) drawLine(c, Offset(x + o, mid + o), Offset(x + o, y + dh + o), sw, StrokeCap.Round)
+        if (mask and 32 != 0) drawLine(c, Offset(x + o, y + o), Offset(x + o, mid + o), sw, StrokeCap.Round)
+        if (mask and 64 != 0) drawLine(c, Offset(x + o, mid + o), Offset(x + dw + o, mid + o), sw, StrokeCap.Round)
     }
 }
 

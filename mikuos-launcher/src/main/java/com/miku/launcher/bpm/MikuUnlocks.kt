@@ -64,13 +64,19 @@ object MikuUnlocks {
     /** MikuTopBarTheme.MIDNIGHT. */
     const val OS_TOPBAR_MIDNIGHT = "os.topbar.midnight"
 
-    /** Miku Shaders preset ShaderPreset.NEGI_RAIN — prefs miku_player_prefs/viz_shader_preset. */
+    // The three visualiser rewards gate whole .milk families in Miku Music's projectM playlist
+    // ("Miku - Negi Rain 01..08" etc., see app MikuVizPresetGates). They used to gate GLES2
+    // shader-engine ordinals and a ProjectMPreset ordinal, and neither is reachable on a device
+    // where libprojectM loads (the shader engine is only a fallback, nothing ever saved a
+    // ProjectMPreset, and native setPreset is a no-op) — so all three paid out nothing.
+
+    /** projectM family "Miku - Negi Rain" (also ShaderPreset.NEGI_RAIN on the fallback engine). */
     const val PLAYER_VIZ_NEGI_RAIN = "player.viz.negi_rain"
 
-    /** Miku Shaders preset ShaderPreset.VOCALOID_CIRCUIT. */
+    /** projectM family "Miku - Vocaloid Circuit" (also ShaderPreset.VOCALOID_CIRCUIT). */
     const val PLAYER_VIZ_VOCALOID_CIRCUIT = "player.viz.vocaloid_circuit"
 
-    /** projectM preset ProjectMPreset.VORTEX_CORE — prefs miku_player_prefs/projectm_preset. */
+    /** projectM family "Miku - Miku Vortex". The id keeps its old name: renaming re-locks it. */
     const val PLAYER_PROJECTM_VORTEX_CORE = "player.projectm.vortex_core"
 
     /** Tape Mode cassette theme "SAKURA" — prefs miku_player_prefs/tape_theme. */
@@ -118,14 +124,14 @@ object MikuUnlocks {
         Reward(SKIN_HONEY_SWEET, "Honey Sweet skin", "BPM game · Skins", "🍯", Goal.JUDGED_TAPS, 200),
         Reward(PLAYER_TAPE_SAKURA, "SAKURA cassette", "Miku Music · Tape Mode", "📼", Goal.MAX_COMBO, 25),
         Reward(OS_WALLPAPER_NEON_WAVE, "Neon Wave wallpaper", "MikuOS · Wallpapers", "🖼️", Goal.JUDGED_TAPS, 500),
-        Reward(PLAYER_VIZ_NEGI_RAIN, "Negi Rain visualiser", "Miku Music · Miku Shaders", "🌧️", Goal.PERFECT_HITS, 250),
+        Reward(PLAYER_VIZ_NEGI_RAIN, "Negi Rain visuals", "Miku Music · visualizer presets", "🌧️", Goal.PERFECT_HITS, 250),
         Reward(SKIN_GOTHIC_DIVA, "Gothic Lolita skin", "BPM game · Skins", "🖤", Goal.MAX_COMBO, 50),
         Reward(OS_TOPBAR_AURORA, "Aurora top bar", "MikuOS · Top bar theme", "🌈", Goal.JUDGED_TAPS, 1_500),
         Reward(PLAYER_TAPE_VAPORWAVE, "VAPORWAVE cassette", "Miku Music · Tape Mode", "📼", Goal.MAX_COMBO, 75),
-        Reward(PLAYER_PROJECTM_VORTEX_CORE, "Vortex Core preset", "Miku Music · projectM", "🌀", Goal.PERFECT_HITS, 1_000),
+        Reward(PLAYER_PROJECTM_VORTEX_CORE, "Miku Vortex visuals", "Miku Music · visualizer presets", "🌀", Goal.PERFECT_HITS, 1_000),
         Reward(OS_THEME_COZY_CAFE, "Cozy Cafe theme", "MikuOS · Themes", "☕", Goal.JUDGED_TAPS, 3_000),
         Reward(SKIN_SNOW_CRYSTAL, "Snow Crystal skin", "BPM game · Skins", "❄️", Goal.MAX_COMBO, 100),
-        Reward(PLAYER_VIZ_VOCALOID_CIRCUIT, "Vocaloid Circuit visualiser", "Miku Music · Miku Shaders", "🔌", Goal.PERFECT_HITS, 2_500),
+        Reward(PLAYER_VIZ_VOCALOID_CIRCUIT, "Vocaloid Circuit visuals", "Miku Music · visualizer presets", "🔌", Goal.PERFECT_HITS, 2_500),
         Reward(OS_WALLPAPER_CYBER_HOLOGRAM, "Cyber Space Hologram", "MikuOS · Wallpapers", "🛸", Goal.JUDGED_TAPS, 5_000),
         Reward(PLAYER_TAPE_GLOWWORM, "GLOWWORM cassette", "Miku Music · Tape Mode", "📼", Goal.MAX_COMBO, 150),
         Reward(OS_THEME_CYBER_STAGE, "Cyber Stage theme", "MikuOS · Themes", "🎆", Goal.JUDGED_TAPS, 10_000),
@@ -136,7 +142,25 @@ object MikuUnlocks {
 
     // ---- storage ---------------------------------------------------------------------------
 
+    // Read cache. isUnlocked() is called from composition (skin cards, the battery badge, the
+    // app-icon resolver), and a Settings.Global read + JSON parse per call is real work on this
+    // device. Every write below refreshes it, so the game never reads its own stale state; a
+    // short TTL bounds how long any other reader can lag.
+    /**
+     * Bumped on every write. The game is the only writer and runs in this (launcher) process, so
+     * long-lived launcher UI — the home battery badge, the wallpaper effects, app icons — can key
+     * on this and re-read the moment something is earned or switched, instead of polling.
+     */
+    private val _version = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val version: kotlinx.coroutines.flow.StateFlow<Int> = _version
+
+    @Volatile private var cache: JSONObject? = null
+    @Volatile private var cacheAt = 0L
+    private const val CACHE_TTL_MS = 1_500L
+
     private fun readJson(ctx: Context): JSONObject {
+        val now = android.os.SystemClock.elapsedRealtime()
+        cache?.let { if (now - cacheAt < CACHE_TTL_MS) return it }
         val raw = try {
             Settings.Global.getString(ctx.contentResolver, SETTINGS_KEY)
         } catch (_: Throwable) { null }
@@ -155,11 +179,14 @@ object MikuUnlocks {
                 }
             }
         } catch (_: Throwable) {}
+        cache = obj; cacheAt = now
         return obj
     }
 
     private fun write(ctx: Context, obj: JSONObject) {
         val s = obj.toString()
+        cache = obj; cacheAt = android.os.SystemClock.elapsedRealtime()
+        _version.value = _version.value + 1
         try {
             ctx.getSharedPreferences(MIRROR_PREFS, Context.MODE_PRIVATE)
                 .edit().putString(SETTINGS_KEY, s).apply()
@@ -175,6 +202,31 @@ object MikuUnlocks {
     }
 
     fun isUnlocked(ctx: Context, id: String): Boolean = readJson(ctx).has(id)
+
+    /**
+     * Earned AND switched on. A secret the player has turned off from the Secrets list stays
+     * earned (it never re-locks), it just stops changing the OS. Consumers that draw something
+     * the player might not always want — a leek for a battery, snow on the wallpaper — must ask
+     * this, not [isUnlocked].
+     */
+    fun isEnabled(ctx: Context, id: String): Boolean {
+        val e = readJson(ctx).optJSONObject(id) ?: return false
+        return !e.optBoolean("off", false)
+    }
+
+    /**
+     * Switch an EARNED unlock on or off. Stored in the same entry as {"off": true} so the one-key
+     * contract holds and every reader sees the same answer. No-op (false) for anything not earned:
+     * this can never be used to grant.
+     */
+    fun setEnabled(ctx: Context, id: String, on: Boolean): Boolean {
+        val obj = readJson(ctx)
+        val e = obj.optJSONObject(id) ?: return false
+        if (on) e.remove("off") else e.put("off", true)
+        obj.put(id, e)
+        write(ctx, obj)
+        return true
+    }
 
     fun unlockedIds(ctx: Context): Set<String> {
         val obj = readJson(ctx)
@@ -229,7 +281,13 @@ object MikuUnlocks {
         for (r in ALL) {
             if (r.id in have) continue
             if (progressToward(r.goal) >= r.amount) {
-                if (unlock(ctx, r.id)) granted.add(r)
+                if (unlock(ctx, r.id)) {
+                    granted.add(r)
+                    MikuCelebrations.push(
+                        MikuCelebrations.Item(false, r.title, r.where, "Earned with ${r.amount} ${r.goal.label}.")
+                    )
+                    com.miku.launcher.haptics.MikuHaptics.unlock(ctx)
+                }
             }
         }
         return granted

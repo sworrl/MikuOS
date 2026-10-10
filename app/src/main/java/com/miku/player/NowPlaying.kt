@@ -196,6 +196,13 @@ fun NowPlayingScreen(
     val ctx = LocalContext.current
     androidx.activity.compose.BackHandler(onBack = onClose)
     NowPlayingLook.load(ctx)
+    // Unlock state is re-read fresh each time this screen opens, so a reward earned in the BPM game
+    // a moment ago applies now (the reader otherwise caches for 5 s). The leek is a secret that
+    // simply appears, so it follows the ENABLED view: earned and not switched off in the game.
+    val leekSpinOn = remember {
+        MikuUnlocksReader.invalidate()
+        MikuUnlocksReader.isEnabled(ctx, MikuUnlocksReader.SECRET_LEEK_SPIN)
+    }
     // Instant art: the cached thumb shows the same frame the screen opens, then the lossless
     // hi-res decode swaps in underneath — never a blank wait.
     val art by produceState<ImageBitmap?>(initialValue = AlbumArtCache.getHi(track.id), track.id) {
@@ -573,7 +580,7 @@ fun NowPlayingScreen(
             Spacer(Modifier.weight(1f))
             HapticIconButton(onClick = { InstantRandom.start(ctx) }, flat = true) {
                 Icon(
-                    Icons.Default.Casino, "Random — play anything",
+                    Icons.Default.Casino, "Random: play anything",
                     tint = if (InstantRandom.active) accent2 else accent,
                     modifier = Modifier.size(24.dp)
                 )
@@ -696,6 +703,17 @@ fun NowPlayingScreen(
                                     }
                                 )
                             }
+                    )
+                }
+
+                // Secret: the leek spin. Top-right of the stage, over the art/visualiser only (the
+                // transport lives in the card below). It takes no input, so taps reach the stage
+                // gestures underneath. Gone entirely when the screen is not actively lit, which also
+                // stops its frame loop.
+                if (leekSpinOn && IdleController.screenActive) {
+                    LeekSpin(
+                        playing = isPlaying,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).size(44.dp)
                     )
                 }
             }
@@ -901,6 +919,17 @@ fun NowPlayingScreen(
             }
             Spacer(Modifier.weight(1f))
             Text(fmtTime(dur), color = Muted, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = OrbitronFont, letterSpacing = 0.5.sp)
+        }
+
+        // BPM game: a labeled pill right above the transport, never behind an overlay. Pulses on
+        // the beat while music plays; the game opens on top of this screen and comes back here.
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            com.miku.player.ui.BpmGameButton(
+                from = MikuBpmGameLink.FROM_NOW_PLAYING,
+                accent = accent,
+                label = "Play along"
+            )
         }
 
         Spacer(Modifier.height(4.dp))
@@ -1205,8 +1234,8 @@ fun MikuConnectModal(context: android.content.Context, onClose: () -> Unit) {
     var serverUp by remember { mutableStateOf(com.miku.player.api.MikuApiServer.isServerRunning()) }
     LaunchedEffect(Unit) { while (true) { serverUp = com.miku.player.api.MikuApiServer.isServerRunning(); delay(1500) } }
 
-    val remoteUrl = if (ip != null) "http://$ip:$port" else "No Wi-Fi address — connect to Wi-Fi first"
-    val tvUrl = if (ip != null) "http://$ip:$port/tv" else "No Wi-Fi address — connect to Wi-Fi first"
+    val remoteUrl = if (ip != null) "http://$ip:$port" else "No Wi-Fi address. Connect to Wi-Fi first."
+    val tvUrl = if (ip != null) "http://$ip:$port/tv" else "No Wi-Fi address. Connect to Wi-Fi first."
 
     Box(
         Modifier
@@ -1258,7 +1287,7 @@ fun MikuConnectModal(context: android.content.Context, onClose: () -> Unit) {
             }
 
             Text(
-                "Spotify-Connect style wireless control & TV playback.",
+                "Control playback from a phone or play on a TV.",
                 color = Muted,
                 fontSize = 11.5.sp,
                 modifier = Modifier.padding(vertical = 4.dp)
@@ -1299,11 +1328,11 @@ fun MikuConnectModal(context: android.content.Context, onClose: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Tv, null, tint = MikuPink, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("TV BIG SCREEN STAGE", color = MikuPink, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                    Text("TV", color = MikuPink, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(tvUrl, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text("Open on your Smart TV browser to see giant album art, live spectrum, and stream audio to TV sound system.", color = Muted, fontSize = 11.sp)
+                Text("Open this in your TV's browser to show album art and a live spectrum, and to play audio through the TV.", color = Muted, fontSize = 11.sp)
             }
 
             Spacer(Modifier.height(14.dp))
@@ -1334,6 +1363,7 @@ fun EmbossedScrubber(
     onSeekPreview: (Long) -> Unit, onSeekCommit: (Long) -> Unit
 ) {
     val d = dur.coerceAtLeast(1L)
+    val hapticCtx = androidx.compose.ui.platform.LocalContext.current   // seek detents
     val prog = (pos.toFloat() / d).coerceIn(0f, 1f)   // raw (works with device animations off)
     // Manual shimmer loop (ignores animator_duration_scale = 0).
     var shimmer by remember { mutableStateOf(0f) }
@@ -1360,10 +1390,10 @@ fun EmbossedScrubber(
                 var frac = 0f
                 detectHorizontalDragGesturesEdgeSafe(
                     guard,
-                    onDragStart = { o -> frac = (o.x / size.width).coerceIn(0f, 1f); onSeekPreview((frac * d).toLong()) },
+                    onDragStart = { o -> frac = (o.x / size.width).coerceIn(0f, 1f); com.miku.player.Haptics.seekDetent(hapticCtx, (frac * d).toLong(), d, start = true); onSeekPreview((frac * d).toLong()) },
                     onDragEnd = { onSeekCommit((frac * d).toLong()) },
                     onDragCancel = { onSeekCommit((frac * d).toLong()) }
-                ) { change, _ -> frac = (change.position.x / size.width).coerceIn(0f, 1f); onSeekPreview((frac * d).toLong()) }
+                ) { change, _ -> frac = (change.position.x / size.width).coerceIn(0f, 1f); com.miku.player.Haptics.seekDetent(hapticCtx, (frac * d).toLong(), d); onSeekPreview((frac * d).toLong()) }
             }
             .pointerInput(d) {
                 detectTapGestures { o -> onSeekCommit(((o.x / size.width).coerceIn(0f, 1f) * d).toLong()) }
@@ -1534,8 +1564,8 @@ fun TieredRainbowHeart(
             .combinedClickable(
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                 indication = null,
-                onLongClick = onLongPress?.let { { Haptics.tick(ctx); it() } },
-                onClick = { Haptics.tick(ctx); onToggle() }
+                onLongClick = onLongPress?.let { { Haptics.heavy(ctx); it() } },
+                onClick = { if (liked) Haptics.tick(ctx) else Haptics.heavy(ctx); onToggle() }   // like = firm, unlike = light
             ),
         contentAlignment = Alignment.Center
     ) {

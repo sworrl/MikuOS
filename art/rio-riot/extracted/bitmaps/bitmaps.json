@@ -1,0 +1,52 @@
+[
+ {
+  "name": "boot_logo_rio_riot",
+  "fw_offset": "0x5499c",
+  "width": 240,
+  "height": 55,
+  "layout": "column-major, 1 byte per pixel",
+  "unknown_pixels": 4,
+  "confidence": "high",
+  "note": "4 top-left pixels come from one unique cipher word at 0x5499c (image boundary); drawn as background"
+ },
+ {
+  "name": "usb_connected",
+  "fw_offset": "0x58c2a",
+  "width": 43,
+  "height": 20,
+  "layout": "column-major, 1 byte per pixel",
+  "unknown_pixels": 0,
+  "confidence": "high",
+  "note": "start phase chosen so the icon does not wrap; +/-1 row uncertainty"
+ },
+ {
+  "name": "battery_gauge_strip",
+  "fw_offset": "0x57d2c",
+  "width": 279,
+  "height": 9,
+  "layout": "column-major, 1 byte per pixel",
+  "unknown_pixels": 0,
+  "confidence": "medium",
+  "note": "several 9 px battery gauge images back to back (E [cell] F with LOW and fill levels); first one may be a CHARGING label; split points and some rows not verified"
+ },
+ {
+  "name": "preview_fm_tune_icon",
+  "fw_offset": "0x545cc",
+  "width": 44,
+  "height": 21,
+  "layout": "column-major, 1 byte per pixel",
+  "unknown_pixels": 0,
+  "confidence": "low",
+  "note": "reads as TUNE over a large FM; row phase/height not verified, some pixels scrambled"
+ },
+ {
+  "name": "preview_play_glyph",
+  "fw_offset": "0x534a8",
+  "width": 28,
+  "height": 23,
+  "layout": "column-major, 1 byte per pixel",
+  "unknown_pixels": 0,
+  "confidence": "low",
+  "note": "right-pointing triangle; Z level (transparent) around it; true height likely 24-26, so it wraps"
+ }
+]

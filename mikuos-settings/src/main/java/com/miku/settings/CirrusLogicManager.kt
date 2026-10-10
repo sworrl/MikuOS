@@ -1,47 +1,59 @@
 package com.miku.settings
 
 import android.content.Context
-import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Cable
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/**
+ * DAC controls for MikuOS Settings. Filter, gain, DRE and high power are the only
+ * sa_sound_setting nodes that change hardware on the M500, and they go through [DacBridge].
+ * Output mode, balance and DSD compensation are not real knobs on this firmware
+ * (mikuos/docs/hiby-audio-knobs.md, sections 3.2 and 5). Their writes are left as they were.
+ */
 object CirrusLogicManager {
     private const val TAG = "MikuOS_CS43198"
     private const val SYSFS_BASE = "/sys/devices/platform/sa_sound_setting"
 
     enum class DigitalFilter(val id: String, val label: String, val description: String) {
-        FAST_LINEAR("fast_rolloff_phase_compensated", "Fast Roll-off, Phase Compensated", "Reference linear phase, wide soundstage and precise imaging"),
-        FAST_MINIMUM("fast_rolloff_low_latency", "Fast Roll-off, Low Latency", "Minimum phase with ultra-low group delay and punchy dynamics"),
-        SLOW_LINEAR("slow_rolloff_phase_compensated", "Slow Roll-off, Phase Compensated", "Smooth linear decay with zero phase distortion"),
-        SLOW_MINIMUM("slow_rolloff_low_latency", "Slow Roll-off, Low Latency", "Warm acoustic roll-off with minimal pre-ringing"),
-        NOS("nos", "Non-Oversampling (NOS)", "Bypasses internal digital oversampling for raw, analog-like fidelity")
+        FAST_LINEAR("fast_rolloff_phase_compensated", "Fast Roll-off, Phase Compensated", "Linear phase. The standard reference filter"),
+        FAST_MINIMUM("fast_rolloff_low_latency", "Fast Roll-off, Low Latency", "Minimum phase with low group delay"),
+        SLOW_LINEAR("slow_rolloff_phase_compensated", "Slow Roll-off, Phase Compensated", "Linear phase with a gentler roll-off"),
+        SLOW_MINIMUM("slow_rolloff_low_latency", "Slow Roll-off, Low Latency", "Minimum phase, gentle roll-off, little pre-ringing"),
+        NOS("nos", "Non-Oversampling (NOS)", "Skips the DAC's digital oversampling filter")
     }
 
     enum class GainMode(val id: String, val label: String, val sysfsValue: String, val description: String) {
-        LOW("low", "Low Gain (0 dB)", "low", "Optimized for high-sensitivity IEMs and low-impedance earphones"),
-        HIGH("high", "High Gain (+6 dB)", "high", "High-voltage rail swing for demanding planar magnetic and high-impedance headphones")
+        LOW("low", "Low (-12 dB)", "low", "Digital offset of -12 dB on the 3.5 and 4.4 mm outputs. More volume steps for sensitive IEMs."),
+        HIGH("high", "High (0 dB)", "high", "No digital offset. For louder output use High power.")
     }
 
-    enum class OutputMode(val id: String, val label: String, val sysfsValue: String, val icon: String, val description: String) {
-        AUTO("auto", "Auto-Detect Physical / BT", "auto", "⚡", "Intelligently routes audio to whatever physical port or Bluetooth gear is connected"),
-        BAL_HEADPHONE_OUT("bal_po", "4.4mm Balanced (BAL PO)", "bal_po", "🎧", "Force dual differential 4.4mm balanced output stage"),
-        HEADPHONE_OUT("po", "3.5mm Single-Ended (PO)", "po", "🎧", "Force dedicated 3.5mm unbalanced headphone amplifier stage"),
-        BLUETOOTH("bt", "Bluetooth Audio (A2DP / Speaker)", "bt", "🔊", "Force wireless stream to connected Bluetooth speaker or headphones"),
-        LINE_OUT("lo", "Line Out (LO / BAL LO)", "lo", "📻", "Fixed reference voltage line output for external desktop amplifiers"),
-        USB_DAC("usb", "USB-C Audio / UAC2 DAC", "usb", "💻", "Route audio stream to external Type-C audio hardware")
+    enum class OutputMode(val id: String, val label: String, val sysfsValue: String, val icon: ImageVector, val description: String) {
+        AUTO("auto", "Auto (wired or Bluetooth)", "auto", Icons.Default.Autorenew, "Plays to whichever wired port or Bluetooth device is connected"),
+        BAL_HEADPHONE_OUT("bal_po", "4.4mm Balanced (BAL PO)", "bal_po", Icons.Default.Headphones, "Always use the 4.4mm balanced output"),
+        HEADPHONE_OUT("po", "3.5mm Single-Ended (PO)", "po", Icons.Default.Headphones, "Always use the 3.5mm headphone output"),
+        BLUETOOTH("bt", "Bluetooth Audio (A2DP / Speaker)", "bt", Icons.Default.Bluetooth, "Always send audio to the connected Bluetooth device"),
+        LINE_OUT("lo", "Line Out (LO / BAL LO)", "lo", Icons.Default.Cable, "Fixed-level line output for an external amp"),
+        USB_DAC("usb", "USB-C Audio / UAC2 DAC", "usb", Icons.Default.Usb, "Send audio to an external USB-C DAC")
     }
 
     enum class AudioShareTarget(val id: String, val label: String, val description: String) {
-        DUAL_44_AND_BT("dual_44_bt", "4.4mm Balanced DAC + Bluetooth Speaker", "Simultaneously powers 4.4mm balanced IEMs while streaming to Bluetooth speaker/gear"),
-        DUAL_35_AND_BT("dual_35_bt", "3.5mm Single-Ended DAC + Bluetooth Speaker", "Simultaneously powers 3.5mm IEMs while streaming to Bluetooth speaker/gear"),
-        DUAL_PHYSICAL("dual_phy", "Both Physical Ports (3.5mm + 4.4mm Balanced)", "Simultaneously powers both 3.5mm and 4.4mm ports for dual wired IEMs"),
-        WIRED_AND_USB("wired_usb", "Wired DAC + USB-C External DAC", "Mirrors real-time audio across internal CS43198 DAC and external Type-C DAC")
+        DUAL_44_AND_BT("dual_44_bt", "4.4mm Balanced + Bluetooth", "Plays to 4.4mm balanced and Bluetooth at the same time"),
+        DUAL_35_AND_BT("dual_35_bt", "3.5mm Single-Ended + Bluetooth", "Plays to 3.5mm and Bluetooth at the same time"),
+        DUAL_PHYSICAL("dual_phy", "Both Wired Ports (3.5mm + 4.4mm)", "Plays to the 3.5mm and 4.4mm ports at the same time"),
+        WIRED_AND_USB("wired_usb", "Wired + USB-C DAC", "Plays to the internal CS43198 and an external USB-C DAC at the same time")
     }
 
     /**
@@ -202,105 +214,110 @@ object CirrusLogicManager {
         }
     }
 
-    /** Kernel sysfs first, then the HiBy Settings.Global keys. Null = no real source says (never guessed). */
-    fun getDigitalFilter(ctx: Context): DigitalFilter? {
-        val kernelVal = readSysfs(ctx, "digital_filter")
-        if (!kernelVal.isNullOrBlank()) {
-            DigitalFilter.values().firstOrNull { it.id == kernelVal.lowercase() }?.let { return it }
-        }
+    // ---- The four knobs that move hardware: filter, gain, DRE, high power ----
+    // Writes go through com.miku.sysbridge (DacBridge). Reads come from
+    // persist.vendor.audio.miku.*, the same values Miku Music, the Hardware app and the SystemUI tiles show. The
+    // Settings.Global rows are still written so older readers agree, and are the fallback when
+    // the bridge has never set a knob.
+
+    // Explicit user choices. Miku Music's ensureBestAudio re-applies these on every player start
+    // and pushes its defaults for any knob without a row. Same keys as com.miku.player.MikuDirectAudio.
+    private const val KEY_USER_GAIN = "miku_audio_user_gain"
+    private const val KEY_USER_DRE = "miku_audio_user_dre"
+    private const val KEY_USER_HIGH_POWER = "miku_audio_user_high_power"
+
+    private fun globalString(ctx: Context, vararg keys: String): String? {
         val cr = ctx.contentResolver
-        val raw = try {
-            Settings.Global.getString(cr, "vendor.audio.hiby.hw.digital_filter")
-                ?: Settings.Global.getString(cr, "vendor.audio.hiby.digital_filter")
-                ?: Settings.Global.getString(cr, "hw.digital_filter")
-        } catch (_: Throwable) { null } ?: ""
-        return DigitalFilter.values().firstOrNull { it.id == raw.trim().lowercase() }
+        for (k in keys) {
+            runCatching { Settings.Global.getString(cr, k) }.getOrNull()?.trim()?.ifEmpty { null }?.let { return it }
+        }
+        return null
     }
 
-    suspend fun setDigitalFilter(ctx: Context, filter: DigitalFilter) = withContext(Dispatchers.IO) {
+    /** Persist property first, then the Settings.Global rows. Null = nothing says. */
+    fun getDigitalFilter(ctx: Context): DigitalFilter? {
+        val raw = DacBridge.get(DacBridge.FILTER)
+            ?: globalString(ctx, "vendor.audio.hiby.hw.digital_filter", "vendor.audio.hiby.digital_filter", "hw.digital_filter")
+            ?: return null
+        return DigitalFilter.values().firstOrNull { it.id == raw.lowercase() }
+    }
+
+    suspend fun setDigitalFilter(ctx: Context, filter: DigitalFilter): DacBridge.Result = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.hw.digital_filter", filter.id) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.digital_filter", filter.id) }
         runCatching { Settings.Global.putString(cr, "hw.digital_filter", filter.id) }
-
-        RootShell.execFast(
-            "echo ${filter.id} > $SYSFS_BASE/digital_filter 2>/dev/null; " +
-            "settings put global vendor.audio.hiby.hw.digital_filter ${filter.id}; " +
-            "settings put global vendor.audio.hiby.digital_filter ${filter.id}; " +
-            "settings put global hw.digital_filter ${filter.id}; " +
-            "setprop vendor.audio.hiby.hw.digital_filter ${filter.id}; " +
-            "setprop vendor.audio.hiby.digital_filter ${filter.id}"
-        )
-        ctx.sendBroadcast(Intent("com.m500.hardware.action.FILTER_CHANGED").apply {
-            putExtra("filter", filter.id)
-        })
+        DacBridge.set(ctx, DacBridge.FILTER, filter.id)
     }
 
-    /** Kernel sysfs first, then the HiBy Settings.Global keys. Null = no real source says (never guessed). */
+    /** Persist property first, then the Settings.Global rows. Null = nothing says, or "middle". */
     fun getGainMode(ctx: Context): GainMode? {
-        val kernelVal = readSysfs(ctx, "gain")
-        if (!kernelVal.isNullOrBlank()) {
-            GainMode.values().firstOrNull { it.sysfsValue == kernelVal.lowercase() }?.let { return it }
-        }
-        val cr = ctx.contentResolver
-        val raw = try {
-            Settings.Global.getString(cr, "vendor.audio.hiby.hw.gain")
-                ?: Settings.Global.getString(cr, "vendor.audio.hiby.gain")
-        } catch (_: Throwable) { null } ?: ""
-        return GainMode.values().firstOrNull { it.sysfsValue == raw.trim().lowercase() }
+        val raw = DacBridge.get(DacBridge.GAIN)
+            ?: globalString(ctx, "vendor.audio.hiby.hw.gain", "vendor.audio.hiby.gain")
+            ?: return null
+        return GainMode.values().firstOrNull { it.sysfsValue == raw.lowercase() }
     }
 
-    suspend fun setGainMode(ctx: Context, mode: GainMode) = withContext(Dispatchers.IO) {
+    /** Gain only. High power is its own switch, as in Miku Music. */
+    suspend fun setGainMode(ctx: Context, mode: GainMode): DacBridge.Result = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
-        val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
-        prefs.edit().putString("gain", mode.sysfsValue).apply()
+        runCatching { Settings.Global.putString(cr, KEY_USER_GAIN, mode.sysfsValue) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.hw.gain", mode.sysfsValue) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.gain", mode.sysfsValue) }
-
-        RootShell.execFast(
-            "echo ${mode.sysfsValue} > $SYSFS_BASE/gain 2>/dev/null; " +
-            "settings put global vendor.audio.hiby.hw.gain ${mode.sysfsValue}; " +
-            "settings put global vendor.audio.hiby.gain ${mode.sysfsValue}; " +
-            "setprop vendor.audio.hiby.hw.gain ${mode.sysfsValue}; " +
-            "setprop vendor.audio.hiby.gain ${mode.sysfsValue}"
-        )
-        ctx.sendBroadcast(Intent("com.m500.hardware.action.GAIN_CHANGED").apply {
-            putExtra("gain", mode.sysfsValue)
-        })
+        DacBridge.set(ctx, DacBridge.GAIN, mode.sysfsValue)
     }
 
+    /** Persist property first, then the Settings.Global rows. False when nothing says. */
     fun isDreEnabled(ctx: Context): Boolean {
-        val kernelVal = readSysfs(ctx, "dre_mode")
-        if (kernelVal != null) return kernelVal == "dremode_enable" || kernelVal == "1" || kernelVal.equals("on", true)
-        val cr = ctx.contentResolver
-        return try { Settings.Global.getInt(cr, "vendor.audio.hiby.hw.dre", 0) == 1 } catch (_: Throwable) { false }
+        DacBridge.get(DacBridge.DRE)?.let { return it == "dremode_enable" }
+        return globalString(ctx, "vendor.audio.hiby.dre_mode") == "dremode_enable"
     }
 
-    suspend fun setDreEnabled(ctx: Context, enabled: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun setDreEnabled(ctx: Context, enabled: Boolean): DacBridge.Result = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
-        val v = if (enabled) 1 else 0
-        val sysfsStr = if (enabled) "dremode_enable" else "dremode_disable"
-        val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
-        prefs.edit().putString("dre_mode", sysfsStr).apply()
-        runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.dre", v) }
-        RootShell.execFast("echo $sysfsStr > $SYSFS_BASE/dre_mode 2>/dev/null; settings put global vendor.audio.hiby.hw.dre $v; setprop vendor.audio.hiby.hw.dre $v")
+        val cmd = if (enabled) "dremode_enable" else "dremode_disable"
+        runCatching { Settings.Global.putInt(cr, KEY_USER_DRE, if (enabled) 1 else 0) }
+        runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.dre_mode", cmd) }
+        runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.dre", if (enabled) 1 else 0) }
+        DacBridge.set(ctx, DacBridge.DRE, cmd)
     }
 
+    /** Persist property first, then the Settings.Global rows. False when nothing says. */
     fun isHighPowerEnabled(ctx: Context): Boolean {
-        val kernelVal = readSysfs(ctx, "high_power_mode")
-        if (kernelVal != null) return kernelVal == "hpower_enable" || kernelVal == "1" || kernelVal.equals("on", true)
-        val cr = ctx.contentResolver
-        return try { Settings.Global.getInt(cr, "vendor.audio.hiby.hw.high_power", 0) == 1 } catch (_: Throwable) { false }
+        DacBridge.get(DacBridge.HIGH_POWER)?.let { return it == "hpower_enable" }
+        return globalString(ctx, "vendor.audio.hiby.high_power", "vendor.audio.hiby.high_power_mode") == "hpower_enable"
     }
 
-    suspend fun setHighPowerEnabled(ctx: Context, enabled: Boolean) = withContext(Dispatchers.IO) {
+    /**
+     * High power switches in the external amp stage, so the same volume step gets louder. When it
+     * goes from off to on, music volume is lowered to 30% first if it is above that.
+     */
+    suspend fun setHighPowerEnabled(ctx: Context, enabled: Boolean): DacBridge.Result = withContext(Dispatchers.IO) {
         val cr = ctx.contentResolver
-        val v = if (enabled) 1 else 0
-        val sysfsStr = if (enabled) "hpower_enable" else "hpower_disable"
-        val prefs = ctx.getSharedPreferences("miku_dac_settings", Context.MODE_PRIVATE)
-        prefs.edit().putString("high_power_mode", sysfsStr).apply()
-        runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.high_power", v) }
-        RootShell.execFast("echo $sysfsStr > $SYSFS_BASE/high_power_mode 2>/dev/null; settings put global vendor.audio.hiby.hw.high_power $v; setprop vendor.audio.hiby.hw.high_power $v")
+        val cmd = if (enabled) "hpower_enable" else "hpower_disable"
+        runCatching { Settings.Global.putInt(cr, KEY_USER_HIGH_POWER, if (enabled) 1 else 0) }
+        runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.high_power", cmd) }
+        runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.high_power_mode", cmd) }
+        runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.high_power", if (enabled) 1 else 0) }
+        if (enabled && DacBridge.get(DacBridge.HIGH_POWER) != "hpower_enable" && DacBridge.available(ctx)) {
+            runCatching {
+                val am = ctx.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val safe = (am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * 0.3f).toInt().coerceAtLeast(1)
+                if (am.getStreamVolume(AudioManager.STREAM_MUSIC) > safe) {
+                    am.setStreamVolume(AudioManager.STREAM_MUSIC, safe, 0)
+                }
+            }
+        }
+        DacBridge.set(ctx, DacBridge.HIGH_POWER, cmd)
+    }
+
+    /** One line of what the DAC was last told, from the persist properties. */
+    fun appliedSummary(): String {
+        val filter = DacBridge.get(DacBridge.FILTER)?.let { v -> DigitalFilter.values().firstOrNull { it.id == v }?.label ?: v } ?: "not set"
+        val gain = DacBridge.get(DacBridge.GAIN) ?: "not set"
+        val dre = when (DacBridge.get(DacBridge.DRE)) { "dremode_enable" -> "on"; "dremode_disable" -> "off"; null -> "not set"; else -> "unknown" }
+        val hp = when (DacBridge.get(DacBridge.HIGH_POWER)) { "hpower_enable" -> "on"; "hpower_disable" -> "off"; null -> "not set"; else -> "unknown" }
+        return "Filter: $filter. Gain: $gain. DRE: $dre. High power: $hp."
     }
 
     fun getBalance(ctx: Context): Int {
@@ -334,9 +351,11 @@ object CirrusLogicManager {
 
     fun getLiveHardwareAudit(ctx: Context): Map<String, String> {
         val audit = mutableMapOf<String, String>()
-        audit["kernel_sysfs_filter"] = readSysfs(ctx, "digital_filter") ?: "N/A"
-        audit["kernel_sysfs_gain"] = readSysfs(ctx, "gain") ?: "N/A"
-        audit["kernel_sysfs_dre"] = readSysfs(ctx, "dre_mode") ?: "N/A"
+        // Apps cannot read these nodes. The persist property is what the DAC was last told.
+        audit["applied_filter"] = DacBridge.get(DacBridge.FILTER) ?: "N/A"
+        audit["applied_gain"] = DacBridge.get(DacBridge.GAIN) ?: "N/A"
+        audit["applied_dre"] = DacBridge.get(DacBridge.DRE) ?: "N/A"
+        audit["applied_high_power"] = DacBridge.get(DacBridge.HIGH_POWER) ?: "N/A"
         audit["kernel_sysfs_turbo"] = readSysfs(ctx, "turbo") ?: "N/A"
         audit["kernel_sysfs_out_mode"] = readSysfs(ctx, "bal_po_lo_switch") ?: "N/A"
         audit["kernel_sysfs_balance"] = readSysfs(ctx, "lrbalance") ?: "N/A"

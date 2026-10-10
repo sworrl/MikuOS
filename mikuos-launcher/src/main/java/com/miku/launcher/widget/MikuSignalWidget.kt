@@ -93,7 +93,7 @@ class MikuSignalWidget : AppWidgetProvider() {
                     v.setTextColor(R.id.widget_signal_cell, DIM)
                 }
                 cellNoData -> {
-                    v.setTextViewText(R.id.widget_signal_cell, "!NO DATA ${bars(cellLevel, 4)}")
+                    v.setTextViewText(R.id.widget_signal_cell, "NO DATA ${bars(cellLevel, 4)}")
                     v.setTextColor(R.id.widget_signal_cell, RED)
                 }
                 else -> {

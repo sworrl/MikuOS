@@ -301,7 +301,7 @@ object MikuWeatherService {
         )
 
         // Asynchronously reverse geocode if location drifted > 2km or not yet resolved
-        if (currentGps.city.isEmpty() || currentGps.city == "Detecting Location..." ||
+        if (currentGps.city.isEmpty() || currentGps.city == "Finding location…" ||
             Math.abs(currentGps.latitude - loc.latitude) > 0.02 ||
             Math.abs(currentGps.longitude - loc.longitude) > 0.02) {
             reverseGeocode(ctx, loc.latitude, loc.longitude)
@@ -1101,10 +1101,10 @@ object MikuWeatherService {
 
     private fun checkSevereAlerts(code: Int, windSpeed: Float, precipIn: Float): String? {
         return when {
-            code in listOf(95, 96, 99) -> "⚠️ SEVERE THUNDERSTORM & LIGHTNING DETECTED"
-            windSpeed >= 40f -> "⚠️ HIGH WIND WARNING (>40 MPH GUSTS)"
-            precipIn >= 0.75f -> "⚠️ FLASH FLOOD RISK - EXCESSIVE RAINFALL"
-            code in listOf(85, 86) -> "⚠️ HEAVY WINTER BLIZZARD WARNING"
+            code in listOf(95, 96, 99) -> "SEVERE THUNDERSTORM"
+            windSpeed >= 40f -> "HIGH WIND (40+ MPH)"
+            precipIn >= 0.75f -> "FLASH FLOOD RISK (HEAVY RAIN)"
+            code in listOf(85, 86) -> "HEAVY SNOW SHOWERS"
             else -> null
         }
     }

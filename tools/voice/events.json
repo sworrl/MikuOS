@@ -1,0 +1,312 @@
+{
+  "version": 1,
+  "notes": "Status announcements. Key = event id = file stem. phrases[0] is the default, the rest are alternates a player can rotate through. Phrases are plain US English: a friendly person stating what happened, short, no emojis. 'source' is a hint for whoever wires the event up, not a contract. Numbers are spelled out so the synthesizer never has to guess.",
+  "events": {
+    "iem_connected_35mm": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "AudioDeviceCallback added TYPE_WIRED_HEADSET/TYPE_WIRED_HEADPHONES on the 3.5 mm jack",
+      "phrases": [
+        "IEMs connected.",
+        "IEMs plugged in."
+      ]
+    },
+    "iem_connected_44mm": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "AudioDeviceCallback added wired device on the 4.4 mm balanced jack (HiBy jack-detect)",
+      "phrases": [
+        "Balanced IEMs connected.",
+        "Balanced output connected."
+      ]
+    },
+    "iem_removed_35mm": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "AudioDeviceCallback removed 3.5 mm wired device / ACTION_AUDIO_BECOMING_NOISY",
+      "phrases": [
+        "IEMs unplugged.",
+        "Your IEMs are unplugged."
+      ]
+    },
+    "iem_removed_44mm": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "AudioDeviceCallback removed 4.4 mm balanced device / ACTION_AUDIO_BECOMING_NOISY",
+      "phrases": [
+        "Balanced IEMs unplugged.",
+        "Balanced output removed."
+      ]
+    },
+    "bt_headphones_connected": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED -> STATE_CONNECTED",
+      "phrases": [
+        "Bluetooth headphones connected.",
+        "Bluetooth connected."
+      ]
+    },
+    "bt_headphones_disconnected": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED -> STATE_DISCONNECTED",
+      "phrases": [
+        "Bluetooth headphones disconnected.",
+        "Bluetooth disconnected."
+      ]
+    },
+    "usb_headphones_connected": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "AudioDeviceCallback added TYPE_USB_HEADSET/TYPE_USB_DEVICE",
+      "phrases": [
+        "USB headphones connected.",
+        "USB audio connected."
+      ]
+    },
+    "usb_headphones_disconnected": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "AudioDeviceCallback removed TYPE_USB_HEADSET/TYPE_USB_DEVICE",
+      "phrases": [
+        "USB headphones disconnected.",
+        "USB audio disconnected."
+      ]
+    },
+    "usb_dac_mode_on": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "com.miku.sysbridge after the USB gadget switches to UAC (DAC mode)",
+      "phrases": [
+        "USB DAC mode on.",
+        "USB DAC mode is on."
+      ]
+    },
+    "usb_dac_mode_off": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "com.miku.sysbridge after the USB gadget leaves UAC",
+      "phrases": [
+        "USB DAC mode off.",
+        "USB DAC mode is off."
+      ]
+    },
+    "profile_applied": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "Miku Player / Settings after a listening profile (EQ, filter, gain set) is applied",
+      "phrases": [
+        "Listening profile applied.",
+        "Profile applied."
+      ]
+    },
+    "volume_limit_reached": {
+      "category": "audio_output",
+      "priority": "warn",
+      "source": "Volume key at the user's configured safe-volume ceiling",
+      "phrases": [
+        "Volume limit reached.",
+        "That's the volume limit."
+      ]
+    },
+    "high_gain_enabled": {
+      "category": "audio_output",
+      "priority": "warn",
+      "source": "Hardware settings: amp gain switched to high",
+      "phrases": [
+        "Gain set to high. Check your volume.",
+        "High gain is on. Careful with the volume."
+      ]
+    },
+    "high_gain_disabled": {
+      "category": "audio_output",
+      "priority": "info",
+      "source": "Hardware settings: amp gain switched back to low/normal",
+      "phrases": [
+        "Gain set to low.",
+        "High gain is off."
+      ]
+    },
+    "charging_started": {
+      "category": "power",
+      "priority": "info",
+      "source": "Intent.ACTION_POWER_CONNECTED",
+      "phrases": [
+        "Charging now.",
+        "Charging started."
+      ]
+    },
+    "charging_full": {
+      "category": "power",
+      "priority": "info",
+      "source": "ACTION_BATTERY_CHANGED with BATTERY_STATUS_FULL",
+      "phrases": [
+        "Fully charged!",
+        "Battery's full."
+      ]
+    },
+    "battery_low_20": {
+      "category": "power",
+      "priority": "info",
+      "source": "ACTION_BATTERY_CHANGED crossing 20 percent while discharging",
+      "phrases": [
+        "Battery at twenty percent.",
+        "Twenty percent battery left."
+      ]
+    },
+    "battery_low_10": {
+      "category": "power",
+      "priority": "warn",
+      "source": "ACTION_BATTERY_CHANGED crossing 10 percent while discharging",
+      "phrases": [
+        "Battery low. Ten percent left.",
+        "Ten percent battery left."
+      ]
+    },
+    "battery_low_5": {
+      "category": "power",
+      "priority": "critical",
+      "source": "ACTION_BATTERY_CHANGED crossing 5 percent while discharging",
+      "phrases": [
+        "Five percent battery. Please charge soon.",
+        "Five percent left. Time to charge."
+      ]
+    },
+    "fm_radio_on": {
+      "category": "radio",
+      "priority": "info",
+      "source": "FM radio app: tuner powered on",
+      "phrases": [
+        "FM radio on.",
+        "Radio's on."
+      ]
+    },
+    "fm_station_found": {
+      "category": "radio",
+      "priority": "info",
+      "source": "FM radio app: seek/scan locked a station",
+      "phrases": [
+        "Station found.",
+        "Found a station."
+      ]
+    },
+    "song_identified": {
+      "category": "radio",
+      "priority": "info",
+      "source": "FM RDS RadioText / song recognition produced a title",
+      "phrases": [
+        "Song identified.",
+        "Got the song name."
+      ]
+    },
+    "recording_started": {
+      "category": "recording",
+      "priority": "info",
+      "source": "Recorder (FM or line-in) started",
+      "phrases": [
+        "Recording started.",
+        "Now recording."
+      ]
+    },
+    "recording_stopped": {
+      "category": "recording",
+      "priority": "info",
+      "source": "Recorder stopped and file saved",
+      "phrases": [
+        "Recording saved.",
+        "Recording stopped and saved."
+      ]
+    },
+    "screen_locked_fn": {
+      "category": "system",
+      "priority": "info",
+      "source": "FN / hold switch moved to lock",
+      "phrases": [
+        "Screen locked.",
+        "Controls locked."
+      ]
+    },
+    "screen_unlocked_fn": {
+      "category": "system",
+      "priority": "info",
+      "source": "FN / hold switch moved to unlock",
+      "phrases": [
+        "Screen unlocked.",
+        "Controls unlocked."
+      ]
+    },
+    "wifi_connected": {
+      "category": "network",
+      "priority": "info",
+      "source": "ConnectivityManager.NetworkCallback onAvailable (TRANSPORT_WIFI)",
+      "phrases": [
+        "Wi-Fi connected.",
+        "Wi-Fi is connected."
+      ]
+    },
+    "wifi_disconnected": {
+      "category": "network",
+      "priority": "info",
+      "source": "ConnectivityManager.NetworkCallback onLost (TRANSPORT_WIFI)",
+      "phrases": [
+        "Wi-Fi disconnected.",
+        "Lost the Wi-Fi connection."
+      ]
+    },
+    "update_installed": {
+      "category": "system",
+      "priority": "info",
+      "source": "First boot after an OTA / web-installer update",
+      "phrases": [
+        "Update installed.",
+        "All updated."
+      ]
+    },
+    "boot_complete": {
+      "category": "system",
+      "priority": "info",
+      "source": "Intent.ACTION_BOOT_COMPLETED (optional, off by default)",
+      "phrases": [
+        "MikuOS is ready.",
+        "Ready to go."
+      ]
+    },
+    "alarm": {
+      "category": "clock",
+      "priority": "warn",
+      "source": "AlarmClock alarm firing (voice line before or between the alarm tone)",
+      "phrases": [
+        "Alarm. It's time.",
+        "Hey, it's time. This is your alarm."
+      ]
+    },
+    "timer_done": {
+      "category": "clock",
+      "priority": "info",
+      "source": "Countdown timer reached zero",
+      "phrases": [
+        "Timer's done.",
+        "Your timer is done."
+      ]
+    },
+    "android_auto_connected": {
+      "category": "car",
+      "priority": "info",
+      "source": "UiModeManager car mode entered / Android Auto projection started",
+      "phrases": [
+        "Android Auto connected.",
+        "Android Auto connected. Drive safe."
+      ]
+    },
+    "android_auto_disconnected": {
+      "category": "car",
+      "priority": "info",
+      "source": "Car mode exited / projection stopped",
+      "phrases": [
+        "Android Auto disconnected.",
+        "Android Auto ended."
+      ]
+    }
+  }
+}

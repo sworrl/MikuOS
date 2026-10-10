@@ -32,8 +32,14 @@ REKEY_NOOP="${REKEY_NOOP:-0}"
 # device, byte-identical to the build output, and `dumpsys package com.caf.fmradio` still
 # listed the OLD five permissions and never granted it, through two reboots. The permission
 # the vendor jar needs was simply not there as far as PMS was concerned.
-MIKUOS_VERSION="${MIKUOS_VERSION:-0.1.15}"
+MIKUOS_VERSION="${MIKUOS_VERSION:-0.3.0}"
 DEVICE_IDENTITY="m500_mikuOS-v${MIKUOS_VERSION}"
+# MIKUOS_RELEASE=1 builds the image users get: adb needs on-device approval and is not forced on,
+# no adb over Wi-Fi, no pre-authorized host key, no root seed, no dev Wi-Fi, ro.debuggable=0, and
+# ro.miku.release=1 so the apps (sysbridge) apply their release defaults. 0 (default) is the dev
+# build, unchanged. See mikuos/docs/security-plan.md.
+MIKUOS_RELEASE="${MIKUOS_RELEASE:-0}"
+[ "$MIKUOS_RELEASE" = "1" ] && echo "  (MIKUOS_RELEASE=1: release hardening on)"
 RESIGN_SH="$SCRIPT_DIR/resign_system.sh"
 APKSIGNER="${APKSIGNER:-$(ls ~/Android/Sdk/build-tools/*/apksigner 2>/dev/null | tail -1)}"
 
@@ -42,6 +48,18 @@ APKSIGNER="${APKSIGNER:-$(ls ~/Android/Sdk/build-tools/*/apksigner 2>/dev/null |
 # init won't process an unlabeled .rc — so every injected file must be given its
 # SELinux context. label <img> <path-in-img> <context>
 label() { debugfs -w -R "ea_set $2 security.selinux $3\\000" "$1" >/dev/null 2>&1; }
+# debugfs exits 0 even when a path is missing, so presence is read from its output.
+img_has() { ! debugfs -R "stat $2" "$1" 2>&1 | grep -q "not found"; }
+# rm_tree removes a directory recursively with debugfs, which has no rm -r.
+rm_tree() {
+    local img="$1" dir="$2" line name mode
+    debugfs -R "ls -p $dir" "$img" 2>/dev/null | while IFS=/ read -r _ _ mode _ _ name _; do
+        [ -z "$name" ] || [ "$name" = "." ] || [ "$name" = ".." ] && continue
+        if [ "${mode:0:2}" = "04" ]; then rm_tree "$img" "$dir/$name"
+        else debugfs -w -R "rm $dir/$name" "$img" >/dev/null 2>&1 || true; fi
+    done
+    debugfs -w -R "rmdir $dir" "$img" >/dev/null 2>&1 || true
+}
 
 # CRITICAL: debugfs 'write' REFUSES to overwrite an existing file ("Ext2 file
 # already exists") and the callers pipe that error to /dev/null, so replacing a
@@ -70,7 +88,14 @@ cd "$REPO_DIR/miku-player-kotlin"
 if [ "${SKIP_GRADLE:-0}" = "1" ]; then
     echo "  (SKIP_GRADLE=1: using existing build/outputs APKs)"
 else
-    ./gradlew :mikuos-launcher:assembleRelease :app:assembleRelease :mikuos-settings:assembleRelease :mikuos-systemui:assembleRelease :fmradio:assembleRelease :hardware-settings:assembleRelease
+    ./gradlew :mikuos-launcher:assembleRelease :app:assembleRelease :mikuos-settings:assembleRelease :mikuos-systemui:assembleRelease :fmradio:assembleRelease :hardware-settings:assembleRelease :miku-sysbridge:assembleRelease
+    # The MikuOS replacements for stock apps. Built separately and allowed to fail: each one's
+    # stock counterpart is only removed further down when its replacement made it into the image.
+    ./gradlew :mikuos-tools:assembleRelease || echo "  !! mikuos-tools did not build; stock Clock/Calculator/Calendar stay"
+    ./gradlew :mikuos-media:assembleRelease || echo "  !! mikuos-media did not build; stock Camera/Gallery/Recorder stay"
+    ./gradlew :mikuos-update:assembleRelease || echo "  !! mikuos-update did not build; no OTA app updates in this image"
+    ./gradlew :mikuos-riot:assembleRelease || echo "  !! mikuos-riot did not build; no Riot mode in this image"
+    ./gradlew :mikuos-wheel:assembleRelease || echo "  !! mikuos-wheel did not build; no MikuPod in this image"
 fi
 
 # Resolve versioned APK names (e.g. MikuOS_Launcher-v0.1.0.apk); newest wins.
@@ -83,9 +108,28 @@ SYSTEMUI_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/mikuos-systemui/build/o
 # SELinux vendor_fm_app domain (only path to /dev/radio0). Replaces stock FM2.
 FMRADIO_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/fmradio/build/outputs/apk/release/FMRadio-com.caf.fmradio-v*.apk")"
 HARDWARE_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/hardware-settings/build/outputs/apk/release/M500HardwareSettings.apk")"
+SYSBRIDGE_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/miku-sysbridge/build/outputs/apk/release/MikuSysBridge.apk")"
+TOOLS_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/mikuos-tools/build/outputs/apk/release/MikuTools*.apk")"
+MEDIA_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/mikuos-media/build/outputs/apk/release/MikuMedia*.apk")"
+UPDATE_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/mikuos-update/build/outputs/apk/release/MikuUpdate.apk")"
+RIOT_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/mikuos-riot/build/outputs/apk/release/MikuRiot.apk")"
+WHEEL_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/mikuos-wheel/build/outputs/apk/release/MikuWheel.apk")"
 if [ -z "$SYSTEMUI_APK" ]; then
     SYSTEMUI_APK="$(latest_apk "$REPO_DIR/miku-player-kotlin/mikuos-systemui/build/outputs/apk/release/*.apk")"
 fi
+# Interim builds: <NAME>_APK_OVERRIDE=<path> uses that APK instead of the build output (e.g. the
+# copy pulled off the device, to ship one module fresh while the others are mid-edit), and
+# MIKU_NO_REPLACEMENTS=1 leaves MikuTools/MikuMedia out, which also keeps the stock apps they
+# replace.
+for _v in SETTINGS_APK LAUNCHER_APK MUSIC_APK SYSTEMUI_APK FMRADIO_APK HARDWARE_APK SYSBRIDGE_APK UPDATE_APK RIOT_APK WHEEL_APK; do
+    _o="${_v}_OVERRIDE"
+    if [ -n "${!_o:-}" ]; then
+        [ -f "${!_o}" ] || { echo "!! $_o=${!_o} does not exist"; exit 1; }
+        printf -v "$_v" '%s' "${!_o}"
+        echo "  (override: $_v = ${!_o})"
+    fi
+done
+if [ "${MIKU_NO_REPLACEMENTS:-0}" = "1" ]; then TOOLS_APK=""; MEDIA_APK=""; fi
 PERMISSIONS_XML="$MIKUOS_DIR/build/permissions/privapp-permissions-mikuos.xml"
 DEFAULT_PERMS_XML="$MIKUOS_DIR/build/permissions/default-permissions-mikuos.xml"
 
@@ -141,6 +185,28 @@ for _img in system system_ext product vendor; do
     e2fsck -fy -E unshare_blocks "$OUTPUT_DIR/$_img.img" || { echo "  !! unshare_blocks failed: $_img"; exit 1; }
 done
 
+# Notification sounds: HiBy's 1.20 services.jar stubs NotificationManagerService.playSound() to
+# return false, so no notification ever makes a sound. patch_services_notif_sound.py puts back the
+# AOSP body HiBy restored in 1.30 (only that method; the 1.30 jar itself is not usable). The
+# prebuilt services.odex/vdex/art were compiled from the stock dex and would be rejected, so they
+# are removed and odrefresh compiles services.jar into /data on first boot.
+SVC_TMP="$(mktemp -d)"
+debugfs -R "dump system/framework/services.jar $SVC_TMP/stock.jar" "$OUTPUT_DIR/system.img" 2>/dev/null
+python3 -I "$SCRIPT_DIR/patch_services_notif_sound.py" "$SVC_TMP/stock.jar" "$SVC_TMP/services.jar" \
+    || { echo "  !! services.jar notification sound patch refused"; exit 1; }
+dfput "$OUTPUT_DIR/system.img" "$SVC_TMP/services.jar" system/framework/services.jar \
+    || { echo "  !! could not write the patched services.jar"; exit 1; }
+label "$OUTPUT_DIR/system.img" system/framework/services.jar u:object_r:system_file:s0
+for _f in services.odex services.vdex services.art; do
+    debugfs -w -R "rm system/framework/oat/arm64/$_f" "$OUTPUT_DIR/system.img" >/dev/null 2>&1 || true
+done
+debugfs -R "dump system/framework/services.jar $SVC_TMP/check.jar" "$OUTPUT_DIR/system.img" 2>/dev/null
+cmp -s "$SVC_TMP/check.jar" "$SVC_TMP/services.jar" \
+    || { echo "  !! patched services.jar did not land in system.img"; exit 1; }
+img_has "$OUTPUT_DIR/system.img" system/framework/oat/arm64/services.odex \
+    && { echo "  !! stale services.odex still in system.img"; exit 1; }
+rm -rf "$SVC_TMP"
+
 echo "  [3] vendor_dlkm: the Si4705 driver hands userspace whole RDS groups and the stereo pilot..."
 # HiBy's radio-si4705-common.ko reads all four RDS blocks from the chip and copies only the
 # first two to the reader, so the station name and RadioText (blocks C/D) never leave the
@@ -153,7 +219,10 @@ resize2fs "$OUTPUT_DIR/vendor_dlkm.img" >/dev/null 2>&1 || true
 e2fsck -fy -E unshare_blocks "$OUTPUT_DIR/vendor_dlkm.img" >/dev/null || { echo "  !! unshare_blocks failed: vendor_dlkm"; exit 1; }
 SI4705_TMP="$(mktemp -d)"
 debugfs -R "dump /lib/modules/radio-si4705-common.ko $SI4705_TMP/stock.ko" "$OUTPUT_DIR/vendor_dlkm.img" 2>/dev/null
-python3 -I "$SCRIPT_DIR/patch_si4705_rds.py" "$SI4705_TMP/stock.ko" "$SI4705_TMP/radio-si4705-common.ko" \
+# MIKU_FM_UNLOCK=1 (default) also widens the driver's band table to 50-250 MHz so the chip, not
+# the driver, decides what it can tune; MIKU_FM_STEREO=1 (default) lowers the chip's stereo blend
+# mono thresholds. Either =0 leaves that part stock.
+MIKU_FM_UNLOCK="${MIKU_FM_UNLOCK:-1}" MIKU_FM_STEREO="${MIKU_FM_STEREO:-1}" python3 -I "$SCRIPT_DIR/patch_si4705_rds.py" "$SI4705_TMP/stock.ko" "$SI4705_TMP/radio-si4705-common.ko" \
     || { echo "  !! si4705 RDS patch refused"; exit 1; }
 dfput "$OUTPUT_DIR/vendor_dlkm.img" "$SI4705_TMP/radio-si4705-common.ko" /lib/modules/radio-si4705-common.ko \
     || { echo "  !! could not write the patched si4705 module"; exit 1; }
@@ -162,7 +231,62 @@ debugfs -R "dump /lib/modules/radio-si4705-common.ko $SI4705_TMP/check.ko" "$OUT
 cmp -s "$SI4705_TMP/check.ko" "$SI4705_TMP/radio-si4705-common.ko" \
     || { echo "  !! patched si4705 module did not land in vendor_dlkm"; exit 1; }
 rm -rf "$SI4705_TMP"
+# HiBy 1.30 parts: files the 1.20 to 1.30 OTA fixed that drop into the 1.20 image unchanged.
+# adopt_hiby130.py refuses anything but the exact 1.20 file and HiBy's exact 1.30 file, and for
+# kernel modules re-checks vermagic and every symbol CRC against the 1.20 module it replaces.
+# The parts are local, like the stock images: m500-system-archive/firmware/hiby_1.30_parts/
+# (sha256 list in SHA256SUMS.txt there). See mikuos/docs/hiby-firmware-history.md.
+#   cs43198_dlkm.ko: NOS mask fixed (supersedes patch_cs43198_nos.py) and the balanced DAC is
+#     written whatever the output is, so filter/DRE/rate changes made on 3.5 mm reach 4.4 mm.
+#   cw2015_battery.ko: the fuel gauge sees charging from mp2731-charger (1.20 hard-wires it off),
+#     smooths the percentage and stops logging every 2 s.
+HIBY130_DIR="${HIBY130_DIR:-$REPO_DIR/m500-system-archive/firmware/hiby_1.30_parts}"
+# Without the 1.30 parts (anyone who only has the stock 1.20 images), fall back to patching the
+# 1.20 codec driver for NOS and leave the gauge and health HAL stock.
+if [ -d "$HIBY130_DIR" ]; then
+for _ko in cs43198_dlkm.ko cw2015_battery.ko; do
+    _T="$(mktemp -d)"
+    debugfs -R "dump /lib/modules/$_ko $_T/cur.ko" "$OUTPUT_DIR/vendor_dlkm.img" 2>/dev/null
+    python3 -I "$SCRIPT_DIR/adopt_hiby130.py" "$_ko" "$_T/cur.ko" "$HIBY130_DIR/$_ko" "$_T/$_ko" \
+        || { echo "  !! $_ko: HiBy 1.30 module refused"; exit 1; }
+    dfput "$OUTPUT_DIR/vendor_dlkm.img" "$_T/$_ko" "/lib/modules/$_ko" \
+        || { echo "  !! could not write $_ko"; exit 1; }
+    label "$OUTPUT_DIR/vendor_dlkm.img" "/lib/modules/$_ko" u:object_r:vendor_file:s0
+    debugfs -R "dump /lib/modules/$_ko $_T/check.ko" "$OUTPUT_DIR/vendor_dlkm.img" 2>/dev/null
+    cmp -s "$_T/check.ko" "$_T/$_ko" || { echo "  !! $_ko did not land in vendor_dlkm"; exit 1; }
+    rm -rf "$_T"
+done
+else
+    echo "  -> no HiBy 1.30 parts at $HIBY130_DIR: patching the 1.20 codec driver for NOS only"
+    _T="$(mktemp -d)"
+    debugfs -R "dump /lib/modules/cs43198_dlkm.ko $_T/stock.ko" "$OUTPUT_DIR/vendor_dlkm.img" 2>/dev/null
+    python3 -I "$SCRIPT_DIR/patch_cs43198_nos.py" "$_T/stock.ko" "$_T/cs43198_dlkm.ko" \
+        || { echo "  !! cs43198 NOS patch refused"; exit 1; }
+    dfput "$OUTPUT_DIR/vendor_dlkm.img" "$_T/cs43198_dlkm.ko" /lib/modules/cs43198_dlkm.ko \
+        || { echo "  !! could not write the patched cs43198 module"; exit 1; }
+    label "$OUTPUT_DIR/vendor_dlkm.img" /lib/modules/cs43198_dlkm.ko u:object_r:vendor_file:s0
+    rm -rf "$_T"
+fi
 e2fsck -fy "$OUTPUT_DIR/vendor_dlkm.img" >/dev/null || { echo "  !! vendor_dlkm fsck failed"; exit 1; }
+
+# Health HAL from 1.30: 1.20 looks for mp2731-charger once at start and, if the charger driver has
+# not registered yet, falls back to sw7203-charger paths that do not exist on the M500 until the
+# HAL restarts. 1.30 waits up to 2 s for it. Same libraries and imports as 1.20.
+if [ -d "$HIBY130_DIR" ]; then
+_T="$(mktemp -d)"
+_HAL=bin/hw/android.hardware.health-service.qti
+debugfs -R "dump $_HAL $_T/cur" "$OUTPUT_DIR/vendor.img" 2>/dev/null
+python3 -I "$SCRIPT_DIR/adopt_hiby130.py" android.hardware.health-service.qti "$_T/cur" \
+    "$HIBY130_DIR/android.hardware.health-service.qti" "$_T/hal" \
+    || { echo "  !! health HAL: HiBy 1.30 build refused"; exit 1; }
+dfput "$OUTPUT_DIR/vendor.img" "$_T/hal" "$_HAL" || { echo "  !! could not write the health HAL"; exit 1; }
+debugfs -w -R "set_inode_field $_HAL mode 0100755" "$OUTPUT_DIR/vendor.img" >/dev/null 2>&1
+debugfs -w -R "set_inode_field $_HAL gid 2000" "$OUTPUT_DIR/vendor.img" >/dev/null 2>&1
+label "$OUTPUT_DIR/vendor.img" "$_HAL" u:object_r:hal_health_default_exec:s0
+debugfs -R "dump $_HAL $_T/check" "$OUTPUT_DIR/vendor.img" 2>/dev/null
+cmp -s "$_T/check" "$_T/hal" || { echo "  !! health HAL did not land in vendor.img"; exit 1; }
+rm -rf "$_T"
+fi
 
 echo "[2b] Setting boot 'welcome' voice (trimmed to play immediately, not at ~9s)..."
 # The stock bootanimation_<locale>.mp4 has the "Welcome to HiBy Music, the show
@@ -173,12 +297,19 @@ echo "[2b] Setting boot 'welcome' voice (trimmed to play immediately, not at ~9s
 # (Gated by persist.sys.customanim.boot.sounds=1, set in build.prop.)
 VOICE_DIR="$SCRIPT_DIR/boot_voice"
 TMP_ANIM_DIR="$(mktemp -d)"
+# MikuOS boot video (mikuos/art/splash/make_boot.py). Stock's shows HiBy's and the official Miku
+# logos. Same format as stock: 720x1280, 30 fps, 12.5 s, H.264 Main.
+BOOT_VIDEO="$MIKUOS_DIR/art/splash/bootanimation.mp4"
 for pair in "bootanimation.mp4:welcome_voice.ogg" \
             "bootanimation_en.mp4:welcome_voice_en.ogg" \
             "bootanimation_jp.mp4:welcome_voice_jp.ogg" \
             "bootanimation_cn.mp4:welcome_voice_cn.ogg"; do
     anim="${pair%%:*}"; voice="${pair##*:}"
-    debugfs -R "dump media/$anim $TMP_ANIM_DIR/$anim" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+    if [ -s "$BOOT_VIDEO" ]; then
+        cp "$BOOT_VIDEO" "$TMP_ANIM_DIR/$anim"
+    else
+        debugfs -R "dump media/$anim $TMP_ANIM_DIR/$anim" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+    fi
     [ -s "$TMP_ANIM_DIR/$anim" ] || continue
     if [ -f "$VOICE_DIR/$voice" ]; then
         # keep the original video, swap in the trimmed voice as the audio at t=0.
@@ -186,6 +317,8 @@ for pair in "bootanimation.mp4:welcome_voice.ogg" \
         # silence for the remainder.
         ffmpeg -y -i "$TMP_ANIM_DIR/$anim" -i "$VOICE_DIR/$voice" \
             -map 0:v -map 1:a -c:v copy -c:a aac "$TMP_ANIM_DIR/new_$anim" 2>/dev/null || true
+    elif [ -s "$BOOT_VIDEO" ]; then
+        cp "$TMP_ANIM_DIR/$anim" "$TMP_ANIM_DIR/new_$anim"
     fi
     if [ -s "$TMP_ANIM_DIR/new_$anim" ]; then
         debugfs -w -R "rm media/$anim" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
@@ -217,6 +350,61 @@ if [ -f "$STATIONS_DB" ]; then
         || echo "  !! station catalogue injection failed"
 else
     echo "  -> no station catalogue at $STATIONS_DB (run tools/radiodb/fetch_sources.sh)"
+fi
+
+# ---------------------------------------------------------------------------------------------
+# Android Auto (com.google.android.projection.gearhead), as a PRIVILEGED system app.
+#
+# It is not in AOSP and HiBy's media-player GMS set does not carry it, so "this is Android 14"
+# does not get you Android Auto. Sideloading does not work either: since Android 10 the app
+# refuses to run unless it is a privileged system app, which is the "must have been bundled with
+# your OS" error. Hence here.
+#
+# SPLITS, NOT A MERGED APK. This ships as base + config.arm64_v8a + config.en + config.xxxhdpi,
+# all signed by Google (SHA-1 a60bd681..., CN=Android, O=Google Inc., with a Play source stamp).
+# Merging them into one universal APK would re-sign it, and GMS checks this package's signature,
+# so the splits go in as a cluster directory exactly as Google signed them. PackageManager reads
+# the `split` attribute inside each APK, not the filenames.
+#
+# The allowlist is GENERATED, never hand-written: tools/androidauto/prepare_android_auto.py
+# intersects the APK's 82 requested permissions with the 313 this build's framework marks
+# privileged, giving 22. check_privapp.py below then fails the BUILD if that is ever stale,
+# because ro.control_privapp_permissions=enforce turns a missing entry into a device that does
+# not boot rather than a warning.
+AA_DIR="$REPO_DIR/mikuos/build/gapps_dl/x_androidauto/split"
+AA_BASE="$AA_DIR/com.google.android.projection.gearhead.apk"
+AA_PERMS="$MIKUOS_DIR/build/permissions/privapp-permissions-androidauto.xml"
+if [ "${MIKUOS_ANDROID_AUTO:-1}" = "1" ] && [ -f "$AA_BASE" ] && [ -f "$AA_PERMS" ]; then
+    echo "  -> injecting Android Auto ($(( $(stat -c%s "$AA_BASE") / 1048576 )) MB base + splits)"
+    AA_FW="$(mktemp -d)"
+    debugfs -R "dump system/framework/framework-res.apk $AA_FW/framework-res.apk" "$OUTPUT_DIR/system.img" 2>/dev/null
+    python3 -I "$SCRIPT_DIR/check_privapp.py" /home/reaver/Android/Sdk/build-tools/35.0.0/aapt2 \
+        "$AA_BASE" "$AA_FW/framework-res.apk" "$AA_PERMS" \
+        || { echo "!! FATAL: Android Auto privapp allowlist incomplete. Regenerate it with"; \
+             echo "   tools/androidauto/prepare_android_auto.py --apk \"$AA_BASE\" --system-img $OUTPUT_DIR/system.img"; \
+             rm -rf "$AA_FW"; exit 1; }
+    rm -rf "$AA_FW"
+    rm_tree "$OUTPUT_DIR/system_ext.img" priv-app/AndroidAuto
+    debugfs -w -R "mkdir priv-app/AndroidAuto" "$OUTPUT_DIR/system_ext.img" 2>/dev/null || true
+    debugfs -w -R "set_inode_field priv-app/AndroidAuto mode 040755" "$OUTPUT_DIR/system_ext.img"
+    label "$OUTPUT_DIR/system_ext.img" priv-app/AndroidAuto u:object_r:system_file:s0
+    for aa_src in "$AA_DIR"/*.apk; do
+        case "$(basename "$aa_src")" in
+            com.google.android.projection.gearhead.apk) aa_dst="AndroidAuto.apk" ;;
+            *) aa_dst="split_$(basename "$aa_src")" ;;
+        esac
+        dfput "$OUTPUT_DIR/system_ext.img" "$aa_src" "priv-app/AndroidAuto/$aa_dst" \
+            || { echo "  !! could not write $aa_dst"; exit 1; }
+        label "$OUTPUT_DIR/system_ext.img" "priv-app/AndroidAuto/$aa_dst" u:object_r:system_file:s0
+    done
+    debugfs -w -R "mkdir etc/permissions" "$OUTPUT_DIR/system_ext.img" 2>/dev/null || true
+    debugfs -w -R "set_inode_field etc/permissions mode 040755" "$OUTPUT_DIR/system_ext.img" 2>/dev/null || true
+    label "$OUTPUT_DIR/system_ext.img" etc/permissions u:object_r:system_file:s0
+    dfput "$OUTPUT_DIR/system_ext.img" "$AA_PERMS" "etc/permissions/privapp-permissions-androidauto.xml" \
+        && label "$OUTPUT_DIR/system_ext.img" "etc/permissions/privapp-permissions-androidauto.xml" u:object_r:system_file:s0 \
+        || { echo "  !! Android Auto allowlist injection failed; refusing to ship the APK without it"; exit 1; }
+else
+    [ "${MIKUOS_ANDROID_AUTO:-1}" = "1" ] && echo "  -> no Android Auto bundle at $AA_DIR (skipping)"
 fi
 
 if [ -n "$FMRADIO_APK" ] && [ -f "$FMRADIO_APK" ]; then
@@ -289,7 +477,7 @@ rm -f "$TMP_EXT_PROP"
 
 echo "[4/6] Debloating product.img..."
 
-# Google Fi APN: bake the h2g2-t data APN into product/etc/apns-conf.xml so a Fi SIM gets
+# Google Fi APN: bake the Fi h2g2 APNs (GID1 4276 / IMSI 31026097 match) into product/etc/apns-conf.xml so a Fi SIM gets
 # mobile data on a clean flash (stock file has no Fi entry -> generic wrong APN -> data denied).
 # See memory m500-google-fi-4g-data. dfput = rm+write (debugfs won't overwrite an existing file).
 APNS_MIKU="$SCRIPT_DIR/apns-conf-mikuos.xml"
@@ -418,10 +606,17 @@ inject_overlay() {   # <src apk> <dest name> <description>
         echo "  !! $2 missing ($1) — $3 will NOT be applied"
     fi
 }
-inject_overlay "$REPO_DIR/tools/custom_overlays/MikuSystemUIOverlay/com.miku.systemui.overlay.apk" MikuSystemUIOverlay.apk "stock volume dialog off + HiBy strings"
+inject_overlay "$REPO_DIR/tools/custom_overlays/MikuSystemUIOverlay/com.miku.systemui.overlay.apk" MikuSystemUIOverlay.apk "stock volume dialog off, AOSP nav handle transparent, HiBy strings"
 inject_overlay "$REPO_DIR/tools/custom_overlays/MikuFrameworkOverlay/MikuFrameworkOverlay.apk" MikuFrameworkOverlay.apk "gestural nav config"
 inject_overlay "$REPO_DIR/tools/custom_overlays/MikuThemeOverlay/MikuThemeOverlay.apk" MikuThemeOverlay.apk "power menu + dialog retint"
 inject_overlay "$MIKUOS_DIR/build/MikuAnimOverlay.apk" MikuAnimOverlay.apk "KDE window animations"
+# The overlay APK is gitignored; build it from the committed res/ (no Gemini key needed).
+SPLASH_OVL="$REPO_DIR/tools/custom_overlays/MikuSplashOverlay"
+if [ ! -f "$SPLASH_OVL/MikuSplashOverlay.apk" ] && ls "$SPLASH_OVL"/res/drawable-*/*.png >/dev/null 2>&1; then
+    "$REPO_DIR/tools/custom_overlays/build_overlay.sh" "$SPLASH_OVL" "$SPLASH_OVL/MikuSplashOverlay.apk" >/dev/null \
+        || echo "  !! MikuSplashOverlay build failed"
+fi
+inject_overlay "$REPO_DIR/tools/custom_overlays/MikuSplashOverlay/MikuSplashOverlay.apk" MikuSplashOverlay.apk "Miku splash art (headphones, charging, low battery, shutdown, volume warning)"
 
 echo "[5/6] Injecting MikuOS Suite into system.img..."
 # Remove stock bloat
@@ -449,13 +644,24 @@ debugfs -w -R "set_inode_field system/app/MikuMusic/MikuMusic.apk mode 0100644" 
 label "$OUTPUT_DIR/system.img" system/app/MikuMusic u:object_r:system_file:s0
 label "$OUTPUT_DIR/system.img" system/app/MikuMusic/MikuMusic.apk u:object_r:system_file:s0
 
-# Inject MikuSettings into system/app/
-debugfs -w -R "mkdir system/app/MikuSettings" "$OUTPUT_DIR/system.img" 2>/dev/null || true
-debugfs -w -R "set_inode_field system/app/MikuSettings mode 040755" "$OUTPUT_DIR/system.img"
-debugfs -w -R "write $SETTINGS_APK system/app/MikuSettings/MikuSettings.apk" "$OUTPUT_DIR/system.img"
-debugfs -w -R "set_inode_field system/app/MikuSettings/MikuSettings.apk mode 0100644" "$OUTPUT_DIR/system.img"
-label "$OUTPUT_DIR/system.img" system/app/MikuSettings u:object_r:system_file:s0
-label "$OUTPUT_DIR/system.img" system/app/MikuSettings/MikuSettings.apk u:object_r:system_file:s0
+# Inject MikuSettings into system/priv-app/. Privileged, because Android resets intent-filter
+# priority to 0 for anything outside priv-app, and then stock Settings wins or ties every
+# android.settings.* action (the dual Settings UI). This device enforces the privapp allowlist
+# with no exemption for platform-signed apps, so check_privapp.py fails the BUILD if any
+# privileged permission the APK requests is not allowlisted; otherwise that would be a bootloop.
+FWRES_TMP="$(mktemp -d)"
+debugfs -R "dump system/framework/framework-res.apk $FWRES_TMP/framework-res.apk" "$OUTPUT_DIR/system.img" 2>/dev/null
+python3 -I "$SCRIPT_DIR/check_privapp.py" /home/reaver/Android/Sdk/build-tools/35.0.0/aapt2 \
+    "$SETTINGS_APK" "$FWRES_TMP/framework-res.apk" "$PERMISSIONS_XML" \
+    || { echo "!! FATAL: MikuSettings privapp allowlist incomplete; refusing to build an image that would not boot"; exit 1; }
+rm -rf "$FWRES_TMP"
+rm_tree "$OUTPUT_DIR/system.img" system/app/MikuSettings   # an older image layout put it here
+debugfs -w -R "mkdir system/priv-app/MikuSettings" "$OUTPUT_DIR/system.img" 2>/dev/null || true
+debugfs -w -R "set_inode_field system/priv-app/MikuSettings mode 040755" "$OUTPUT_DIR/system.img"
+debugfs -w -R "write $SETTINGS_APK system/priv-app/MikuSettings/MikuSettings.apk" "$OUTPUT_DIR/system.img"
+debugfs -w -R "set_inode_field system/priv-app/MikuSettings/MikuSettings.apk mode 0100644" "$OUTPUT_DIR/system.img"
+label "$OUTPUT_DIR/system.img" system/priv-app/MikuSettings u:object_r:system_file:s0
+label "$OUTPUT_DIR/system.img" system/priv-app/MikuSettings/MikuSettings.apk u:object_r:system_file:s0
 
 # M500 Hardware Settings (holds the camera-EV100 ambient-light auto-brightness service + DAC controls).
 if [ -n "$HARDWARE_APK" ] && [ -f "$HARDWARE_APK" ]; then
@@ -469,6 +675,53 @@ if [ -n "$HARDWARE_APK" ] && [ -f "$HARDWARE_APK" ]; then
 else
     echo "  !! M500HardwareSettings.apk not found — ambient-light sensor will be missing" >&2
 fi
+
+# MikuOS system bridge: the one Miku package with sharedUserId=android.uid.system, so it runs in
+# the system_app domain, which HiBy's policy lets set vendor.usb.* and sys.usb.config. USB DAC mode
+# (the M500 as a USB sound card) goes through it; every other Miku app is platform_app and cannot.
+if [ -n "$SYSBRIDGE_APK" ] && [ -f "$SYSBRIDGE_APK" ]; then
+    debugfs -w -R "mkdir system/app/MikuSysBridge" "$OUTPUT_DIR/system.img" 2>/dev/null || true
+    debugfs -w -R "set_inode_field system/app/MikuSysBridge mode 040755" "$OUTPUT_DIR/system.img"
+    debugfs -w -R "write $SYSBRIDGE_APK system/app/MikuSysBridge/MikuSysBridge.apk" "$OUTPUT_DIR/system.img"
+    debugfs -w -R "set_inode_field system/app/MikuSysBridge/MikuSysBridge.apk mode 0100644" "$OUTPUT_DIR/system.img"
+    label "$OUTPUT_DIR/system.img" system/app/MikuSysBridge u:object_r:system_file:s0
+    label "$OUTPUT_DIR/system.img" system/app/MikuSysBridge/MikuSysBridge.apk u:object_r:system_file:s0
+    echo "  -> injected MikuSysBridge (USB DAC mode)"
+else
+    echo "  !! MikuSysBridge.apk not found — USB DAC mode will not switch" >&2
+fi
+
+# MikuOS replacements for the stock Clock, Calculator, Calendar (MikuTools) and Camera, Gallery,
+# Recorder (MikuMedia). Each stock app is the only handler of an intent other apps rely on (set
+# an alarm, open a photo, take a picture), so it is removed in the debloat step ONLY when its
+# replacement was injected here: TOOLS_INJECTED / MEDIA_INJECTED gate that.
+inject_system_app() {   # <apk> <dir name> <label>
+    local apk="$1" dir="$2"
+    [ -n "$apk" ] && [ -f "$apk" ] || return 1
+    debugfs -w -R "mkdir system/app/$dir" "$OUTPUT_DIR/system.img" 2>/dev/null || true
+    debugfs -w -R "set_inode_field system/app/$dir mode 040755" "$OUTPUT_DIR/system.img"
+    debugfs -w -R "rm system/app/$dir/$dir.apk" "$OUTPUT_DIR/system.img" 2>/dev/null || true
+    debugfs -w -R "write $apk system/app/$dir/$dir.apk" "$OUTPUT_DIR/system.img" || return 1
+    debugfs -w -R "set_inode_field system/app/$dir/$dir.apk mode 0100644" "$OUTPUT_DIR/system.img"
+    label "$OUTPUT_DIR/system.img" "system/app/$dir" u:object_r:system_file:s0
+    label "$OUTPUT_DIR/system.img" "system/app/$dir/$dir.apk" u:object_r:system_file:s0
+    img_has "$OUTPUT_DIR/system.img" "system/app/$dir/$dir.apk" || return 1
+    echo "  -> injected $dir ($3)"
+}
+TOOLS_INJECTED=0; MEDIA_INJECTED=0
+inject_system_app "$TOOLS_APK" MikuTools "Clock, Calculator, Calendar" && TOOLS_INJECTED=1 \
+    || echo "  !! MikuTools not injected; stock Clock/Calculator/Calendar kept"
+inject_system_app "$MEDIA_APK" MikuMedia "Camera, Gallery, Recorder" && MEDIA_INJECTED=1 \
+    || echo "  !! MikuMedia not injected; stock Camera/Gallery/Recorder kept"
+# Miku Update: over-the-air updates of the com.miku.* apps (never the FM app, which has to come
+# from the image). System UID + platform signature already hold INSTALL_PACKAGES.
+inject_system_app "$UPDATE_APK" MikuUpdate "over-the-air app updates" \
+    || echo "  !! MikuUpdate not injected; no over-the-air app updates in this image"
+# Easter eggs, unlocked from the BPM game (MikuSecrets.kt). Nothing is debloated for them.
+inject_system_app "$RIOT_APK" MikuRiot "Riot mode easter egg" \
+    || echo "  !! MikuRiot not injected; the Riot mode secret has nothing to open"
+inject_system_app "$WHEEL_APK" MikuWheel "MikuPod easter egg" \
+    || echo "  !! MikuWheel not injected; the MikuPod secrets have nothing to open"
 
 # Inject MikuSystemUI into system/app/
 debugfs -w -R "mkdir system/app/MikuSystemUI" "$OUTPUT_DIR/system.img" 2>/dev/null || true
@@ -681,7 +934,7 @@ debugfs -R "cat system/build.prop" "$OUTPUT_DIR/system.img" > "$TMP_PROP" 2>/dev
 
 # Sed replace stock secure flags and model identity
 sed -i 's/^ro.secure=.*/ro.secure=0/' "$TMP_PROP"
-sed -i 's/^ro.adb.secure=.*/ro.adb.secure=0/' "$TMP_PROP"
+sed -i 's/^ro.adb.secure=.*/ro.adb.secure=1/' "$TMP_PROP"
 sed -i 's/^ro.debuggable=.*/ro.debuggable=1/' "$TMP_PROP"
 sed -i 's/^ro.force.debuggable=.*/ro.force.debuggable=1/' "$TMP_PROP"
 sed -i "s/^ro.product.model=.*/ro.product.model=${DEVICE_IDENTITY}/" "$TMP_PROP"
@@ -735,7 +988,9 @@ persist.sys.usb.config=mtp,adb
 persist.service.adb.enable=1
 persist.service.debuggable=1
 ro.debuggable=1
-ro.adb.secure=0
+# adb requires an authorized key even on dev builds: /adb_keys carries the build host's key,
+# so the dev PC stays authorized and nobody else on the Wi-Fi gets an unauthenticated shell.
+ro.adb.secure=1
 service.adb.root=1
 # Wireless adb, so pulling the USB cable does not end the session.
 #
@@ -809,6 +1064,25 @@ persist.bluetooth.disableabsvol=false
 # a lower codec/bitrate requires miku_bt_quality_unlock_confirm=1 set by the confirm dialog).
 persist.sys.miku.audio_lockdown=1
 PROPS
+# Release build: drop every debug/adb line above (and the stock-replacing seds) and put back the
+# stock secure values. ro.* is first-set-wins across files, so the old lines are deleted, not shadowed.
+if [ "$MIKUOS_RELEASE" = "1" ]; then
+    sed -i -e '/^ro\.secure=/d' -e '/^ro\.adb\.secure=/d' -e '/^ro\.debuggable=/d' -e '/^ro\.force\.debuggable=/d' \
+        -e '/^persist\.sys\.usb\.config=/d' -e '/^persist\.service\.adb\.enable=/d' -e '/^persist\.service\.debuggable=/d' \
+        -e '/^service\.adb\.root=/d' -e '/^persist\.adb\.tcp\.port=/d' -e '/^service\.adb\.tcp\.port=/d' "$TMP_PROP"
+    cat >> "$TMP_PROP" << 'RELPROPS'
+
+# MikuOS release build (MIKUOS_RELEASE=1)
+ro.secure=1
+ro.adb.secure=1
+ro.debuggable=0
+ro.force.debuggable=0
+persist.sys.usb.config=mtp
+ro.miku.release=1
+RELPROPS
+else
+    echo "ro.miku.release=0" >> "$TMP_PROP"
+fi
 # build.prop already exists -> must rm before write (debugfs won't overwrite).
 dfput "$OUTPUT_DIR/system.img" "$TMP_PROP" "system/build.prop" \
     || { echo "!! FATAL: could not write system/build.prop (adb.secure/usb config would be stock)"; exit 1; }
@@ -818,7 +1092,7 @@ rm -f "$TMP_PROP"
 # Patch vendor.img build.prop for ADB authorization and device identity
 TMP_VEN_PROP="/tmp/miku_vendor_build.prop"
 debugfs -R "cat build.prop" "$OUTPUT_DIR/vendor.img" > "$TMP_VEN_PROP" 2>/dev/null || true
-sed -i 's/^ro.adb.secure=.*/ro.adb.secure=0/' "$TMP_VEN_PROP"
+sed -i 's/^ro.adb.secure=.*/ro.adb.secure=1/' "$TMP_VEN_PROP"
 sed -i "s/^ro.product.vendor.model=.*/ro.product.vendor.model=${DEVICE_IDENTITY}/" "$TMP_VEN_PROP"
 sed -i "s/^ro.product.vendor.name=.*/ro.product.vendor.name=m500_mikuOS/" "$TMP_VEN_PROP"
 sed -i "s/^ro.product.vendor.device=.*/ro.product.vendor.device=m500_mikuOS/" "$TMP_VEN_PROP"
@@ -835,6 +1109,18 @@ vendor.usb.product_string=${DEVICE_IDENTITY}
 persist.vendor.usb.config=mtp,adb
 vendor.usb.config=mtp,adb
 VENPROPS
+if [ "$MIKUOS_RELEASE" = "1" ]; then
+    sed -i -e 's/^ro\.adb\.secure=.*/ro.adb.secure=1/' -e 's/^persist\.vendor\.usb\.config=.*/persist.vendor.usb.config=mtp/' \
+        -e 's/^vendor\.usb\.config=.*/vendor.usb.config=mtp/' "$TMP_VEN_PROP"
+fi
+# Cross-window background blur for the SystemUI shade and the other glass surfaces. HiBy ships
+# without it (the prop was unset on 0.1.16), so FLAG_BLUR_BEHIND / setBackgroundBlurRadius did
+# nothing and the "glass" was flat. SurfaceFlinger does the blur on the GPU (Adreno here); if it
+# costs frames on this part, set MIKU_BLUR=0 to build without it.
+if [ "${MIKU_BLUR:-1}" = "1" ]; then
+    sed -i '/^ro.surface_flinger.supports_background_blur=/d' "$TMP_VEN_PROP"
+    echo "ro.surface_flinger.supports_background_blur=1" >> "$TMP_VEN_PROP"
+fi
 
 dfput "$OUTPUT_DIR/vendor.img" "$TMP_VEN_PROP" "build.prop" \
     || { echo "!! FATAL: could not write vendor/build.prop"; exit 1; }
@@ -845,7 +1131,7 @@ rm -f "$TMP_VEN_PROP"
 TMP_RC="/tmp/miku_adb.rc"
 cat << 'RCEOF' > "$TMP_RC"
 on early-init
-    setprop ro.adb.secure 0
+    setprop ro.adb.secure 1
     setprop ro.secure 0
     setprop ro.debuggable 1
     # Welcome boot audio (set early, before bootanimation, since debugfs can't overwrite build.prop).
@@ -888,10 +1174,27 @@ on boot
     setprop vendor.usb.config mtp,adb
     setprop sys.usb.state mtp,adb
     start adbd
-
-on property:sys.boot_completed=1
-    exec_background - root root -- /system/bin/sh /system/etc/miku_root_boot.sh
+# (A boot_completed `exec_background - root root -- sh miku_root_boot.sh` used to sit here. On
+# this enforcing build init cannot run it, so it never ran. The service.d seed above only takes
+# effect if Magisk is installed; release builds drop both.)
 RCEOF
+# Release build: same file names (the bake gate below checks them), none of the adb forcing, no
+# root seed. The persist resets undo what a dev build left in /data, so an image flashed over a
+# dev install without a wipe does not keep adb over Wi-Fi. (A dev host key already copied to
+# /data/misc/adb stays authorized until a wipe; release installs are expected to wipe.)
+if [ "$MIKUOS_RELEASE" = "1" ]; then
+    cat << 'RELRCEOF' > "$TMP_RC"
+on early-init
+    setprop persist.sys.customanim.boot.sounds 1
+    setprop persist.sys.locale en-US
+
+on property:persist.adb.tcp.port=5555
+    setprop persist.adb.tcp.port 0
+
+on property:persist.sys.usb.config=mtp,adb
+    setprop persist.sys.usb.config mtp
+RELRCEOF
+fi
 
 debugfs -w -R "write $TMP_RC system/etc/init/miku_adb.rc" "$OUTPUT_DIR/system.img" 2>/dev/null || true
 debugfs -w -R "set_inode_field system/etc/init/miku_adb.rc mode 0100644" "$OUTPUT_DIR/system.img" 2>/dev/null || true
@@ -934,6 +1237,80 @@ debugfs -w -R "write $TMP_LED_RC etc/init/miku_led.rc" "$OUTPUT_DIR/vendor.img" 
 debugfs -w -R "set_inode_field etc/init/miku_led.rc mode 0100644" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
 label "$OUTPUT_DIR/vendor.img" etc/init/miku_led.rc u:object_r:vendor_file:s0
 rm -f "$TMP_LED_RC"
+
+# ============================================================================
+# DAC controls that reach hardware (mikuos/docs/hiby-audio-knobs.md). Of the 31 nodes in
+# /sys/devices/platform/sa_sound_setting only high_power_mode, dre_mode, digital_filter and gain
+# change anything on the M500. Stock feeds the first three from a boot service that skips any
+# model not named "M500", so on MikuOS nothing ever reached them and the DAC sat on driver
+# defaults. com.miku.sysbridge (system_app, allowed to set vendor_audio_prop) sets the
+# persist.vendor.audio.miku.* properties from a fixed whitelist; init writes the node on every
+# change and again at each boot, because persist properties re-fire their triggers. With nothing
+# set the driver defaults stand: low power, DRE off, fast roll-off low latency, 0 dB.
+# Never add dac_type here: its store returns 0 bytes written and loops the writer.
+# ============================================================================
+TMP_AUDIO_RC="$(mktemp)"
+cat > "$TMP_AUDIO_RC" <<'AUDIORCEOF'
+# MikuOS: DAC settings from Miku Music, via com.miku.sysbridge (see build_mikuos_super.sh).
+on property:persist.vendor.audio.miku.high_power=*
+    write /sys/devices/platform/sa_sound_setting/high_power_mode ${persist.vendor.audio.miku.high_power}
+on property:persist.vendor.audio.miku.dre_mode=*
+    write /sys/devices/platform/sa_sound_setting/dre_mode ${persist.vendor.audio.miku.dre_mode}
+on property:persist.vendor.audio.miku.digital_filter=*
+    write /sys/devices/platform/sa_sound_setting/digital_filter ${persist.vendor.audio.miku.digital_filter}
+on property:persist.vendor.audio.miku.gain=*
+    write /sys/devices/platform/sa_sound_setting/gain ${persist.vendor.audio.miku.gain}
+AUDIORCEOF
+debugfs -w -R "rm etc/init/miku_audio.rc" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+debugfs -w -R "write $TMP_AUDIO_RC etc/init/miku_audio.rc" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+debugfs -w -R "set_inode_field etc/init/miku_audio.rc mode 0100644" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+label "$OUTPUT_DIR/vendor.img" etc/init/miku_audio.rc u:object_r:vendor_file:s0
+rm -f "$TMP_AUDIO_RC"
+# Charge limit: com.miku.sysbridge's ChargeLimiter sets vendor.usb.miku.charge_hold while plugged
+# in at or above the limit set in MikuSettings, and clears it 5% below or on unplug. The mp2731
+# charger has no charge-disable node, so a hold drops it to its lowest input current (~100 mA).
+TMP_CHARGE_RC="$(mktemp)"
+cat > "$TMP_CHARGE_RC" <<'CHARGERCEOF'
+# MikuOS: charge limit hold, set by com.miku.sysbridge (see build_mikuos_super.sh).
+# The writes run in /vendor/bin/sh, which init starts as vendor_qti_init_shell; the image's
+# vendor policy lets that domain write these two nodes (nothing could before).
+on property:vendor.usb.miku.charge_hold=1
+    exec_background - root system -- /vendor/bin/sh -c "echo 100000 > /sys/class/power_supply/mp2731-charger/input_current_limit; echo 0 > /sys/class/power_supply/mp2731-charger/charge_control_limit"
+on property:vendor.usb.miku.charge_hold=0
+    exec_background - root system -- /vendor/bin/sh -c "echo 2000000 > /sys/class/power_supply/mp2731-charger/input_current_limit; echo 4000000 > /sys/class/power_supply/mp2731-charger/charge_control_limit"
+CHARGERCEOF
+debugfs -w -R "rm etc/init/miku_charge.rc" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+debugfs -w -R "write $TMP_CHARGE_RC etc/init/miku_charge.rc" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+debugfs -w -R "set_inode_field etc/init/miku_charge.rc mode 0100644" "$OUTPUT_DIR/vendor.img" 2>/dev/null || true
+label "$OUTPUT_DIR/vendor.img" etc/init/miku_charge.rc u:object_r:vendor_file:s0
+rm -f "$TMP_CHARGE_RC"
+
+# SELinux: the charger nodes are sysfs_batteryinfo, which no domain may write, so a charge limit
+# was impossible. One rule lets vendor_qti_init_shell (what init runs /vendor/bin/sh as) write
+# them. The rule goes into the vendor policy source, and the plat hash in system.img gets a marker
+# first line so it no longer matches odm's precompiled policy, which makes init compile the policy from
+# source at boot (the same path a GSI boots on). Checked: compiles with the same flags init uses,
+# and adds no neverallow failures beyond the 105 the stock vendor policy already has.
+_T="$(mktemp -d)"
+debugfs -R "dump etc/selinux/vendor_sepolicy.cil $_T/v.cil" "$OUTPUT_DIR/vendor.img" 2>/dev/null
+if [ -s "$_T/v.cil" ] && ! grep -q "MikuOS: charge limit" "$_T/v.cil"; then
+    printf '\n; MikuOS: charge limit (miku_charge.rc)\n(allow vendor_qti_init_shell sysfs_batteryinfo_33_0 (file (write open getattr)))\n' >> "$_T/v.cil"
+    dfput "$OUTPUT_DIR/vendor.img" "$_T/v.cil" etc/selinux/vendor_sepolicy.cil \
+        || { echo "  !! could not write vendor_sepolicy.cil"; exit 1; }
+    debugfs -w -R "set_inode_field etc/selinux/vendor_sepolicy.cil mode 0100644" "$OUTPUT_DIR/vendor.img" >/dev/null 2>&1
+    label "$OUTPUT_DIR/vendor.img" etc/selinux/vendor_sepolicy.cil u:object_r:vendor_configs_file:s0
+    debugfs -R "dump system/etc/selinux/plat_sepolicy_and_mapping.sha256 $_T/h" "$OUTPUT_DIR/system.img" 2>/dev/null
+    # init compares only the FIRST line with odm's copy, so the marker goes first.
+    if ! grep -q mikuos "$_T/h"; then
+        { echo "mikuos-vendor-policy-changed-compile-on-device"; cat "$_T/h"; } > "$_T/h2"; mv "$_T/h2" "$_T/h"
+    fi
+    dfput "$OUTPUT_DIR/system.img" "$_T/h" system/etc/selinux/plat_sepolicy_and_mapping.sha256 \
+        || { echo "  !! could not write plat_sepolicy_and_mapping.sha256"; exit 1; }
+    debugfs -w -R "set_inode_field system/etc/selinux/plat_sepolicy_and_mapping.sha256 mode 0100644" "$OUTPUT_DIR/system.img" >/dev/null 2>&1
+    label "$OUTPUT_DIR/system.img" system/etc/selinux/plat_sepolicy_and_mapping.sha256 u:object_r:system_file:s0
+    echo "  -> vendor policy: charge-limit rule added, policy compiles on device"
+fi
+rm -rf "$_T"
 rm -f "$TMP_RC"
 
 # Pre-authorize THIS build host's adb key so a fresh /data wipe never shows the
@@ -941,7 +1318,9 @@ rm -f "$TMP_RC"
 # adbd reads /adb_keys at startup (read-only, no timing race) and also watches
 # /data/misc/adb/adb_keys, which miku_adb.rc's post-fs-data seeds from the baked copy below.
 ADB_KEY="$SCRIPT_DIR/adb_keys"
-if [ -f "$ADB_KEY" ]; then
+if [ "$MIKUOS_RELEASE" = "1" ]; then
+    echo "  -- Release build: no pre-authorized adb key"
+elif [ -f "$ADB_KEY" ]; then
     debugfs -w -R "write $ADB_KEY adb_keys" "$OUTPUT_DIR/system.img" 2>/dev/null || true
     debugfs -w -R "set_inode_field adb_keys mode 0100644" "$OUTPUT_DIR/system.img" 2>/dev/null || true
     label "$OUTPUT_DIR/system.img" adb_keys u:object_r:adb_keys_file:s0
@@ -955,7 +1334,9 @@ fi
 # AOSP volume dialog via a fabricated overlay, dumps boot-audio diagnostics). miku_*.rc seeds it into
 # Magisk's service.d and kicks it in the magisk context at boot_completed.
 ROOT_SH="$SCRIPT_DIR/miku_root_boot.sh"
-if [ -f "$ROOT_SH" ]; then
+if [ "$MIKUOS_RELEASE" = "1" ]; then
+    echo "  -- Release build: no root auto-config"
+elif [ -f "$ROOT_SH" ]; then
     debugfs -w -R "rm system/etc/miku_root_boot.sh" "$OUTPUT_DIR/system.img" 2>/dev/null || true
     debugfs -w -R "write $ROOT_SH system/etc/miku_root_boot.sh" "$OUTPUT_DIR/system.img" 2>/dev/null || true
     debugfs -w -R "set_inode_field system/etc/miku_root_boot.sh mode 0100755" "$OUTPUT_DIR/system.img" 2>/dev/null || true
@@ -976,157 +1357,34 @@ fi
 # commands async via exec_background so init never blocks.
 TMP_IME_RC="/tmp/miku_ime.rc"
 cat << 'IMERCEOF' > "$TMP_IME_RC"
-on property:sys.boot_completed=1
-    exec_background - system system -- /system/bin/settings put secure default_input_method com.android.inputmethod.latin/.LatinIME
-    exec_background - system system -- /system/bin/settings put secure enabled_input_methods com.android.inputmethod.latin/.LatinIME
-    exec_background - system system -- /system/bin/settings put secure show_ime_with_hard_keyboard 1
-    exec_background - system system -- /system/bin/settings put global hiby_miku_sounds_enable 0
-    exec_background - system system -- /system/bin/settings put global hiby_miku_sounds_list 0
-    exec_background - system system -- /system/bin/settings put global headset_connect_sound 0
-    # Developer Options + USB debugging always ON (Settings couldn't reach Dev Tools;
-    # also guarantees adb comes up authorized on every boot for debugging/tracing).
-    exec_background - system system -- /system/bin/settings put global development_settings_enabled 1
-    exec_background - system system -- /system/bin/settings put global adb_enabled 1
-    exec_background - system system -- /system/bin/settings put global adb_wifi_enabled 1
-    exec_background - system system -- /system/bin/settings put global stay_on_while_plugged_in 3
-    exec_background - system system -- /system/bin/svc power stayon true
-    # DTA bit-perfect allow-list: the vendor framework's AudioTrack grants the DIRECT
-    # (native-rate, mixer-bypass) path to the CS43198 DACs only to packages in this
-    # Global setting (factory default = com.hiby.music only). Seed it with Miku Music
-    # so OUR player rides the same hardware path. No spaces in the JSON = one rc token.
-    exec_background - system system -- /system/bin/settings put global direct_support_app_list {"list":[{"packageName":"com.hiby.music"},{"packageName":"com.miku.player"}]}
-    # Location runtime grants: the launcher/player never show a permission prompt, so
-    # without these the weather stack can never read GNSS (device HAS gnss_service) and
-    # silently falls back to IP-geo/default coords ("weather wrong, no location" bug).
-    exec_background - system system -- /system/bin/pm grant com.miku.launcher android.permission.ACCESS_FINE_LOCATION
-    exec_background - system system -- /system/bin/pm grant com.miku.launcher android.permission.ACCESS_COARSE_LOCATION
-    # Cellular signal meter on the status bar needs READ_PHONE_STATE (runtime perm).
-    exec_background - system system -- /system/bin/pm grant com.miku.launcher android.permission.READ_PHONE_STATE
-    # Live BPM/beat detector (Visualizer on output session 0) so the BPM counter "sees ALSA"
-    # for ANY source (Spotify etc). RECORD_AUDIO is a runtime perm; a system app doesn't get it
-    # auto-granted, so grant it on boot or the detector fails soft and the counter reads standby.
-    exec_background - system system -- /system/bin/pm grant com.miku.launcher android.permission.RECORD_AUDIO
-    # Ambient-light auto-brightness (camera EV100 proxy) — grant CAMERA, enable, and start the service.
-    exec_background - system system -- /system/bin/pm grant com.m500.hardware android.permission.CAMERA
-    exec_background - system system -- /system/bin/appops set com.m500.hardware CAMERA allow
-    # Ambient auto-brightness must WRITE screen_brightness: needs the WRITE_SETTINGS appop, not
-    # just the perm (without it the service samples fine but every brightness write silently
-    # no-ops - "activates but never adjusts", found 2026-09-10).
-    exec_background - system system -- /system/bin/appops set com.m500.hardware WRITE_SETTINGS allow
-    exec_background - system system -- /system/bin/appops set --uid com.m500.hardware CAMERA allow
-    # MikuLocationFusion. Android gates reading Wi-Fi scan results on a LOCATION permission, so
-    # without these the fused position has no Wi-Fi source and no passive GNSS either, and it
-    # publishes nothing at all - silently, because the failure is a caught SecurityException.
-    exec_background - system system -- /system/bin/pm grant com.m500.hardware android.permission.ACCESS_FINE_LOCATION
-    exec_background - system system -- /system/bin/pm grant com.m500.hardware android.permission.ACCESS_COARSE_LOCATION
-    # Background location is the one that actually matters for a daemon: without it Android
-    # returns an empty scan list rather than refusing, so Wi-Fi positioning reads zero APs.
-    exec_background - system system -- /system/bin/pm grant com.m500.hardware android.permission.ACCESS_BACKGROUND_LOCATION
-    exec_background - system system -- /system/bin/appops set com.m500.hardware FINE_LOCATION allow
-    exec_background - system system -- /system/bin/appops set com.m500.hardware COARSE_LOCATION allow
-    # SYSTEM_ALERT_WINDOW appop = A14 while-in-use exemption; without it a
-    # camera-type FGS cannot start from BOOT_COMPLETED (throws SecurityException).
-    exec_background - system system -- /system/bin/appops set com.m500.hardware SYSTEM_ALERT_WINDOW allow
-    # Theater mode ON: the ONLY working suppressor of screen-wake on charger plug/unplug flaps.
-    # config_unplugTurnsOnScreen cannot be overridden by RRO (framework overlayable policy rejects
-    # it - verified via cmd overlay lookup with the overlay enabled), but PMS honors
-    # theater + config_allowTheaterModeWakeFromUnplug=false (stock on this build). Note: theater
-    # also suppresses gesture wakes (double-tap) by AOSP default.
-    exec_background - system system -- /system/bin/settings put global theater_mode_on 1
-    # Auto-rotate OFF by default (user preference): portrait-locked DAP, rotation is a nuisance.
-    exec_background - system system -- /system/bin/settings put system accelerometer_rotation 0
-    # BEST AUDIO MODE from first boot: HIGH DAC gain (audio-lockdown directive). The player also
-    # re-asserts this and pushes it into the HAL on every start (MikuDirectAudio.ensureMaxGain).
-    exec_background - system system -- /system/bin/settings put global vendor.audio.hiby.hw.gain high
-    exec_background - system system -- /system/bin/settings put global vendor.audio.hiby.gain high
-    # Listen-stats/scrobble tracker: ENABLED. The 2026-09-10 crash-loop was root-caused 09-11 to
-    # TrackTech.cache (a mutableStateMapOf written by composition AND by the stats io thread) and
-    # fixed in player 2.0.263; the kill switch remains available for future bisects.
-    exec_background - system system -- /system/bin/settings put global miku_dbg_off_stats 0
-    exec_background - system system -- /system/bin/settings put global m500_ambient_auto_brightness 1
-    exec_background - system system -- /system/bin/am start-foreground-service -n com.m500.hardware/.AmbientBrightnessService
-    # ...and make the RECORD_AUDIO app-op unrestricted (not foreground-only) so output capture
-    # keeps running while a 3rd-party player (Spotify) is the foreground app.
-    exec_background - system system -- /system/bin/appops set com.miku.launcher RECORD_AUDIO allow
-    # Bluetooth device picker + alarm/haptics in the music app.
-    exec_background - system system -- /system/bin/pm grant com.miku.player android.permission.BLUETOOTH_CONNECT
-    exec_background - system system -- /system/bin/pm grant com.miku.player android.permission.ACCESS_FINE_LOCATION
-    exec_background - system system -- /system/bin/pm grant com.miku.player android.permission.ACCESS_COARSE_LOCATION
-    exec_background - system system -- /system/bin/settings put secure location_mode 3
-    # Safe-media-volume state = 1 (DISABLED) — the runtime half of the roller-ceiling
-    # fix (props above handle boot; this clears any persisted ACTIVE state).
-    exec_background - system system -- /system/bin/settings put global audio_safe_volume_state 1
-    # Stock keyguard OFF (authoritative — LockPatternUtils/lockscreen.disabled setting alone did NOT
-    # stick on this device; cmd lock_settings does). The Miku lockscreen then layers on via SCREEN_ON.
-    exec_background - system system -- /system/bin/cmd lock_settings set-disabled true
-    exec_background - system system -- /system/bin/settings put global miku_audio_lockdown 1
-    exec_background - system system -- /system/bin/settings put global miku_bt_quality_locked 1
-    # HiBy volume lock OFF: ro.vendor.volume_lock_enable=yes arms a vendor cap that pins
-    # STREAM_MUSIC at index 35 (balanced/single-ended phone-out) / 40 (h2w, lineout) / 80 (USB)
-    # while Settings.Global vendor.audio.hw.volume_lock is "yes" — enforced by SystemUI's
-    # HibyBarTool/HiByNewVolumeDialog on every knob/plug event, NOT by the policy volume curves.
-    # "no" is the vendor's own unlock switch (HibyAudioSettingInitUtils preserves a non-empty
-    # value across boots), so the wired outputs reach the full 0-100 range / 0 dB curve top.
-    exec_background - system system -- /system/bin/settings put global vendor.audio.hw.volume_lock no
-    # Pulsar Light (SGM31324 RGB): open the sysfs nodes that stock SELinux locked away
-    # from everything — the launcher drives them (as root) for volume-level color.
-    exec_background - root root -- /system/bin/sh -c "chmod 666 /sys/devices/platform/soc/4ac0000.qcom,qupv3_0_geni_se/4a94000.i2c/i2c-2/2-0030/leds/sgm31324-leds/* 2>/dev/null || true"
-    # Enable full-screen gesture navigation (swipe-back / swipe-up-home). The nav
-    # mode follows the enabled navbar RRO overlay: enable gestural, disable the
-    # three-button overlay, and set navigation_mode=2. (NOTE: this device's
-    # `cmd overlay` has NO `enable-exclusive-category` verb — verified on-device;
-    # use plain enable/disable, which is what actually flips the mode.)
-    exec_background - system system -- /system/bin/cmd overlay enable com.android.internal.systemui.navbar.gestural
-    exec_background - system system -- /system/bin/cmd overlay disable com.android.internal.systemui.navbar.threebutton
-    exec_background - system system -- /system/bin/settings put secure navigation_mode 2
-    exec_background - system system -- /system/bin/settings put secure back_gesture_inset_scale_left 1
-    exec_background - system system -- /system/bin/settings put secure back_gesture_inset_scale_right 1
-    # MikuOS navigation: this device's stock SystemUI draws NO nav bar / status bar, so the
-    # MikuOS accessibility service (edge back, gesture pill home/recents/quick-switch, top
-    # shade pull) IS the navigation. Keep it enabled every boot (the launcher also
-    # self-enables on first run). Verified 2026-08-25: it is NOT a boot-hang cause.
-    exec_background - system system -- /system/bin/settings put secure enabled_accessibility_services com.miku.systemui/.MikuNotificationShadeService
-    exec_background - system system -- /system/bin/settings put secure accessibility_enabled 1
-    # MikuOS power modal: long-press power -> framework "assistant" path -> stock SystemUI
-    # launches Settings.Secure `assistant` (our MikuPowerMenuActivity) with ACTION_ASSIST.
-    # 5 = LONG_PRESS_POWER_ASSISTANT. No accessibility dependency; very-long-press still
-    # reaches the (Miku-retinted) stock global actions dialog.
-    exec_background - system system -- /system/bin/settings put secure assistant com.miku.systemui/.MikuPowerMenuActivity
-    exec_background - system system -- /system/bin/settings put global power_button_long_press 1
-    exec_background - system system -- /system/bin/settings put secure assist_structure_enabled 0
-    exec_background - system system -- /system/bin/settings put secure assist_screenshot_enabled 0
-    # Framework doze/AOD OFF: HiBy's SystemUI never creates CentralSurfaces (no status bar), so
-    # DozeService NPEs (DozeUi.transitionTo → updateIsKeyguard on null) on every screen-off if
-    # doze runs. MikuOS has its own AOD (launcher MikuAodActivity); keep the stock doze dream off.
-    exec_background - system system -- /system/bin/settings put secure doze_enabled 0
-    exec_background - system system -- /system/bin/settings put secure doze_always_on 0
-    exec_background - system system -- /system/bin/settings put secure doze_pulse_on_pick_up 0
-    exec_background - system system -- /system/bin/settings put secure doze_pulse_on_double_tap 0
-    exec_background - system system -- /system/bin/settings put secure doze_tap_gesture 0
+# MikuOS: intentionally empty.
+# This file used to run settings, pm, appops, cmd, am, svc and sh through exec_background at
+# sys.boot_completed=1. On a user build with SELinux enforcing, init refuses those execs:
+# /system/bin/sh is shell_exec and the others are system_file, and the policy has no transition
+# from init for either (only toolbox_exec). None of it ever ran.
+# com.miku.sysbridge (BootSeeds.kt) applies the same items now, as the system uid.
+# cmd lock_settings set-disabled belongs to the Miku lockscreen. The SGM31324 LED chmod is gone:
+# apps cannot open those nodes under enforcing SELinux whatever the mode bits are.
 IMERCEOF
 debugfs -w -R "write $TMP_IME_RC system/etc/init/miku_ime.rc" "$OUTPUT_DIR/system.img" 2>/dev/null || true
 debugfs -w -R "set_inode_field system/etc/init/miku_ime.rc mode 0100644" "$OUTPUT_DIR/system.img" 2>/dev/null || true
 label "$OUTPUT_DIR/system.img" system/etc/init/miku_ime.rc u:object_r:system_file:s0
 rm -f "$TMP_IME_RC"
 
-# MikuOS power daemon: root rc service that maps Settings.Global miku_power_profile
-# (published by Miku Music's MikuPowerGovernor: perf / balanced / audio_only / idle) onto CPU
-# cluster frequency caps (+ GPU devfreq when present). Audio/DAC path is never touched — it
-# starves the app cores when the screen is off and music plays ("push the power to the DACs").
-# Sources: mikuos/build/powerd/miku_powerd.sh + miku_powerd.rc (the rc also seeds the
-# MANAGE_EXTERNAL_STORAGE appop for com.miku.player so folder art on the SD is readable from
-# the very first scan).
+# CPU power profiles: Miku Music's MikuPowerGovernor publishes Settings.Global miku_power_profile
+# (perf / balanced / audio_only / idle), com.miku.sysbridge mirrors it into
+# vendor.usb.miku.power_profile, and miku_powerd.rc writes the CPU cluster caps. The audio path is
+# never touched; it only starves the app cores when the screen is off and music plays.
+# Source: mikuos/build/powerd/miku_powerd.rc.
 POWERD_DIR="$MIKUOS_DIR/build/powerd"
-if [ -f "$POWERD_DIR/miku_powerd.sh" ] && [ -f "$POWERD_DIR/miku_powerd.rc" ]; then
-    dfput "$OUTPUT_DIR/system.img" "$POWERD_DIR/miku_powerd.sh" system/etc/miku_powerd.sh \
-        && debugfs -w -R "set_inode_field system/etc/miku_powerd.sh mode 0100755" "$OUTPUT_DIR/system.img" >/dev/null 2>&1 \
-        && label "$OUTPUT_DIR/system.img" system/etc/miku_powerd.sh u:object_r:system_file:s0 \
-        && dfput "$OUTPUT_DIR/system.img" "$POWERD_DIR/miku_powerd.rc" system/etc/init/miku_powerd.rc \
+if [ -f "$POWERD_DIR/miku_powerd.rc" ]; then
+    debugfs -w -R "rm system/etc/miku_powerd.sh" "$OUTPUT_DIR/system.img" >/dev/null 2>&1 || true
+    dfput "$OUTPUT_DIR/system.img" "$POWERD_DIR/miku_powerd.rc" system/etc/init/miku_powerd.rc \
         && label "$OUTPUT_DIR/system.img" system/etc/init/miku_powerd.rc u:object_r:system_file:s0 \
-        && echo "  -> Injected MikuOS power daemon (miku_powerd) + art-access appop seed" \
-        || echo "  !! miku_powerd inject failed"
+        && echo "  -> Injected MikuOS CPU power profile triggers" \
+        || echo "  !! miku_powerd.rc inject failed"
 else
-    echo "  !! mikuos/build/powerd/ missing — no power daemon in this image"
+    echo "  !! mikuos/build/powerd/ missing — no CPU power profiles in this image"
 fi
 
 # Optional dev Wi-Fi pre-seed, read on first boot by MikuWifiVault / onboarding
@@ -1137,7 +1395,9 @@ fi
 # If the file is absent the step is skipped and the image ships with no
 # pre-seeded network. Never put a real PSK in this script.
 DEV_WIFI_CONF="$(dirname "$0")/mikuos-dev-wifi.conf"
-if [ -f "$DEV_WIFI_CONF" ]; then
+if [ "$MIKUOS_RELEASE" = "1" ]; then
+    echo "  -- Release build: no dev Wi-Fi pre-seed"
+elif [ -f "$DEV_WIFI_CONF" ]; then
     debugfs -w -R "write $DEV_WIFI_CONF system/etc/mikuos-dev-wifi.conf" "$OUTPUT_DIR/system.img" 2>/dev/null || true
     debugfs -w -R "set_inode_field system/etc/mikuos-dev-wifi.conf mode 0100644" "$OUTPUT_DIR/system.img" 2>/dev/null || true
     label "$OUTPUT_DIR/system.img" system/etc/mikuos-dev-wifi.conf u:object_r:system_file:s0
@@ -1267,6 +1527,70 @@ if [ "$REKEY" = "1" ] && { case " $_apex_roles " in (*" media "*|*" networkstack
     fi
 fi
 
+echo "[5b2] Removing stock apps that duplicate MikuOS or serve nothing on a DAP..."
+# Each one here was checked on 0.1.16 (2026-10-09): no MikuOS code or build step references it,
+# nothing in the OS depends on it, and it is either a UI that competes with a MikuOS one or a
+# feature a music player has no use for. What is NOT here, on purpose:
+#   SystemUI          the window manager needs it (status/nav bar insets, keyguard, shade);
+#                     removing it bootloops. MikuOS hides it instead of replacing it.
+#   Settings          hosts dialogs other apps and the OS launch (Bluetooth pairing PIN,
+#                     battery-optimisation and overlay grants, device admin...). It goes once
+#                     MikuSettings covers every one: mikuos/docs/settings-parity.md.
+#   LatinIME          the first-boot keyboard this script seeds; without it a clean flash
+#                     cannot type a Wi-Fi password.
+#   DeskClock, Gallery2, Calculator, SoundRecorder, Calendar, Snapcam
+#                     each is the only handler of an intent other apps use (set an alarm,
+#                     view an image...). They go when a MikuOS app handles those intents.
+debloat() {
+    local img="$1" dir="$2" why="$3"
+    if img_has "$OUTPUT_DIR/$img" "$dir"; then
+        rm_tree "$OUTPUT_DIR/$img" "$dir"
+        if img_has "$OUTPUT_DIR/$img" "$dir"; then
+            echo "  !! $img:$dir still present"
+        else
+            echo "  -> removed $img:$dir ($why)"
+        fi
+    fi
+}
+debloat system.img     system/app/EasterEgg                "Android version easter egg"
+debloat system.img     system/app/BasicDreams              "screensaver; MikuOS has its own AOD"
+debloat system.img     system/app/BookmarkProvider         "browser bookmarks provider, no AOSP browser"
+debloat product.img    app/PhotoTable                      "photo screensaver"
+debloat product.img    app/RideModeAudio                   "Qualcomm ride-mode audio, unused"
+debloat product.img    priv-app/SettingsIntelligence       "search for the stock Settings, which is hidden"
+debloat system_ext.img priv-app/AccessibilityMenu          "a second floating menu over the MikuOS bars"
+debloat system_ext.img priv-app/EmergencyInfo              "phone emergency-info card"
+debloat vendor.img     app/HiByTest                        "HiBy factory test app"
+debloat vendor.img     app/HiByM500Widget                  "HiBy home-screen widgets for their launcher"
+# Hardware the image claims and the M500 does not have. Checked on 0.1.18 (2026-10-10): no NFC
+# controller node and no NFC service, and the sensor list is an accelerometer, a magnetometer and
+# Qualcomm's virtual sensors only (no gyro, barometer, proximity or light sensor), and one camera,
+# facing back. These feature files came from Qualcomm's reference build; they make the Play
+# Store offer apps that need the hardware and make apps try it and fail.
+for _f in android.hardware.nfc.xml android.hardware.nfc.ese.xml android.hardware.nfc.hce.xml \
+          android.hardware.nfc.hcef.xml android.hardware.nfc.uicc.xml \
+          android.hardware.sensor.barometer.xml android.hardware.sensor.gyroscope.xml \
+          android.hardware.sensor.proximity.xml android.hardware.sensor.light.xml \
+          android.hardware.camera.front.xml; do
+    if img_has "$OUTPUT_DIR/vendor.img" "etc/permissions/$_f"; then
+        debugfs -w -R "rm etc/permissions/$_f" "$OUTPUT_DIR/vendor.img" >/dev/null 2>&1
+        img_has "$OUTPUT_DIR/vendor.img" "etc/permissions/$_f" && echo "  !! vendor: $_f still present" \
+            || echo "  -> vendor: dropped false feature $_f"
+    fi
+done
+if [ "$TOOLS_INJECTED" = "1" ]; then
+    debloat product.img app/DeskClock          "replaced by MikuTools Clock"
+    debloat vendor.img  app/ExactCalculator    "replaced by MikuTools Calculator"
+    debloat product.img app/Calendar           "replaced by MikuTools Calendar"
+fi
+if [ "$MEDIA_INJECTED" = "1" ]; then
+    debloat system.img  system/app/Gallery2          "replaced by MikuMedia Gallery"
+    debloat product.img app/Gallery2                 "second copy of the stock Gallery"
+    debloat system.img  system/app/SnapdragonCamera  "replaced by MikuMedia Camera"
+    debloat vendor.img  priv-app/SnapdragonCamera    "vendor copy of the stock camera"
+    debloat vendor.img  app/HibySound                "replaced by MikuMedia Recorder"
+fi
+
 echo "[5c] Verifying injected files own data blocks (debugfs disk-full noop guard)..."
 verify_baked() { # <img> <path> — fail unless file exists, and has blocks when size>0
     local _st _sz _bc
@@ -1287,14 +1611,15 @@ for _f in \
     system/etc/init/miku_preload.rc \
     system/etc/miku_preload_apks.sh \
     system/etc/init/miku_powerd.rc \
-    system/etc/miku_powerd.sh \
     system/app/MikuLauncher/MikuLauncher.apk \
     system/app/MikuMusic/MikuMusic.apk \
-    system/app/MikuSettings/MikuSettings.apk \
+    system/priv-app/MikuSettings/MikuSettings.apk \
     system/app/MikuSystemUI/MikuSystemUI.apk \
     system/etc/permissions/privapp-permissions-mikuos.xml \
 ; do verify_baked "$OUTPUT_DIR/system.img" "$_f" || GATE_FAIL=1; done
 verify_baked "$OUTPUT_DIR/vendor.img" "etc/init/miku_vendor_adb.rc" || GATE_FAIL=1
+verify_baked "$OUTPUT_DIR/vendor.img" "etc/init/miku_audio.rc" || GATE_FAIL=1
+verify_baked "$OUTPUT_DIR/vendor.img" "etc/init/miku_charge.rc" || GATE_FAIL=1
 verify_baked "$OUTPUT_DIR/vendor.img" "etc/audio_policy_volumes.xml" || GATE_FAIL=1
 for _img in system system_ext product vendor; do
     _free="$(debugfs -R "stats -h" "$OUTPUT_DIR/$_img.img" 2>/dev/null | sed -n 's/^Free blocks: *\([0-9]*\).*/\1/p')"
@@ -1304,6 +1629,23 @@ for _img in system system_ext product vendor; do
         GATE_FAIL=1
     fi
 done
+# Release gate: refuse to pack a MIKUOS_RELEASE=1 image that still carries a dev back door.
+if [ "$MIKUOS_RELEASE" = "1" ]; then
+    _rp="$(debugfs -R "cat system/build.prop" "$OUTPUT_DIR/system.img" 2>/dev/null)"
+    for _want in ro.secure=1 ro.adb.secure=1 ro.debuggable=0 ro.miku.release=1; do
+        grep -qx "$_want" <<< "$_rp" || { echo "  !! release gate: $_want missing from system/build.prop" >&2; GATE_FAIL=1; }
+    done
+    if grep -qE '^((service|persist)\.adb\.tcp\.port|service\.adb\.root)=' <<< "$_rp"; then
+        echo "  !! release gate: adb tcp/root props still in system/build.prop" >&2; GATE_FAIL=1
+    fi
+    for _bad in adb_keys system/etc/miku_adb_keys system/etc/miku_root_boot.sh system/etc/mikuos-dev-wifi.conf; do
+        if img_has "$OUTPUT_DIR/system.img" "$_bad"; then echo "  !! release gate: $_bad is in system.img" >&2; GATE_FAIL=1; fi
+    done
+    if debugfs -R "cat system/etc/init/miku_adb.rc" "$OUTPUT_DIR/system.img" 2>/dev/null | grep -qE 'ro\.adb\.secure 0|start adbd|miku_root_boot'; then
+        echo "  !! release gate: miku_adb.rc still forces adb or root" >&2; GATE_FAIL=1
+    fi
+    [ "$GATE_FAIL" = "0" ] && echo "  -> release gate passed (adb secure, not debuggable, no dev key/root/Wi-Fi seed)"
+fi
 [ "$GATE_FAIL" = "0" ] || { echo "!! Injection verification failed — NOT packing a corrupt super." >&2; exit 1; }
 
 # Shrink each edited image to its minimal size so the generous working sizes

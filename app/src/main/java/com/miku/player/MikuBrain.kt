@@ -24,11 +24,11 @@ object MikuBrain {
     private const val TAG = "MikuBrain"
 
     enum class BoneType(val displayName: String) {
-        AUDIO_DSP("Cirrus Audio & Real DSP"),
-        LIBRARY_SCANNER("Media Indexer & Tag Scanner"),
-        NETWORK_INGRESS("m500d Ingress & Rsync Transceiver"),
-        HARDWARE_IO("CS43198 DAC sysfs & I/O"),
-        UI_RENDERER("Compose Surface & 60FPS Orchestrator")
+        AUDIO_DSP("Audio and DSP"),
+        LIBRARY_SCANNER("Library and tag scanner"),
+        NETWORK_INGRESS("Network sync (m500d, rsync)"),
+        HARDWARE_IO("CS43198 DAC sysfs and I/O"),
+        UI_RENDERER("UI rendering")
     }
 
     enum class BoneState {

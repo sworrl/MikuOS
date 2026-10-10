@@ -21,32 +21,32 @@ object CirrusLogicManager {
     const val SYSFS_BASE = "/sys/devices/platform/sa_sound_setting"
 
     enum class DigitalFilter(val id: String, val label: String, val description: String) {
-        FAST_LINEAR("fast_rolloff_phase_compensated", "Fast Roll-off, Phase Compensated", "Reference linear phase, wide soundstage and precise imaging"),
-        FAST_MINIMUM("fast_rolloff_low_latency", "Fast Roll-off, Low Latency", "Minimum phase with ultra-low group delay and punchy dynamics"),
-        SLOW_LINEAR("slow_rolloff_phase_compensated", "Slow Roll-off, Phase Compensated", "Smooth linear decay with zero phase distortion"),
-        SLOW_MINIMUM("slow_rolloff_low_latency", "Slow Roll-off, Low Latency", "Warm acoustic roll-off with minimal pre-ringing"),
-        NOS("nos", "Non-Oversampling (NOS)", "Bypasses internal digital oversampling for raw, analog-like fidelity")
+        FAST_LINEAR("fast_rolloff_phase_compensated", "Fast Roll-off, Phase Compensated", "Linear phase with a sharp cutoff"),
+        FAST_MINIMUM("fast_rolloff_low_latency", "Fast Roll-off, Low Latency", "Minimum phase with a sharp cutoff and low delay"),
+        SLOW_LINEAR("slow_rolloff_phase_compensated", "Slow Roll-off, Phase Compensated", "Linear phase with a gentle cutoff"),
+        SLOW_MINIMUM("slow_rolloff_low_latency", "Slow Roll-off, Low Latency", "Minimum phase with a gentle cutoff and little pre-ringing"),
+        NOS("nos", "NOS (non-oversampling)", "Skips the DAC's oversampling filter. Softer top end, no pre-ringing. HiBy's driver masked this off through firmware 1.20. MikuOS ships HiBy's fixed 1.30 driver.")
     }
 
     enum class GainMode(val id: String, val label: String, val sysfsValue: String, val description: String) {
-        LOW("low", "Low Gain (0 dB)", "low", "Optimized for ultra-sensitive in-ear monitors (zero noise floor)"),
-        HIGH("high", "High Gain (+6 dB)", "high", "High voltage swing for planar and high-impedance headphones")
+        LOW("low", "Low (-12 dB)", "low", "Digital offset of -12 dB on the 3.5 and 4.4 mm outputs. More volume steps for sensitive IEMs. Same noise floor."),
+        HIGH("high", "High (0 dB)", "high", "No digital offset. For louder output use High power, which switches in the external amp stage.")
     }
 
     enum class OutputMode(val id: String, val label: String, val sysfsValue: String, val icon: String, val description: String) {
-        AUTO("auto", "Auto-Detect Physical / BT", "auto", "⚡", "Intelligently routes audio to whatever physical port or Bluetooth gear is connected"),
-        BAL_HEADPHONE_OUT("bal_po", "4.4mm Balanced (BAL PO)", "bal_po", "🎧", "Force dual differential 4.4mm balanced output stage"),
-        HEADPHONE_OUT("po", "3.5mm Single-Ended (PO)", "po", "🎧", "Force dedicated 3.5mm unbalanced headphone amplifier stage"),
-        BLUETOOTH("bt", "Bluetooth Audio (A2DP / Speaker)", "bt", "🔊", "Force wireless stream to connected Bluetooth speaker or headphones"),
-        LINE_OUT("lo", "Line Out (LO / BAL LO)", "lo", "📻", "Fixed reference voltage line output for external desktop amplifiers"),
-        USB_DAC("usb", "USB-C Audio / UAC2 DAC", "usb", "💻", "Route audio stream to external Type-C audio hardware")
+        AUTO("auto", "Auto (wired or Bluetooth)", "auto", "⚡", "Plays to whatever is plugged in or paired"),
+        BAL_HEADPHONE_OUT("bal_po", "4.4mm Balanced (BAL PO)", "bal_po", "🎧", "Always use the 4.4mm balanced output"),
+        HEADPHONE_OUT("po", "3.5mm Single-Ended (PO)", "po", "🎧", "Always use the 3.5mm headphone output"),
+        BLUETOOTH("bt", "Bluetooth Audio (A2DP / Speaker)", "bt", "🔊", "Always play to the connected Bluetooth speaker or headphones"),
+        LINE_OUT("lo", "Line Out (LO / BAL LO)", "lo", "📻", "Fixed-level line out for an external amp"),
+        USB_DAC("usb", "USB-C Audio / UAC2 DAC", "usb", "💻", "Play to a USB-C DAC or audio device")
     }
 
     enum class AudioShareTarget(val id: String, val label: String, val description: String) {
-        DUAL_44_AND_BT("dual_44_bt", "4.4mm Balanced DAC + Bluetooth Speaker", "Simultaneously powers 4.4mm balanced IEMs while streaming to Bluetooth speaker/gear"),
-        DUAL_35_AND_BT("dual_35_bt", "3.5mm Single-Ended DAC + Bluetooth Speaker", "Simultaneously powers 3.5mm IEMs while streaming to Bluetooth speaker/gear"),
-        DUAL_PHYSICAL("dual_phy", "Both Physical Ports (3.5mm + 4.4mm Balanced)", "Simultaneously powers both 3.5mm and 4.4mm ports for dual wired IEMs"),
-        WIRED_AND_USB("wired_usb", "Wired DAC + USB-C External DAC", "Mirrors real-time audio across internal CS43198 DAC and external Type-C DAC")
+        DUAL_44_AND_BT("dual_44_bt", "4.4mm Balanced DAC + Bluetooth Speaker", "Plays on 4.4mm and a Bluetooth device at the same time"),
+        DUAL_35_AND_BT("dual_35_bt", "3.5mm Single-Ended DAC + Bluetooth Speaker", "Plays on 3.5mm and a Bluetooth device at the same time"),
+        DUAL_PHYSICAL("dual_phy", "Both Physical Ports (3.5mm + 4.4mm Balanced)", "Plays on the 3.5mm and 4.4mm jacks at the same time"),
+        WIRED_AND_USB("wired_usb", "Wired DAC + USB-C External DAC", "Plays on the internal CS43198 DAC and a USB-C DAC at the same time")
     }
 
     /**
@@ -117,7 +117,13 @@ object CirrusLogicManager {
         return null
     }
 
+    // Filter, gain, DRE and high power read persist.vendor.audio.miku.* first: what the DAC was
+    // last told through com.miku.sysbridge, shared with the Hardware app, MikuOS Settings, the
+    // launcher and the SystemUI tiles. Then the old sources.
     fun getDigitalFilter(ctx: Context): DigitalFilter {
+        com.miku.player.profiles.HibyDacBridge.get(com.miku.player.profiles.HibyDacBridge.PROP_FILTER)?.let { v ->
+            DigitalFilter.values().firstOrNull { it.id == v.lowercase() }?.let { return it }
+        }
         val kernelVal = readSysfs("digital_filter")
         if (!kernelVal.isNullOrBlank()) {
             DigitalFilter.values().firstOrNull { it.id == kernelVal.lowercase() }?.let { return it }
@@ -141,9 +147,18 @@ object CirrusLogicManager {
         // Settings row that [getDigitalFilter] reads back changed while the DAC did not.)
         MikuDirectAudio.pushToHal(ctx, "vendor.audio.hiby.hw.digital_filter", filter.id)
         MikuDirectAudio.pushToHal(ctx, "vendor.audio.hiby.digital_filter", filter.id)
+        // Neither line above reaches the DAC: the framework turns the hw.* key into a property
+        // nothing reads, and the HAL ignores the other. The node is written by init when
+        // vendor.audio.hiby.digital_filter (no "hw") changes, which only system_server may set.
+        // UNVERIFIED on hardware - see com.miku.player.profiles.HibyDacBridge / DspKnob.FILTER.
+        com.miku.player.profiles.HibyDacBridge.init(ctx)
+        com.miku.player.profiles.HibyDacBridge.set(com.miku.player.profiles.HibyDacBridge.PROP_FILTER, filter.id)
     }
 
     fun getGainMode(ctx: Context): GainMode {
+        com.miku.player.profiles.HibyDacBridge.get(com.miku.player.profiles.HibyDacBridge.PROP_GAIN)?.let { v ->
+            GainMode.values().firstOrNull { it.sysfsValue == v.lowercase() }?.let { return it }
+        }
         val kernelVal = readSysfs("gain")
         if (!kernelVal.isNullOrBlank()) {
             GainMode.values().firstOrNull { it.sysfsValue == kernelVal.lowercase() }?.let { return it }
@@ -160,6 +175,8 @@ object CirrusLogicManager {
         MikuDirectAudio.rememberUserGain(ctx, gain.sysfsValue)
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.hw.gain", gain.sysfsValue) }
         runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.gain", gain.sysfsValue) }
+        com.miku.player.profiles.HibyDacBridge.init(ctx)
+        com.miku.player.profiles.HibyDacBridge.set(com.miku.player.profiles.HibyDacBridge.PROP_GAIN, gain.sysfsValue)
 
         // Apply it for real. The old path shelled out to su (echo > sysfs / setprop) which is a
         // guaranteed no-op on MikuOS (no root) - the Settings rows changed but the DAC stayed on
@@ -278,6 +295,7 @@ object CirrusLogicManager {
     }
 
     fun isDreEnabled(ctx: Context): Boolean {
+        com.miku.player.profiles.HibyDacBridge.get(com.miku.player.profiles.HibyDacBridge.PROP_DRE)?.let { return it == "dremode_enable" }
         val kernelVal = readSysfs("dre_mode")
         if (kernelVal != null) return kernelVal == "dremode_enable" || kernelVal == "1" || kernelVal.equals("on", true)
         val cr = ctx.contentResolver
@@ -294,9 +312,15 @@ object CirrusLogicManager {
         // toggle's state matches the DAC instead of only matching a Settings row.
         MikuDirectAudio.pushToHal(ctx, "vendor.audio.hiby.hw.dre", v.toString())
         MikuDirectAudio.pushToHal(ctx, "vendor.audio.hiby.hw.dre_mode", sysfsStr)
+        // The real switch (init -> sa_sound_setting/dre_mode). The Global row is what HiBy's
+        // AudioService re-applies at boot; the bridge applies it now. See HibyDacBridge.
+        runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.dre_mode", sysfsStr) }
+        com.miku.player.profiles.HibyDacBridge.init(ctx)
+        com.miku.player.profiles.HibyDacBridge.set(com.miku.player.profiles.HibyDacBridge.PROP_DRE, sysfsStr)
     }
 
     fun isHighPowerEnabled(ctx: Context): Boolean {
+        com.miku.player.profiles.HibyDacBridge.get(com.miku.player.profiles.HibyDacBridge.PROP_HIGH_POWER)?.let { return it == "hpower_enable" }
         val kernelVal = readSysfs("high_power_mode")
         if (kernelVal != null) return kernelVal == "hpower_enable" || kernelVal == "1" || kernelVal.equals("on", true)
         val cr = ctx.contentResolver
@@ -311,6 +335,10 @@ object CirrusLogicManager {
         runCatching { Settings.Global.putInt(cr, "vendor.audio.hiby.hw.high_power", v) }
         MikuDirectAudio.pushToHal(ctx, "vendor.audio.hiby.hw.high_power", v.toString())
         MikuDirectAudio.pushToHal(ctx, "vendor.audio.hiby.hw.high_power_mode", sysfsStr)
+        // The real switch (init -> sa_sound_setting/high_power_mode), live now and at boot.
+        runCatching { Settings.Global.putString(cr, "vendor.audio.hiby.high_power", sysfsStr) }
+        com.miku.player.profiles.HibyDacBridge.init(ctx)
+        com.miku.player.profiles.HibyDacBridge.set(com.miku.player.profiles.HibyDacBridge.PROP_HIGH_POWER, sysfsStr)
     }
 
     fun getDsdGainCompensate(ctx: Context): Boolean {
@@ -372,10 +400,12 @@ object CirrusLogicManager {
                 source = if (sysfsOk) HardwareAuditState.Source.SYSFS else HardwareAuditState.Source.NONE
             )
         }
-        val sFilter = vendorSetting(ctx, "digital_filter") ?: vendorSetting(ctx, "hw.digital_filter")
-        val sGain = vendorSetting(ctx, "gain") ?: vendorSetting(ctx, "hw.gain")
-        val sHp = vendorSetting(ctx, "high_power_mode") ?: vendorSetting(ctx, "high_power")
-        val sDre = vendorSetting(ctx, "dre_mode")
+        // The bridge's persist properties first: what the DAC was last told.
+        val bridge = com.miku.player.profiles.HibyDacBridge
+        val sFilter = bridge.get(bridge.PROP_FILTER) ?: vendorSetting(ctx, "digital_filter") ?: vendorSetting(ctx, "hw.digital_filter")
+        val sGain = bridge.get(bridge.PROP_GAIN) ?: vendorSetting(ctx, "gain") ?: vendorSetting(ctx, "hw.gain")
+        val sHp = bridge.get(bridge.PROP_HIGH_POWER) ?: vendorSetting(ctx, "high_power_mode") ?: vendorSetting(ctx, "high_power")
+        val sDre = bridge.get(bridge.PROP_DRE) ?: vendorSetting(ctx, "dre_mode")
         val sOut = vendorSetting(ctx, "hw.bal_po_lo_switch")
         val sBal = vendorSetting(ctx, "hw.balance")
         val any = listOf(sFilter, sGain, sHp, sDre, sOut, sBal).any { it != null }

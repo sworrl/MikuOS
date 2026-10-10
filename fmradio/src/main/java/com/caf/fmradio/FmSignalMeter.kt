@@ -21,7 +21,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import android.os.SystemClock
 import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
@@ -48,25 +48,19 @@ fun FmSignalMeter(st: FmState, modifier: Modifier = Modifier) {
     val s = st.signal
     val rssi = s.rssi ?: st.rssi ?: 0
     val target = (rssi / RSSI_FULL).coerceIn(0f, 1f)
-    val needle by animateFloatAsState(target, tween(220), label = "needle")
-
-    // Peak hold: snap up, bleed down. The decay is slow enough to survive a slow hand.
-    // Decay on a slow tick and only when it actually moves the needle. At 140 ms this wrote
-    // state seven times a second and recomposed the meter with it, which is a lot of work for
-    // a decorative ghost; 400 ms is still smooth to the eye while aiming an antenna.
-    var peak by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(target) { if (target > peak) peak = target }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(400)
-            if (peak > 0.01f) peak = (peak - 0.018f).coerceAtLeast(0f)
-        }
-    }
+    // Needle: snapped, not tweened. A 220 ms tween on every 750 ms reading meant ~13 window
+    // frames per reading, and each window frame re-blends the full screen on this GPU. One
+    // frame per reading is what the data supports anyway.
+    //
+    // Peak hold: snap up, bleed down at ~4.5% of scale per second, computed from elapsed time
+    // when a reading arrives instead of on a timer, so the ghost costs no frames of its own.
+    val hold = remember { PeakHold() }
+    val peak = hold.update(target, SystemClock.elapsedRealtime())
+    val needle = target
 
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(Color(0xBB07161D))
-            .border(1.dp, CyberGlassBorder, RoundedCornerShape(12.dp))
+        modifier.fillMaxWidth()
+            .glass(RoundedCornerShape(14.dp), accent = MikuTeal, accent2 = MikuPink, fill = Color(0xB807161D), rimAlpha = 0.4f, shine = 0.8f)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -187,5 +181,17 @@ private fun FmSignalPills(st: FmState) {
             st.diagnostics.routeLabel.uppercase(Locale.US),
             color = MikuTextSecondary, fontSize = 6.5.sp, fontFamily = AudiowideFont
         )
+    }
+}
+
+/** Peak-hold ghost state. Plain object: it changes only alongside a new reading. */
+private class PeakHold {
+    private var value = 0f
+    private var at = 0L
+    fun update(target: Float, now: Long): Float {
+        val decayed = if (at == 0L) 0f else (value - (now - at) / 1000f * 0.045f).coerceAtLeast(0f)
+        value = maxOf(target, decayed)
+        at = now
+        return value
     }
 }

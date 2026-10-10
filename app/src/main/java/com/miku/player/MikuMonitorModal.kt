@@ -106,12 +106,12 @@ fun MikuMonitorModal(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            if (ingestOn) "INGRESS ENGINE: ON" else "INGRESS ENGINE: OFF — LOCAL SD SCANS ONLY",
+                            if (ingestOn) "NETWORK SYNC: ON" else "NETWORK SYNC: OFF (SD CARD ONLY)",
                             color = if (ingestOn) CyberNeonCyan else Color(0xFFFF8A80),
                             fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace
                         )
                         Text(
-                            if (ingestOn) "m500d discovery + rsync transceiver live" else "No network ingest runs. Library updates come from the SD card scan (Force Scan / periodic).",
+                            if (ingestOn) "m500d discovery and rsync running" else "No network ingest runs. Library updates come from the SD card scan (Force Scan / periodic).",
                             color = Color(0xFFB0BEC5), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace
                         )
                     }
@@ -131,7 +131,7 @@ fun MikuMonitorModal(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "CYBERDECK // MIKU_RELAY_NODE // V.2.0",
+                        text = "SYNC MONITOR",
                         color = CyberNeonPink,
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.Black,
@@ -217,12 +217,12 @@ fun MikuMonitorModal(
                         onMusicDirChange = { musicDirInput = it },
                         onDiscoverBeacon = {
                             MikuSyncTransceiver.wake()
-                            statusFeedback = "📡 Beacon Probe broadcasted on UDP 8788"
+                            statusFeedback = "Beacon sent on UDP 8788"
                         },
                         onSpeedTest = {
-                            statusFeedback = "⚡ Running speedtest..."
+                            statusFeedback = "Running speed test…"
                             MikuSyncTransceiver.runSpeedTest { res ->
-                                statusFeedback = "⚡ Measured: ${String.format(Locale.US, "%.1f", res.speedMBs)} MB/s (${res.latencyMs}ms)"
+                                statusFeedback = "Measured: ${String.format(Locale.US, "%.1f", res.speedMBs)} MB/s (${res.latencyMs}ms)"
                             }
                         },
                         workersLabel = if (daemon.online && (daemon.fetchActive > 0 || daemon.workers.isNotEmpty())) "${maxOf(daemon.fetchActive, daemon.workers.size)} active" else "—",
@@ -261,14 +261,14 @@ fun MikuMonitorModal(
                             .clickable {
                                 coroutineScope.launch {
                                     MikuSyncTransceiver.triggerDaemonSync(true) { ok, msg ->
-                                        statusFeedback = if (ok) "⚡ Ingress Sync Override Initialized" else "⚠️ Sync Failed: $msg"
+                                        statusFeedback = if (ok) "Sync started" else "Sync failed: $msg"
                                     }
                                 }
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "[ OVERRIDE: INIT SYNC ]",
+                            text = "[ START SYNC ]",
                             color = CyberNeonCyan,
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -288,14 +288,14 @@ fun MikuMonitorModal(
                             .clickable {
                                 coroutineScope.launch {
                                     MikuSyncTransceiver.triggerDaemonSync(false) { ok, msg ->
-                                        statusFeedback = if (ok) "⏹ Ingress Sync Halted" else "⚠️ Halt Failed: $msg"
+                                        statusFeedback = if (ok) "Sync stopped" else "Stop failed: $msg"
                                     }
                                 }
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "[ ABORT: HALT SYNC ]",
+                            text = "[ STOP SYNC ]",
                             color = CyberNeonPink,
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -538,7 +538,7 @@ private fun TelemetryView(
         ) {
             val listState = rememberLazyListState()
             // Real event log only; an empty log shows one honest line instead of canned history.
-            val logs = if (syncState.eventLogs.isNotEmpty()) syncState.eventLogs else listOf("[--:--:--] no events yet — waiting for daemon / beacon traffic")
+            val logs = if (syncState.eventLogs.isNotEmpty()) syncState.eventLogs else listOf("[--:--:--] no events yet, waiting for daemon or beacon traffic")
 
             LazyColumn(
                 state = listState,
@@ -662,13 +662,13 @@ private fun UplinkConfigView(
             ConfigBox(label = "BEACON_PORT (UDP)", value = "8788", onValueChange = {})
         }
         item {
-            ConfigBox(label = "SYNC_HOST (configured)", value = souffleHost.ifEmpty { "— (not configured)" }, onValueChange = onSouffleHostChange)
+            ConfigBox(label = "SYNC_HOST (configured)", value = souffleHost.ifEmpty { "(not configured)" }, onValueChange = onSouffleHostChange)
         }
         item {
             ConfigBox(label = "SD_MUSIC_DIR (resolved)", value = musicDir, onValueChange = onMusicDirChange)
         }
         item {
-            ConfigBox(label = "INGRESS_WORKERS (daemon)", value = workersLabel, onValueChange = {})
+            ConfigBox(label = "SYNC_WORKERS (daemon)", value = workersLabel, onValueChange = {})
         }
         item {
             ConfigBox(label = "CACHE (daemon)", value = cacheLabel, onValueChange = {})
@@ -688,7 +688,7 @@ private fun UplinkConfigView(
                         .clickable { onDiscoverBeacon() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("📡 BEACON DISCOVERY", color = CyberNeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("BEACON DISCOVERY", color = CyberNeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
 
                 Box(
@@ -701,7 +701,7 @@ private fun UplinkConfigView(
                         .clickable { onSpeedTest() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("⚡ RUN SPEEDTEST", color = Color(0xFFFFD600), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("RUN SPEED TEST", color = Color(0xFFFFD600), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
             }
         }

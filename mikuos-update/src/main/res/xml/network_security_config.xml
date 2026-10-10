@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext is allowed so a LAN test server (http://192.168.x.x:8000/ota/) works. Integrity never
+  depends on the transport: the manifest must carry a valid P-521 signature from an embedded key,
+  and every APK must match the SHA-256 in that signed manifest and the installed app's signer.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

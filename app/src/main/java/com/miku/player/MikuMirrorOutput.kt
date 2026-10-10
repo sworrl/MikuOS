@@ -178,6 +178,7 @@ object MikuMirrorOutput {
         Log.i(TAG, "rescan ($reason): $status")
         // USB routing defers to us while sharing and takes over again when we stop.
         MikuUsbDacOutput.refresh(reason = "mirror:$reason")
+        com.miku.player.volume.MikuOutputVolumes.refresh()
     }
 
     private fun label(d: AudioDeviceInfo) =

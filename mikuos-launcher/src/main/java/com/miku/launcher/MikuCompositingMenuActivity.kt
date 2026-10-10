@@ -55,7 +55,7 @@ private fun CompositingMenu(activity: Activity) {
             .padding(16.dp)
     ) {
         Text("KDE COMPOSITING", color = MikuTeal, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-        Text("Per-event window transitions — pick VARIED or pin one, then Preview.",
+        Text("Window transitions for each event. Pick VARIED or pin one, then Preview.",
             color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
         Spacer(Modifier.height(12.dp))
 
@@ -102,7 +102,7 @@ private fun CompositingMenu(activity: Activity) {
                                 activity.startActivity(i, MikuCompositing.optionsFor(activity, fx))
                             }
                             .padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) { Text("▶ PREVIEW", color = MikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    ) { Text("PREVIEW", color = MikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                 }
             }
         }

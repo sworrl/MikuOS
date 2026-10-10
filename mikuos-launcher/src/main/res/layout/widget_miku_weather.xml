@@ -43,5 +43,17 @@
             android:textSize="7sp"
             android:maxLines="1"
             android:ellipsize="end" />
+
+        <!-- Active NWS alert, or the nearest NOAA weather radio channel (MikuNwsAlerts). -->
+        <TextView
+            android:id="@+id/widget_weather_alert"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#8BA6A9"
+            android:textSize="7sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>

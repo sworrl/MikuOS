@@ -50,6 +50,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import com.miku.launcher.ui.mikuBeatPulse
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -149,6 +150,9 @@ fun resolveAppDisplayLabel(pkg: String, activityName: String = "", rawLabel: Str
     }
 }
 
+/** The pearl's ring once Miku Music's icon has gone gold (see MikuSecrets.GOLDEN_ICON). */
+private val GOLD_RING_STOPS = listOf(Color(0xFFFFF3B0), Color(0xFFFFC930), Color(0xFF8A5A00), Color(0xFFFFD54F), Color(0xFFFFF3B0))
+
 fun resolveCustomAppIcon(pkg: String, label: String = "", activityName: String = ""): Int? {
     if (pkg == "com.android.settings") {
         return R.drawable.ic_settings_miku
@@ -240,9 +244,12 @@ class MikuLauncherActivity : ComponentActivity() {
             try {
                 android.provider.Settings.Secure.putInt(contentResolver, "user_setup_complete", 1)
                 android.provider.Settings.Global.putInt(contentResolver, "device_provisioned", 1)
-                android.provider.Settings.Global.putInt(contentResolver, android.provider.Settings.Global.ADB_ENABLED, 1)
-                android.provider.Settings.Global.putInt(contentResolver, android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 1)
-                android.provider.Settings.Global.putInt(contentResolver, "adb_wifi_enabled", 1)
+                // Dev builds only: a release build (ro.miku.release=1) leaves adb to the user.
+                if (!MikuSystemTuning.isReleaseBuild()) {
+                    android.provider.Settings.Global.putInt(contentResolver, android.provider.Settings.Global.ADB_ENABLED, 1)
+                    android.provider.Settings.Global.putInt(contentResolver, android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 1)
+                    android.provider.Settings.Global.putInt(contentResolver, "adb_wifi_enabled", 1)
+                }
             } catch (_: Throwable) {}
 
             // The high-perf Wi-Fi lock moved into MikuSystemTuning. It used to be acquired here
@@ -435,7 +442,7 @@ class MikuLauncherActivity : ComponentActivity() {
 }
 
 /** Default quilt patch order (persisted user order is reconciled against this list). */
-val MikuQuiltBadgeIds = listOf("clock", "wxtile", "network", "nowplaying", "dac", "ingest", "library", "brain", "thermal", "volume", "battery", "control")
+val MikuQuiltBadgeIds = listOf("clock", "wxtile", "network", "nowplaying", "bpmgame", "dac", "ingest", "library", "brain", "thermal", "volume", "battery", "control")
 
 @Composable
 fun MikuLauncherScreen() {
@@ -977,14 +984,14 @@ fun MikuLauncherScreen() {
         if (customWallpaperBitmap != null) {
             Image(
                 bitmap = customWallpaperBitmap,
-                contentDescription = "Custom Desktop Wallpaper",
+                contentDescription = "Wallpaper",
                 modifier = Modifier.fillMaxSize().graphicsLayer(),
                 contentScale = ContentScale.Crop
             )
         } else {
             Image(
                 painter = painterResource(id = currentWallpaperRes),
-                contentDescription = "Miku Desktop Wallpaper",
+                contentDescription = "Wallpaper",
                 modifier = Modifier.fillMaxSize().graphicsLayer(),
                 contentScale = ContentScale.Crop
             )
@@ -1009,6 +1016,10 @@ fun MikuLauncherScreen() {
         // Now-playing accent tint over the wallpaper (~8 %, animated, transparent when idle).
         Box(Modifier.fillMaxSize().background(npAccent.scrim))
 
+        // BPM-game secrets that live on the wallpaper: Negi Snow and Concert Mode. Draws nothing
+        // (and runs no frame loop) unless one of them is earned and on.
+        MikuSecretHomeFx(isPlaying = isAudioPlaying, accent = npAccent.full)
+
         var rootDragY by remember { mutableFloatStateOf(0f) }
         Column(
             Modifier
@@ -1023,7 +1034,13 @@ fun MikuLauncherScreen() {
                 clock = currentTime, isPlaying = isAudioPlaying, thermalC = cpuTempC
             )
             Box(Modifier.fillMaxWidth().graphicsLayer()) {
-                com.miku.launcher.ui.MikuStatusBar(state = statusBarState, onClockClick = { launchClockApp(ctx) })
+                val trayApps = com.miku.launcher.ui.rememberNotificationTray()
+                com.miku.launcher.ui.MikuStatusBar(
+                    state = statusBarState,
+                    onClockClick = { launchClockApp(ctx) },
+                    notificationApps = trayApps,
+                    onOpenShade = { expandNotificationShade(ctx) }
+                )
             }
             MikuLauncherQuiltSection(
                 currentTime = currentTime,
@@ -1277,7 +1294,7 @@ fun HardwareWidgetsPage(
     val fnLockLabel = remember {
         try {
             val raw = android.provider.Settings.Global.getString(hwCtx.contentResolver, "button_lock")
-            when (raw?.trim()) { null, "" -> "—"; "0" -> "OFF"; else -> "ENGAGED ($raw)" }
+            when (raw?.trim()) { null, "" -> "—"; "0" -> "OFF"; else -> "ON ($raw)" }
         } catch (_: Throwable) { "—" }
     }
     val launcherVersion = remember {
@@ -1332,7 +1349,7 @@ fun HardwareWidgetsPage(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("MIKU CYBER AUDIO CONTROLLER", color = MikuCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                        Text("AUDIO", color = MikuCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                         Icon(Icons.Default.Tune, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(18.dp))
                     }
                     Spacer(Modifier.height(8.dp))
@@ -1368,19 +1385,19 @@ fun HardwareWidgetsPage(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("PHYSICAL FN & POCKET GUARD", color = MikuCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                        Text("FN KEY AND POCKET LOCK", color = MikuCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                         Icon(Icons.Default.Lock, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(18.dp))
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Button Lock (Global)", color = MikuTextSecondary, fontSize = 11.sp)
+                        Text("Button lock", color = MikuTextSecondary, fontSize = 11.sp)
                         // Settings.Global button_lock is the framework's real lock flag; absent = "—".
                         Text(fnLockLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(3.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Pocket Safeguards", color = MikuTextSecondary, fontSize = 11.sp)
-                        Text("Configure in Fn settings", color = MikuCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Pocket lock", color = MikuTextSecondary, fontSize = 11.sp)
+                        Text("Set in Fn settings", color = MikuCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1401,7 +1418,7 @@ fun HardwareWidgetsPage(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("MIKUOS NATIVE SYSTEM", color = MikuCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                        Text("SYSTEM", color = MikuCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                         // Real launcher versionName from PackageManager.
                         Text(launcherVersion, color = MikuCyan, fontSize = 11.sp, fontWeight = FontWeight.Black)
                     }
@@ -1468,7 +1485,7 @@ fun CyberRecentsOverview(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "MULTITASKING OVERVIEW",
+                        "RECENT APPS",
                         color = MikuCyan,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Black,
@@ -1491,7 +1508,7 @@ fun CyberRecentsOverview(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("✨", fontSize = 28.sp)
                         Spacer(Modifier.height(6.dp))
-                        Text("No active background apps", color = MikuTextSecondary, fontSize = 12.sp, fontFamily = AudiowideFont)
+                        Text("No recent apps", color = MikuTextSecondary, fontSize = 12.sp, fontFamily = AudiowideFont)
                     }
                 }
             } else {
@@ -1655,7 +1672,7 @@ fun CyberRecentsOverview(
 
                                 // Bottom Hint
                                 Text(
-                                    "Tap to switch • Swipe up to dismiss",
+                                    "Tap to switch, swipe up to close",
                                     color = MikuTextSecondary,
                                     fontSize = 11.sp,
                                     textAlign = TextAlign.Center
@@ -1677,7 +1694,7 @@ fun CyberRecentsOverview(
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.height(42.dp)
                 ) {
-                    Text("CLEAR ALL APPS", color = MikuNeonPink, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                    Text("CLEAR ALL", color = MikuNeonPink, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                 }
             }
         }
@@ -1959,7 +1976,7 @@ fun CyberAllAppsDrawer(
         // Waifu Streetwear Tokyo App Drawer Artwork Backdrop (06_waifu_streetwear_tokyo.jpg)
         Image(
             painter = painterResource(id = R.drawable.miku_drawer_bg_tokyo),
-            contentDescription = "Miku App Drawer Artwork",
+            contentDescription = "App drawer background",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
@@ -2210,18 +2227,25 @@ fun DesktopAppIconItem(
             .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // The BPM game's drawer entry is a game, not a utility: highlighted, and pulsing on the
+        // beat while music plays (the drawer covers home, hence insideCover).
+        val isBpmGame = app.packageName == ctx.packageName &&
+            app.activityName == com.miku.launcher.bpm.MikuBpmGameActivity::class.java.name
         Box(
             Modifier
                 .size(MikuDimens.appIconArt)
+                .then(if (isBpmGame) Modifier.mikuBeatPulse(Color(0xFFFF4FA3), corner = 16.dp, insideCover = true) else Modifier)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0x1A00E5FF))
                 .border(0.8.dp, CyberGlassBorder, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            val customPainter = remember(app.iconResId) {
-                if (app.iconResId != null && app.iconResId != 0) {
+            val golden = rememberUnlockEnabled(com.miku.launcher.bpm.MikuSecrets.GOLDEN_ICON)
+            val shownRes = displayIconRes(app.iconResId, golden)
+            val customPainter = remember(shownRes) {
+                if (shownRes != null && shownRes != 0) {
                     try {
-                        ctx.resources.getDrawable(app.iconResId, ctx.theme)?.toBitmap(160, 160)?.asImageBitmap()
+                        ctx.resources.getDrawable(shownRes, ctx.theme)?.toBitmap(160, 160)?.asImageBitmap()
                     } catch (_: Throwable) { null }
                 } else null
             }
@@ -2343,10 +2367,22 @@ fun launchMikuFm(ctx: Context) {
     try { ctx.startActivity(Intent("com.caf.fmradio.FMRADIO_ACTIVITY").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), opts) } catch (_: Throwable) {}
 }
 
-// Standard-launcher behavior: tapping the homescreen clock opens the system clock app.
-// Try Google Clock, then AOSP Deskclock, then the generic SHOW_ALARMS intent, else a Toast.
+// Standard-launcher behavior: tapping the homescreen clock opens the clock app.
+// Try Miku Clock (com.miku.tools), then Google Clock, then AOSP Deskclock, then the generic
+// SHOW_ALARMS intent, else a Toast.
 fun launchClockApp(ctx: Context) {
     val pm = ctx.packageManager
+    try {
+        val miku = Intent(Intent.ACTION_MAIN).apply {
+            component = android.content.ComponentName("com.miku.tools", "com.miku.tools.clock.ClockActivity")
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (miku.resolveActivity(pm) != null) {
+            ctx.startActivity(miku, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.APP_OPEN))
+            return
+        }
+    } catch (_: Throwable) {}
     for (pkg in listOf("com.google.android.deskclock", "com.android.deskclock")) {
         val intent = pm.getLaunchIntentForPackage(pkg)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -2372,6 +2408,12 @@ fun launchClockApp(ctx: Context) {
 
 fun launchApp(ctx: Context, app: InstalledApp) {
     try {
+        // The BPM game's drawer entry: open it on top of the launcher (no new task), so closing
+        // the game drops the player back on the drawer/home they opened it from.
+        if (app.packageName == ctx.packageName && app.activityName == com.miku.launcher.bpm.MikuBpmGameActivity::class.java.name) {
+            com.miku.launcher.bpm.MikuBpmGameActivity.open(ctx, "drawer")
+            return
+        }
         if (app.packageName == "com.android.settings") {
             val legacyIntent = ctx.packageManager.getLaunchIntentForPackage("com.android.settings")
                 ?: Intent(android.provider.Settings.ACTION_SETTINGS).apply {
@@ -2637,6 +2679,19 @@ fun clearAllTasks(ctx: Context, tasks: List<RecentTaskItem>) {
 }
 
 fun expandNotificationShade(ctx: Context) {
+    // The Miku shade is a window owned by MikuSystemUI's navigation service: ask it to show.
+    // Needs android.permission.STATUS_BAR (we hold it, platform-signed). If that service is not
+    // running (accessibility service off) there is no receiver, so fall back to the shade activity.
+    val a11yOn = runCatching {
+        (android.provider.Settings.Secure.getString(ctx.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "")
+            .contains("com.miku.systemui")
+    }.getOrDefault(false)
+    if (a11yOn) {
+        runCatching {
+            ctx.sendBroadcast(Intent("com.miku.systemui.action.OPEN_SHADE_WINDOW").setPackage("com.miku.systemui"))
+            return
+        }
+    }
     try {
         val intent = Intent().setClassName("com.miku.systemui", "com.miku.systemui.MikuShadeActivity").apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -3049,12 +3104,12 @@ fun MikuCyberWeatherGpsBadge(
             ) {
                 // Left Metrics: Humidity & Wind
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (wxReal) "💧${weather.humidityPct}%" else "💧—", color = MikuCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(if (wxReal) "${weather.humidityPct}% RH" else "RH —", color = MikuCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.width(5.dp))
-                    Text(if (wxReal) "💨${weather.windSpeedMph.toInt()}m" else "💨—", color = MikuTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(if (wxReal) "${weather.windSpeedMph.toInt()}mph" else "Wind —", color = MikuTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     if (wxReal && weather.precipitationProbPct > 0) {
                         Spacer(Modifier.width(4.dp))
-                        Text("☔${weather.precipitationProbPct}%", color = Color(0xFFFF80AB), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("${weather.precipitationProbPct}% rain", color = Color(0xFFFF80AB), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -3063,7 +3118,7 @@ fun MikuCyberWeatherGpsBadge(
                     val locText = when {
                         gps.city.isNotEmpty() -> gps.city
                         gps.fuzzyLocation.isNotEmpty() -> gps.fuzzyLocation.split(",").firstOrNull() ?: "Locating..."
-                        gps.isLocked -> "Fix (unnamed)"
+                        gps.isLocked -> "Have a fix"
                         else -> "Locating..."
                     }
                     Box(
@@ -3257,7 +3312,7 @@ fun ConnectedRfNetworkCapsule(
                         text = when {
                             !radioStateKnown -> "—"
                             !cell.isConnected -> "NO SIM"
-                            cellNoData -> "! NO DATA"
+                            cellNoData -> "NO DATA"
                             else -> {
                                 val tech = cell.networkType.ifEmpty { "CELL" }
                                 if (cell.signalDbm < 0) "$tech ${cell.signalDbm}d" else tech
@@ -3389,11 +3444,11 @@ fun UnifiedWeatherGpsCapsule(
                             )
                         }
                         val statusLine = when {
-                            !wxReal -> "💧— 💨— · awaiting first fetch"
+                            !wxReal -> "No weather yet"
                             weather.nextPrecipLabel.isNotEmpty() ->
-                                "💧${weather.humidityPct}% 💨${weather.windSpeedMph.toInt()}mph · ⏱️${weather.nextPrecipLabel}"
+                                "${weather.humidityPct}% RH, ${weather.windSpeedMph.toInt()}mph · ${weather.nextPrecipLabel}"
                             else ->
-                                "💧${weather.humidityPct}% 💨${weather.windSpeedMph.toInt()}mph ${weather.windDirectionCompass} ☔${weather.precipitationProbPct}%"
+                                "${weather.humidityPct}% RH, ${weather.windSpeedMph.toInt()}mph ${weather.windDirectionCompass}, ${weather.precipitationProbPct}% rain"
                         }
                         Text(
                             statusLine,
@@ -3439,7 +3494,7 @@ fun UnifiedWeatherGpsCapsule(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                if (gps.isLocked) "GPS 🔒 FIX" else "GPS 🛰️",
+                                if (gps.isLocked) "GPS FIX" else "GPS",
                                 color = if (gps.isLocked) com.miku.launcher.ui.MikuIdentity.Leek else Color(0xFFFFB300),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -3448,7 +3503,7 @@ fun UnifiedWeatherGpsCapsule(
                             if (gps.isLocked && gps.altitudeM != 0.0) {
                                 Spacer(Modifier.width(3.dp))
                                 Text(
-                                    "⛰️${gps.altitudeM.toInt()}m",
+                                    "Alt ${gps.altitudeM.toInt()}m",
                                     color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -3466,7 +3521,7 @@ fun UnifiedWeatherGpsCapsule(
                         }
                         // Fuzzy Location display: County, City, State
                         Text(
-                            text = if (gps.fuzzyLocation.isNotEmpty()) gps.fuzzyLocation else if (gps.city.isNotEmpty()) gps.city else if (gps.isLocked) "Fix acquired · place unresolved" else "No location fix yet",
+                            text = if (gps.fuzzyLocation.isNotEmpty()) gps.fuzzyLocation else if (gps.city.isNotEmpty()) gps.city else if (gps.isLocked) "Have a fix, no place name yet" else "No location fix yet",
                             color = Color.White.copy(alpha = 0.9f),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -3646,6 +3701,14 @@ fun MikuQuantumBatteryBadge(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
+            // NEGI BATTERY (a BPM-game secret): the level drawn as a leek instead of four bars.
+            val negi = rememberUnlockEnabled(com.miku.launcher.bpm.MikuSecrets.NEGI_BATTERY)
+            if (negi) {
+                MikuNegiBatteryGlyph(
+                    pct = batteryPct, charging = isCharging,
+                    low = batteryKnown && batteryPct <= 20 && !isCharging
+                )
+            } else
             // Micro 4-bar level indicator
             Row(
                 modifier = Modifier
@@ -4581,7 +4644,7 @@ fun CyberNotificationShadeModal(
                                 .background(Color(0x3300E5FF))
                                 .border(1.dp, MikuCyan, CircleShape)
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Cyber Settings", tint = MikuCyan, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MikuCyan, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -4955,7 +5018,7 @@ private fun CyberShadeSliderSection() {
 }
 
 /**
- * "MAGICAL MIRAI SOUNDBOARD" quick-tile grid of the notification shade.
+ * "DAC" quick-tile grid of the notification shade.
  *
  * Extracted out of [CyberNotificationShadeModal]: that function compiled to ~18k dex
  * instructions, over ART's 16384 JIT ceiling, so it was never JIT-compiled and every
@@ -4993,15 +5056,28 @@ private fun CyberShadeSoundboardSection(
     }
 
 
-    // 8 Cyber Quick Hardware Tiles (2x4 Grid)
-    Text(
-        text = "MAGICAL MIRAI SOUNDBOARD",
-        color = MikuCyan,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = AudiowideFont,
-        letterSpacing = 1.sp
-    )
+    // 8 Cyber Quick Hardware Tiles (2x4 Grid). The tiles are quick toggles; "All settings"
+    // opens the Hardware app's DAC page, the only full DAC page on MikuOS.
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "DAC",
+            color = MikuCyan,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = AudiowideFont,
+            letterSpacing = 1.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "All settings",
+            color = MikuCyan,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .clickable { if (DacSettingsLink.open(ctx)) onClose() }
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
 
     Spacer(Modifier.height(6.dp))
 
@@ -5010,8 +5086,8 @@ private fun CyberShadeSoundboardSection(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             CyberQuickTile(
                 modifier = Modifier.weight(1f),
-                title = "MASTER DYN / GAIN",
-                subtitle = if (!gainKnown) "—  (gain not readable)"
+                title = "GAIN",
+                subtitle = if (!gainKnown) "Can't read gain"
                     else (if (gainMode == CirrusLogicManager.GainMode.HIGH) "HIGH" else "LOW") + sourceNote(gainSource),
                 icon = Icons.Default.VolumeUp,
                 accentColor = if (gainKnown && gainMode == CirrusLogicManager.GainMode.HIGH) MikuNeonPink else MikuCyan,
@@ -5035,8 +5111,8 @@ private fun CyberShadeSoundboardSection(
 
             CyberQuickTile(
                 modifier = Modifier.weight(1f),
-                title = "VOCAL FILTER",
-                subtitle = if (filterKnown) filterMode.label + sourceNote(filterSource) else "—  (filter not readable)",
+                title = "FILTER",
+                subtitle = if (filterKnown) filterMode.label + sourceNote(filterSource) else "Can't read filter",
                 icon = Icons.Default.Tune,
                 accentColor = MikuCyan,
                 // Only a real read lights the tile; a value we merely requested must not.
@@ -5065,8 +5141,8 @@ private fun CyberShadeSoundboardSection(
 
             CyberQuickTile(
                 modifier = Modifier.weight(1f),
-                title = "DRE (DYNAMIC RANGE)",
-                subtitle = if (!dreKnown) "—  (DRE not readable)"
+                title = "DRE",
+                subtitle = if (!dreKnown) "Can't read DRE"
                     else (if (dreEnabled) "ON" else "OFF") + sourceNote(dreSource),
                 icon = Icons.Default.Headphones,
                 accentColor = com.miku.launcher.ui.MikuIdentity.Leek,
@@ -5139,7 +5215,7 @@ private fun CyberShadeSoundboardSection(
                     }
                     android.widget.Toast.makeText(
                         ctx,
-                        if (next) "⚡ Wireless ADB Active on $adbIp:5555" else "Wireless ADB Disabled",
+                        if (next) "Wireless ADB on at $adbIp:5555" else "Wireless ADB off",
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -5147,8 +5223,8 @@ private fun CyberShadeSoundboardSection(
 
             CyberQuickTile(
                 modifier = Modifier.weight(1f),
-                title = "DEV OPTIONS",
-                subtitle = "SYSTEM & TOOLS",
+                title = "DEVELOPER",
+                subtitle = "SYSTEM AND TOOLS",
                 icon = Icons.Default.Build,
                 accentColor = MikuCyan,
                 isActive = true,
@@ -5208,8 +5284,8 @@ private fun CyberShadeSoundboardSection(
             }
             CyberQuickTile(
                 modifier = Modifier.weight(1f),
-                title = "INGRESS ENGINE",
-                subtitle = if (ingestOn) "RSYNC INGEST ON" else "LOCAL SD ONLY",
+                title = "NETWORK SYNC",
+                subtitle = if (ingestOn) "RSYNC ON" else "SD CARD ONLY",
                 icon = Icons.Default.Sync,
                 accentColor = if (ingestOn) com.miku.launcher.ui.MikuIdentity.Leek else MikuNeonPink,
                 isActive = ingestOn,
@@ -5310,7 +5386,7 @@ private fun CyberShadeFooterSection(onClose: () -> Unit) {
                 Box(Modifier.size(6.dp).clip(CircleShape).background(liveTint))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = "📶 ${cell.carrierName.ifBlank { "SIM" }} · ${cell.simStateLabel.ifBlank { "—" }}",
+                    text = "${cell.carrierName.ifBlank { "SIM" }} · ${cell.simStateLabel.ifBlank { "—" }}",
                     color = liveTint,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -5352,8 +5428,8 @@ private fun CyberShadeFooterSection(onClose: () -> Unit) {
                 )
                 Text(
                     text = if (wxReal)
-                        "💧 Humidity: ${w.humidityPct}% · 💨 Wind: ${w.windSpeedMph.toInt()}mph ${w.windDirectionCompass} · ☔ Precip: ${w.precipitationProbPct}%"
-                    else "💧 — · 💨 — · ☔ —",
+                        "Humidity ${w.humidityPct}% · Wind ${w.windSpeedMph.toInt()}mph ${w.windDirectionCompass} · Rain ${w.precipitationProbPct}%"
+                    else "Humidity — · Wind — · Rain —",
                     color = MikuTextSecondary,
                     fontSize = 13.sp
                 )
@@ -5379,7 +5455,7 @@ private fun CyberShadeFooterSection(onClose: () -> Unit) {
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.weight(1f).height(42.dp)
         ) {
-            Text("⚡ REBOOT", color = MikuCyan, fontSize = 14.sp, fontFamily = AudiowideFont)
+            Text("RESTART", color = MikuCyan, fontSize = 14.sp, fontFamily = AudiowideFont)
         }
 
         Button(
@@ -5393,7 +5469,7 @@ private fun CyberShadeFooterSection(onClose: () -> Unit) {
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.weight(1f).height(42.dp)
         ) {
-            Text("💤 POWER OFF", color = MikuNeonPink, fontSize = 14.sp, fontFamily = AudiowideFont)
+            Text("POWER OFF", color = MikuNeonPink, fontSize = 14.sp, fontFamily = AudiowideFont)
         }
 
         Button(
@@ -5403,7 +5479,7 @@ private fun CyberShadeFooterSection(onClose: () -> Unit) {
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.weight(1f).height(42.dp)
         ) {
-            Text("✕ CLOSE", color = Color.White, fontSize = 14.sp, fontFamily = AudiowideFont)
+            Text("CLOSE", color = Color.White, fontSize = 14.sp, fontFamily = AudiowideFont)
         }
     }
 
@@ -5420,6 +5496,7 @@ private fun CyberShadeFooterSection(onClose: () -> Unit) {
  * main-thread stalls). Content, order and modifiers are unchanged; the quilt's own
  * telemetry collectors simply live here now, next to their only consumer.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MikuLauncherQuiltSection(
     currentTime: String,
@@ -5455,8 +5532,26 @@ private fun MikuLauncherQuiltSection(
     val npBpm by com.miku.launcher.bpm.MikuBpmEngine.state.collectAsState()
     val quiltBadges = listOf(
         QuiltBadge("clock", "Hearts clock") {
+            // Concert Mode (a BPM-game secret) is a double-tap on this clock. Until it is earned
+            // the clock keeps a plain single tap, so nobody pays the double-tap delay for a
+            // feature they do not have and the gesture cannot be stumbled on early.
+            val concertEarned = rememberUnlockEnabled(com.miku.launcher.bpm.MikuSecrets.CONCERT_MODE)
             Box(
-                Modifier.clickable(
+                if (concertEarned) Modifier.combinedClickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                    onClick = { launchClockApp(ctx) },
+                    onDoubleClick = {
+                        val on = !MikuConcertMode.active.value
+                        MikuConcertMode.active.value = on
+                        com.miku.launcher.haptics.MikuHaptics.confirm(ctx)
+                        android.widget.Toast.makeText(
+                            ctx,
+                            if (!on) "Concert lights off" else if (isAudioPlaying) "Concert lights on" else "Concert lights on. Start some music.",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                ) else Modifier.clickable(
                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                     indication = null
                 ) { launchClockApp(ctx) }
@@ -5499,16 +5594,15 @@ private fun MikuLauncherQuiltSection(
                 )
             }
         },
+        // The BPM game's own patch: highlighted and pulsing on the beat while music plays. On home
+        // it opens the in-launcher game, so closing it lands right back here.
+        QuiltBadge("bpmgame", "BPM game") {
+            com.miku.launcher.ui.MikuBpmGameEntryPill(onClick = onOpenBpmObservatory)
+        },
         QuiltBadge("dac", "CS43198 DAC") {
             CyberBespokeBadge(
-                onClick = {
-                    try {
-                        val intent = ctx.packageManager.getLaunchIntentForPackage("com.miku.settings")?.apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }
-                        if (intent != null) ctx.startActivity(intent, MikuCompositing.optionsFor(ctx, MikuTransitionEvent.SETTINGS))
-                    } catch (_: Throwable) {}
-                },
+                // The DAC page is the Hardware app's (the only one on MikuOS).
+                onClick = { DacSettingsLink.open(ctx) },
                 accentColor = Color(0xFF7C4DFF),
                 gradient = listOf(Color(0x447C4DFF), Color(0xFF0A0418)),
                 shape = DacChipShape
@@ -5518,7 +5612,7 @@ private fun MikuLauncherQuiltSection(
                 Text("CS43198", color = Color(0xFFB388FF), fontSize = 11.5.sp, fontWeight = FontWeight.Black, fontFamily = AudiowideFont, maxLines = 1)
             }
         },
-        QuiltBadge("ingest", "FS ingestion") {
+        QuiltBadge("ingest", "Network sync") {
             com.miku.launcher.ingest.MikuIngestionBadge(onClick = onOpenFsIngest)
         },
         QuiltBadge("library", "Library") {
@@ -5807,14 +5901,16 @@ private fun MikuLauncherDivaDock(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
+                    // GOLDEN MIKU MUSIC (a BPM-game secret): gold art and a gold ring on the pearl.
+                    val golden = rememberUnlockEnabled(com.miku.launcher.bpm.MikuSecrets.GOLDEN_ICON)
                     Box(
                         Modifier
                             .fillMaxSize()
                             .graphicsLayer { rotationZ = rainbowRotation }
-                            .border(BorderStroke(2.5.dp, Brush.sweepGradient(colors = rainbowStops)), CircleShape)
+                            .border(BorderStroke(2.5.dp, Brush.sweepGradient(colors = if (golden) GOLD_RING_STOPS else rainbowStops)), CircleShape)
                     )
                     Image(
-                        painter = painterResource(id = R.drawable.ic_miku_music_brand),
+                        painter = painterResource(id = mikuMusicIconRes(golden)),
                         contentDescription = "Miku Music",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -5858,7 +5954,11 @@ private fun MikuLauncherShadeAndWallpaperModals(
     val ctx = LocalContext.current
     // Cosmetics earned in the BPM game. A locked card stays VISIBLE (hiding it means nobody
     // learns the reward exists) but is labelled and refuses selection. Ids are MikuUnlocks'.
-    val lockedCosmetics = remember {
+    // Keyed on the unlock store's version: this composable stays alive for the whole launcher
+    // session, so an unkeyed remember kept a wallpaper earned mid-session showing as locked until
+    // the launcher was restarted — an earned reward that looked like it did nothing.
+    val unlockVersion by com.miku.launcher.bpm.MikuUnlocks.version.collectAsState()
+    val lockedCosmetics = remember(unlockVersion) {
         val u = com.miku.launcher.bpm.MikuUnlocks.unlockedIds(ctx)
         mapOf(
             "w6" to com.miku.launcher.bpm.MikuUnlocks.OS_WALLPAPER_NEON_WAVE,
@@ -5921,7 +6021,7 @@ private fun MikuLauncherShadeAndWallpaperModals(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Wallpaper & Gallery Picker", color = MikuCyan, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                    Text("Wallpaper", color = MikuCyan, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                     IconButton(onClick = onCloseWallpaperPicker) {
                         Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
                     }
@@ -5944,7 +6044,7 @@ private fun MikuLauncherShadeAndWallpaperModals(
                     ) {
                         Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("🖼 Choose From Gallery / Files", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                        Text("Choose from gallery or files", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                     }
 
                     if (customWallpaperUri != null) {
@@ -5962,12 +6062,12 @@ private fun MikuLauncherShadeAndWallpaperModals(
                             border = BorderStroke(1.dp, MikuNeonPink),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("🔄 Reset to Default Miku Artwork", color = MikuNeonPink, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Reset to the default wallpaper", color = MikuNeonPink, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
                     Spacer(Modifier.height(14.dp))
-                    Text("Or select built-in Hatsune Miku desktop artwork:", color = MikuTextSecondary, fontSize = 11.sp)
+                    Text("Or pick a built-in wallpaper:", color = MikuTextSecondary, fontSize = 11.sp)
                     Spacer(Modifier.height(8.dp))
 
                     LazyRow(

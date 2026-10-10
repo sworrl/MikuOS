@@ -67,13 +67,13 @@ fun MikuSystemUIConfigScreen(onExit: () -> Unit) {
         ) {
             item {
                 Column(Modifier.mikuGlassCard().padding(14.dp)) {
-                    Text("LIVE QUICK SETTINGS SHADE", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("QUICK SETTINGS", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(10.dp))
 
                     ConfigRow(
                         icon = Icons.Default.OpenInBrowser,
-                        title = "Open Quick Settings & Notification Shade",
-                        subtitle = "Launch full-screen Compose shade with 3x3 tiles, audio toggles & sliders",
+                        title = "Open the shade",
+                        subtitle = "Quick settings tiles, notifications and sliders",
                         onClick = {
                             val intent = Intent(ctx, MikuShadeActivity::class.java)
                             ctx.startActivity(intent)
@@ -84,13 +84,13 @@ fun MikuSystemUIConfigScreen(onExit: () -> Unit) {
 
             item {
                 Column(Modifier.mikuGlassCard().padding(14.dp)) {
-                    Text("OVERLAY PERMISSIONS & SERVICES", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("PERMISSIONS", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(10.dp))
 
                     ConfigRow(
                         icon = Icons.Default.Layers,
-                        title = "Draw Over Other Apps",
-                        subtitle = "Required to display custom Quick Settings shade",
+                        title = "Display over other apps",
+                        subtitle = "Needed to show the shade",
                         onClick = {
                             try {
                                 val intent = Intent(
@@ -106,8 +106,8 @@ fun MikuSystemUIConfigScreen(onExit: () -> Unit) {
 
                     ConfigRow(
                         icon = Icons.Default.AccessibilityNew,
-                        title = "Accessibility Gesture Service",
-                        subtitle = "Required for top-edge pull-down gesture detection",
+                        title = "Accessibility service",
+                        subtitle = "Needed for the pull-down from the top edge",
                         onClick = {
                             try {
                                 ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -119,8 +119,8 @@ fun MikuSystemUIConfigScreen(onExit: () -> Unit) {
 
                     ConfigRow(
                         icon = Icons.Default.Notifications,
-                        title = "Notification Listener Access",
-                        subtitle = "Required to display incoming notifications in shade",
+                        title = "Notification access",
+                        subtitle = "Needed to show notifications in the shade",
                         onClick = {
                             try {
                                 ctx.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- AudioRecord(MediaRecorder.AudioSource.RADIO_TUNER=1998) needs this; it's a
          privileged permission only granted to platform-signed system apps — which is
@@ -29,7 +30,21 @@
     <uses-permission android:name="android.permission.CAPTURE_AUDIO_OUTPUT" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Song ID (fingerprint to the recognition service), its cover art, and the terrain
+         profile behind every line-of-sight verdict all go over the network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Network goes through com.miku.sysbridge; see FmNet. -->
+    <uses-permission android:name="com.miku.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Hardware transport keys (FmMediaKeys): a haptic tick per press, and the system media
+         key listener that hands the keys to the radio while it is on. SET_MEDIA_KEY_LISTENER
+         is signature-level, granted to this platform-signed app. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.SET_MEDIA_KEY_LISTENER"
+        tools:ignore="ProtectedPermissions" />
+    <!-- Now-playing keys the widgets, AOD and lockscreen read (FmNowPlaying). Platform-signed. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!--
       The tuner keeps running when the activity goes away (MikuFmService). On Android 14 a
@@ -45,9 +60,11 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        android:theme="@style/Theme.MikuFM">
 
         <!-- The stock FM driver JNI (qcom.fmradio / FmReceiverJNI) lives in this shared
              library; declare it so the classloader can reach /system/framework/qcom.fmradio.jar. -->
@@ -70,5 +87,25 @@
             android:name="com.caf.fmradio.MikuFmService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!--
+          Android Auto. The descriptor lists <uses name="media"/>, and Auto finds the browsable
+          station list through the MediaBrowserService action on FmMediaBrowserService.
+          Exported because Auto binds to it from its own process. It only lists stations and
+          hands over the session token. Commands go through FmMediaSession to the same engine
+          the tuner screen uses.
+        -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
+        <service
+            android:name="com.caf.fmradio.FmMediaBrowserService"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

@@ -1,0 +1,6 @@
+# Model weights, the venv and the synthesis cache: fetch_models.sh rebuilds all of it.
+.cache/
+__pycache__/
+*.pyc
+# Scratch renders from say.py runs inside this folder.
+*.wav

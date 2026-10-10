@@ -29,7 +29,9 @@ enum class MikuTopBarTheme(val displayName: String) {
     OCEAN("Ocean"),
     MIDNIGHT("Midnight"),
     PHOTO("Photo"),
-    MINIMAL("Minimal");
+    MINIMAL("Minimal"),
+    /** BPM-game secret (MikuSecrets.SEASONAL_TOPBAR). Appended last: themes persist by name. */
+    SEASONAL("Seasonal");
 
     companion object {
         private const val KEY = "top_bar_theme"
@@ -37,7 +39,10 @@ enum class MikuTopBarTheme(val displayName: String) {
         fun load(ctx: Context): MikuTopBarTheme {
             val name = ctx.getSharedPreferences("miku_launcher_prefs", Context.MODE_PRIVATE)
                 .getString(KEY, MIKU.name) ?: MIKU.name
-            return runCatching { valueOf(name) }.getOrDefault(MIKU)
+            val t = runCatching { valueOf(name) }.getOrDefault(MIKU)
+            // A saved secret theme that is no longer earned (unlock store wiped) falls back.
+            if (t == SEASONAL && !com.miku.launcher.bpm.MikuUnlocks.isUnlocked(ctx, com.miku.launcher.bpm.MikuSecrets.SEASONAL_TOPBAR)) return MIKU
+            return t
         }
 
         fun save(ctx: Context, theme: MikuTopBarTheme) {
@@ -57,7 +62,8 @@ enum class MikuTopBarTheme(val displayName: String) {
 fun MikuTopBarTheme.next(ctx: Context): MikuTopBarTheme {
     val locked = mapOf(
         MikuTopBarTheme.AURORA to com.miku.launcher.bpm.MikuUnlocks.OS_TOPBAR_AURORA,
-        MikuTopBarTheme.MIDNIGHT to com.miku.launcher.bpm.MikuUnlocks.OS_TOPBAR_MIDNIGHT
+        MikuTopBarTheme.MIDNIGHT to com.miku.launcher.bpm.MikuUnlocks.OS_TOPBAR_MIDNIGHT,
+        MikuTopBarTheme.SEASONAL to com.miku.launcher.bpm.MikuSecrets.SEASONAL_TOPBAR
     ).filterValues { !com.miku.launcher.bpm.MikuUnlocks.isUnlocked(ctx, it) }.keys
     val n = MikuTopBarTheme.entries.size
     for (step in 1..n) {
@@ -76,6 +82,26 @@ private fun MikuTopBarTheme.gradientColors(): List<Color> = when (this) {
     MikuTopBarTheme.MIDNIGHT -> listOf(Color(0xFF0A1024), Color(0xFF1A2350), Color(0xFF3B2E63))
     MikuTopBarTheme.MINIMAL  -> listOf(Color(0xFF0B0F14), Color(0xFF0B0F14))
     MikuTopBarTheme.PHOTO    -> listOf(Color(0xFF0B0F14), Color(0xFF0B0F14)) // scrim only; image drawn over
+    MikuTopBarTheme.SEASONAL -> seasonalColors(java.util.Calendar.getInstance().get(java.util.Calendar.MONTH))
+}
+
+/**
+ * The seasonal bar: one palette per month, matching the BPM game's monthly season names, so the
+ * bar you earned by climbing a season keeps changing with the seasons after you have it.
+ */
+private fun seasonalColors(month: Int): List<Color> = when (month) {
+    0 -> listOf(Color(0xFF00E5FF), Color(0xFF1A2350), Color(0xFFB388FF))   // Digital Genesis
+    1 -> listOf(Color(0xFFFF4F8B), Color(0xFFFF9EC4), Color(0xFFB0004F))   // Cyber Valentine
+    2 -> listOf(Color(0xFFFFB7D5), Color(0xFFFFE3EE), Color(0xFF39C5BB))   // Sakura Miracle (and 3/9)
+    3 -> listOf(Color(0xFF9BE36A), Color(0xFFFFE680), Color(0xFFFF9EC4))   // Spring Bloom
+    4 -> listOf(Color(0xFF00B8D4), Color(0xFF39C5BB), Color(0xFF00E676))   // Electronic Wave
+    5 -> listOf(Color(0xFFFFD54F), Color(0xFF00E5FF), Color(0xFFFF6F61))   // Magical Summer
+    6 -> listOf(Color(0xFF1A237E), Color(0xFF7C4DFF), Color(0xFFFFF59D))   // Starlight Sonata
+    7 -> listOf(Color(0xFF39C5BB), Color(0xFF0EE7DD), Color(0xFFFF4FA3))   // Neon Mirai 39 (8/31)
+    8 -> listOf(Color(0xFFE65100), Color(0xFFFFB74D), Color(0xFF6D4C41))   // Autumn Symphony
+    9 -> listOf(Color(0xFFFF6D00), Color(0xFF4A148C), Color(0xFF1B0B2E))   // Midnight Pumpkin
+    10 -> listOf(Color(0xFFB3E5FC), Color(0xFF4FC3F7), Color(0xFF0D47A1))  // Frostbite Echo
+    else -> listOf(Color(0xFFC62828), Color(0xFFFFFFFF), Color(0xFF2E7D32)) // Holy Diva Blizzard
 }
 
 /**

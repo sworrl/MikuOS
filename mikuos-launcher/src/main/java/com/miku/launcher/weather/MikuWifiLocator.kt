@@ -69,7 +69,7 @@ object MikuWifiLocator {
      * SSID patterns that mean "this access point travels with its owner".
      *
      * STARLINK is in here for a reason found the hard way. On 2026-09-27 the fix came back as
-     * Morgantown, West Virginia while Justin was on the other side of the country, and it was
+     * the user's home town while they were on the other side of the country, and it was
      * RIGHT about the beacons: of 28 access points the M500 could hear, four were his Starlink,
      * four more were his own named networks, and Apple has every one of them mapped where they
      * last sat still. A beacon that travels with you tells you nothing about where you are, and

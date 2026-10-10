@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hide AOSP's gesture home handle. MikuOS draws its own pill (the accessibility nav service in
+     com.miku.systemui), so the stock NavigationBar0 / SecondaryHomeHandle0 handle showed up as a
+     second bar under it. NavigationHandle reads its paint color from the homeHandleColor theme
+     attr, which DualToneLightTheme / DualToneDarkTheme point at these two colors. Transparent
+     keeps the view, its layout and its insets exactly as they were and only stops it drawing.
+     Removing the stock nav bar outright is not an option here: idmap2 refuses to map
+     android:bool/config_showNavigationBar on this device (checked 2026-09-27), and the nav bar
+     inset is what keeps app content clear of the Miku pill anyway. -->
+<resources>
+    <color name="navigation_bar_home_handle_light_color">#00000000</color>
+    <color name="navigation_bar_home_handle_dark_color">#00000000</color>
+</resources>

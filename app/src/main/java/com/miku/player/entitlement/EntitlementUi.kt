@@ -130,9 +130,9 @@ fun MikuLicenseModal(onDismissRequest: () -> Unit) {
                             CyberSwitchRow(
                                 title = "Remote entitlement",
                                 subtitle = if (st.configured)
-                                    "Ask ${st.endpointHost} once a day whether this device may run Miku Music. Off by default; fail-open on any error."
+                                    "Ask ${st.endpointHost} once a day whether this device may run Miku Music. Off by default. Any error counts as allowed."
                                 else
-                                    "Not configured in this build (miku.entitlement.url / .hmac are empty) — the switch is inert.",
+                                    "Not set up in this build (miku.entitlement.url and .hmac are empty), so the switch does nothing.",
                                 checked = st.enabled,
                                 onCheckedChange = { EntitlementManager.setEnabled(ctx, it) }
                             )
@@ -209,7 +209,7 @@ fun MikuLicenseModal(onDismissRequest: () -> Unit) {
                                     enabled = st.configured,
                                     onSubmit = {
                                         val ok = EntitlementManager.tryOwnerOverride(ctx, overrideCode)
-                                        overrideMsg = if (ok) "Override accepted — device pinned to ALLOWED." else "Code not accepted."
+                                        overrideMsg = if (ok) "Override accepted. This device is pinned to ALLOWED." else "Code not accepted."
                                         if (ok) overrideCode = ""
                                     }
                                 )

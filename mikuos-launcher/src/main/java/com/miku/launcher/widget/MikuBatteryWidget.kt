@@ -58,7 +58,7 @@ class MikuBatteryWidget : AppWidgetProvider() {
                 else -> 0xFF39C5BB.toInt()
             }
             val pctText = if (pct < 0) "--%" else "$pct%"
-            v.setTextViewText(R.id.widget_battery_text, if (charging) "$pctText⚡" else pctText)
+            v.setTextViewText(R.id.widget_battery_text, if (charging) "$pctText CHG" else pctText)
             v.setTextColor(R.id.widget_battery_text, if (pct in 0..15) tint else 0xFF9FF3EC.toInt())
             v.setInt(R.id.widget_battery_icon, "setColorFilter", tint)
 

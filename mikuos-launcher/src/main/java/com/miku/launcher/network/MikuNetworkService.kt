@@ -733,7 +733,7 @@ object MikuNetworkService {
             // with the network TYPE ("LTE"/"5G"), which would print a technology name in a field
             // labelled "band" — a measurement that was never taken.
             lteBand = "",
-            simStateLabel = if (hasCellSignal && !dataConnected) "SIGNAL OK · NO DATA (check APN)"
+            simStateLabel = if (hasCellSignal && !dataConnected) "SIGNAL, NO DATA (CHECK APN)"
                             else if (dataConnected) "DATA ACTIVE"
                             else "NO SERVICE"
         )

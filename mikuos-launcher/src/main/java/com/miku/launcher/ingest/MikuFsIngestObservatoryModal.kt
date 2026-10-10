@@ -123,7 +123,7 @@ fun MikuFsIngestObservatoryModal(
 
                         Column {
                             Text(
-                                "FS & INGESTION OBSERVATORY",
+                                "STORAGE AND SYNC",
                                 color = Color.White,
                                 fontSize = 15.5.sp,
                                 fontWeight = FontWeight.Black,
@@ -132,7 +132,7 @@ fun MikuFsIngestObservatoryModal(
                             )
                             Spacer(Modifier.height(1.dp))
                             Text(
-                                "Storage Volumes · Codec Taxonomy · MediaScanner",
+                                "Storage, formats and MediaScanner",
                                 color = Color(0xFF00FF88),
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -191,7 +191,7 @@ fun MikuFsIngestObservatoryModal(
                                         // bit-perfect claim was never checked against anything.
                                         when {
                                             ingestState.isScanning -> "ACTIVE MEDIA SCAN"
-                                            !ingestState.engineEnabled -> "ENGINE OFF · LOCAL SD ONLY"
+                                            !ingestState.engineEnabled -> "NETWORK SYNC OFF · SD CARD ONLY"
                                             ingestState.totalTracks == 0 -> "NO TRACKS INDEXED"
                                             else -> "${ingestState.totalTracks} INDEXED · ${ingestState.hiResPercent}% LOSSLESS"
                                         },
@@ -274,7 +274,7 @@ fun MikuFsIngestObservatoryModal(
                                     } else {
                                         Spacer(Modifier.height(6.dp))
                                         Text(
-                                            if (r.deviceOnline) "device seen by relay via ${r.deviceVia}"
+                                            if (r.deviceOnline) "relay sees this device via ${r.deviceVia}"
                                             else "relay cannot see this device over adb",
                                             color = if (r.deviceOnline) MikuMuted else Color(0xFFFFB020),
                                             fontSize = 10.5.sp
@@ -379,15 +379,15 @@ fun MikuFsIngestObservatoryModal(
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
-                                        "INGRESS ENGINE (RSYNC)",
+                                        "NETWORK SYNC (RSYNC)",
                                         color = if (ingestState.engineEnabled) Color(0xFF00FF88) else MikuMuted,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Black,
                                         fontFamily = AudiowideFont
                                     )
                                     Text(
-                                        if (ingestState.engineEnabled) "Network ingest armed · auto-resumes when the server is reachable"
-                                        else "Off · only local SD card scan updates run",
+                                        if (ingestState.engineEnabled) "On · resumes on its own when the server is reachable"
+                                        else "Off · only SD card scans update the library",
                                         color = MikuMuted,
                                         fontSize = 11.sp,
                                         lineHeight = 14.sp
@@ -443,7 +443,7 @@ fun MikuFsIngestObservatoryModal(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.Sync, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(6.dp))
-                                        Text("Rsync Ingest", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("Rsync sync", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -461,7 +461,7 @@ fun MikuFsIngestObservatoryModal(
                                 .padding(14.dp)
                         ) {
                             Text(
-                                "STORAGE VOLUMES & PARTITIONS",
+                                "STORAGE",
                                 color = MikuCyan,
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.Bold,
@@ -476,7 +476,7 @@ fun MikuFsIngestObservatoryModal(
                             val intPct = if (intTotal > 0) ((intUsed.toFloat() / intTotal) * 100).toInt() else 0
 
                             VolumeProgressRow(
-                                title = "Internal Flash Memory",
+                                title = "Internal storage",
                                 path = "/storage/emulated/0",
                                 usedStr = MikuIngestEngine.formatBytes(intUsed),
                                 totalStr = MikuIngestEngine.formatBytes(intTotal),
@@ -493,7 +493,7 @@ fun MikuFsIngestObservatoryModal(
                                 val sdPct = if (sdTotal > 0) ((sdUsed.toFloat() / sdTotal) * 100).toInt() else 0
 
                                 VolumeProgressRow(
-                                    title = "MicroSD Removable Card",
+                                    title = "MicroSD card",
                                     path = ingestState.sdCardPath,
                                     usedStr = MikuIngestEngine.formatBytes(sdUsed),
                                     totalStr = MikuIngestEngine.formatBytes(sdTotal),
@@ -512,9 +512,9 @@ fun MikuFsIngestObservatoryModal(
                                     Icon(Icons.Default.SdCard, contentDescription = null, tint = MikuMuted, modifier = Modifier.size(24.dp))
                                     Spacer(Modifier.width(12.dp))
                                     Column {
-                                        Text("MicroSD Card Slot", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        Text("MicroSD slot", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                         Spacer(Modifier.height(2.dp))
-                                        Text("No external TF/MicroSD card mounted", color = MikuMuted, fontSize = 12.sp)
+                                        Text("No MicroSD card in", color = MikuMuted, fontSize = 12.sp)
                                     }
                                 }
                             }
@@ -537,7 +537,7 @@ fun MikuFsIngestObservatoryModal(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "AUDIO CODEC TAXONOMY",
+                                    "AUDIO FORMATS",
                                     color = Color(0xFFB388FF),
                                     fontSize = 13.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -545,7 +545,7 @@ fun MikuFsIngestObservatoryModal(
                                     letterSpacing = 0.3.sp
                                 )
                                 Text(
-                                    "${ingestState.hiResPercent}% Hi-Res Lossless",
+                                    "${ingestState.hiResPercent}% lossless",
                                     color = Color(0xFF00FF88),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -579,14 +579,14 @@ fun MikuFsIngestObservatoryModal(
                                     modifier = Modifier.weight(1f),
                                     badge = "WAV / ALAC",
                                     count = ingestState.wavCount + ingestState.alacCount,
-                                    desc = "Lossless PCM Audio",
+                                    desc = "Lossless PCM",
                                     color = Color(0xFFB388FF)
                                 )
                                 CodecMetricPill(
                                     modifier = Modifier.weight(1f),
                                     badge = "MP3 / AAC",
                                     count = ingestState.mp3Count + ingestState.aacCount,
-                                    desc = "Compressed Standard",
+                                    desc = "Lossy",
                                     color = Color(0xFFFF80AB)
                                 )
                             }
@@ -614,7 +614,7 @@ fun MikuFsIngestObservatoryModal(
                                 .padding(14.dp)
                         ) {
                             Text(
-                                "INGESTION SYNC SERVER CONFIG",
+                                "SYNC SERVER",
                                 color = Color(0xFFFFD54F),
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.Bold,
@@ -631,9 +631,9 @@ fun MikuFsIngestObservatoryModal(
                             val rsyncPort = MikuIngestConfig.rsyncPort(ctx)
 
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Sync Daemon Endpoint", color = MikuMuted, fontSize = 12.5.sp)
+                                Text("Sync server", color = MikuMuted, fontSize = 12.5.sp)
                                 Text(
-                                    if (configuredHost.isBlank()) "Not configured · auto-discovery"
+                                    if (configuredHost.isBlank()) "Not set · finds it on the network"
                                     else "$configuredHost:$rsyncPort",
                                     color = if (configuredHost.isBlank()) MikuMuted else Color.White,
                                     fontSize = 13.sp, fontWeight = FontWeight.Bold
@@ -643,12 +643,12 @@ fun MikuFsIngestObservatoryModal(
                             Spacer(Modifier.height(6.dp))
 
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Protocol Engine", color = MikuMuted, fontSize = 12.5.sp)
+                                Text("Protocol", color = MikuMuted, fontSize = 12.5.sp)
                                 // The version was the literal "rsync v3.2.7 (uid=0 direct)" — nothing
                                 // ever ran `rsync --version`, and rsync may not exist on the device.
                                 // The engine now reports what it actually found in statusMessage.
                                 Text(
-                                    "rsync — version not probed",
+                                    "rsync (version not checked)",
                                     color = MikuMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
                                 )
                             }
@@ -656,7 +656,7 @@ fun MikuFsIngestObservatoryModal(
                             Spacer(Modifier.height(6.dp))
 
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Last Index Timestamp", color = MikuMuted, fontSize = 12.5.sp)
+                                Text("Last indexed", color = MikuMuted, fontSize = 12.5.sp)
                                 Text(ingestState.lastScanTime, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
@@ -677,8 +677,8 @@ fun MikuFsIngestObservatoryModal(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("LIVE INGESTION LOG", color = Color(0xFF00FF88), fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-                                Text("Console Stream", color = MikuMuted, fontSize = 11.sp)
+                                Text("SYNC LOG", color = Color(0xFF00FF88), fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                                Text("Log", color = MikuMuted, fontSize = 11.sp)
                             }
 
                             Spacer(Modifier.height(10.dp))
@@ -722,7 +722,7 @@ fun VolumeProgressRow(
             Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
                 Text("$usedStr / $totalStr", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont, maxLines = 1, softWrap = false)
                 Spacer(Modifier.height(1.dp))
-                Text("$pct% Used", color = barColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("$pct% used", color = barColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 

@@ -140,6 +140,42 @@ object MikuSeasonalAudioEngine {
         }
     }
 
+    /**
+     * The Mi-Ku boot chime (BPM-game secret). An original phrase, not a quote of any song: a
+     * rising pentatonic call in A major that lands on two bell tones — "mi", "ku" — a fourth
+     * apart, the second one held. FM bells, same synthesis family as the rest of this engine, so
+     * it sounds like the OS rather than like an imported clip.
+     */
+    fun playSecretBootChime() {
+        scope.launch {
+            // (frequency Hz, start s, length s, level)
+            val notes = arrayOf(
+                doubleArrayOf(880.00, 0.00, 0.16, 0.55),   // A5
+                doubleArrayOf(987.77, 0.13, 0.16, 0.55),   // B5
+                doubleArrayOf(1108.73, 0.26, 0.16, 0.55),  // C#6
+                doubleArrayOf(1318.51, 0.39, 0.22, 0.60),  // E6
+                doubleArrayOf(1479.98, 0.62, 0.45, 0.80),  // F#6  "mi"
+                doubleArrayOf(1108.73, 0.95, 1.10, 0.85),  // C#6  "ku", held
+                doubleArrayOf(554.37, 0.95, 1.10, 0.35)    // C#5 under it, an octave of warmth
+            )
+            val total = (SAMPLE_RATE * 2.2).toInt()
+            val mix = FloatArray(total)
+            for (n in notes) {
+                val f = n[0]; val start = (n[1] * SAMPLE_RATE).toInt(); val len = (n[2] * SAMPLE_RATE).toInt()
+                for (i in 0 until len) {
+                    val idx = start + i
+                    if (idx >= total) break
+                    val t = i.toDouble() / SAMPLE_RATE
+                    val env = exp(-t * (3.2 / n[2].coerceAtLeast(0.1))) * (if (i < 220) i / 220.0 else 1.0)
+                    val mod = sin(2.0 * PI * f * 3.5 * t) * 1.2 * exp(-t * 6.0)
+                    mix[idx] += (sin(2.0 * PI * f * t + mod) * env * n[3]).toFloat()
+                }
+            }
+            val pcm = ShortArray(total) { (mix[it] * 15000f).toInt().coerceIn(-32767, 32767).toShort() }
+            playPcm(pcm)
+        }
+    }
+
     private fun playPcm(pcm: ShortArray) {
         try {
             val bufferSize = pcm.size * 2

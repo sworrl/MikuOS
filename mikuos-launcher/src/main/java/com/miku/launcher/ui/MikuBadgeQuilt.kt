@@ -294,8 +294,8 @@ fun MikuQuiltOptionsDialog(
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .padding(MikuDimens.grid * 2)
             ) {
-                Text("QUILT & BADGES", color = MikuCyan, fontSize = MikuDimens.textS, fontWeight = FontWeight.Black, fontFamily = AudiowideFont)
-                Text("Long-press a badge on the quilt and drag it to rearrange.", color = MikuTextSecondary, fontSize = MikuDimens.textXs, lineHeight = 15.sp)
+                Text("BADGES", color = MikuCyan, fontSize = MikuDimens.textS, fontWeight = FontWeight.Black, fontFamily = AudiowideFont)
+                Text("Long-press a badge and drag it to move it.", color = MikuTextSecondary, fontSize = MikuDimens.textXs, lineHeight = 15.sp)
                 Spacer(Modifier.height(MikuDimens.grid * 1.5f))
                 OptionRow("Badge size", QuiltBadgeSize.entries.map { it.label }, config.size.ordinal) {
                     onConfigChange(config.copy(size = QuiltBadgeSize.entries[it]))

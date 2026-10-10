@@ -56,10 +56,10 @@ object MikuSyncTransceiver {
     /** Transport as reported by ConnectivityManager. Badges carry NO speed claims — the only
      *  throughput figures shown anywhere are measured (transferRateMBs / SpeedTestResult). */
     enum class TransportType(val label: String, val badge: String) {
-        USB_HIGH_SPEED("USB / Ethernet Link", "⚡ USB / Ethernet"),
-        WIFI_DIRECT("Wi-Fi Link", "📶 Wi-Fi"),
-        DAEMON_ONLY("Daemon reachable (transport not reported)", "🔗 Daemon link"),
-        DISCONNECTED("No Active Link", "⚪ Offline")
+        USB_HIGH_SPEED("USB / Ethernet Link", "USB / Ethernet"),
+        WIFI_DIRECT("Wi-Fi Link", "Wi-Fi"),
+        DAEMON_ONLY("Daemon reachable (transport not reported)", "Daemon link"),
+        DISCONNECTED("No connection", "Offline")
     }
 
     data class SpeedTestResult(
@@ -233,12 +233,12 @@ object MikuSyncTransceiver {
             daemon = _state.value.daemon.copy(online = false, isTransferring = false),
             isTransferring = false
         )
-        log("Ingress engine OFF — network monitoring halted (local SD scans only)")
+        log("Network sync off, stopped watching the network (SD card only)")
     }
 
     fun startMonitoring(ctx: Context) {
         if (monitorJob != null) return
-        if (!MikuIngestGate.isEnabled(ctx)) { log("Ingress engine is OFF — not starting network monitor"); return }
+        if (!MikuIngestGate.isEnabled(ctx)) { log("Network sync is off, not watching the network"); return }
         
         if (!networkCallbackRegistered) {
             try {
@@ -304,7 +304,7 @@ object MikuSyncTransceiver {
 
                     if (daemon.online && (_state.value.daemon.stage != daemon.stage || _state.value.daemon.currentAlbum != daemon.currentAlbum)) {
                         if (daemon.currentArtist.isNotEmpty() || daemon.currentAlbum.isNotEmpty()) {
-                            log("STAGE: ${daemon.stage.uppercase()} // PIPELINE CACHING: [${daemon.currentArtist} / ${daemon.currentAlbum}]")
+                            log("STAGE: ${daemon.stage.uppercase()} · CACHING: ${daemon.currentArtist} / ${daemon.currentAlbum}")
                         }
                     }
 
@@ -386,7 +386,7 @@ object MikuSyncTransceiver {
                     val fromIp = recvPacket.address.hostAddress ?: ""
                     if (fromIp.isNotEmpty() && fromIp != "0.0.0.0") {
                         candidateHosts.add(fromIp)
-                        log("📡 BESPOKE BEACON ACK: $fromIp:$M500D_BEACON_PORT // DAEMON_SYNC")
+                        log("BEACON ACK: $fromIp:$M500D_BEACON_PORT")
                     }
                     val ipsArr = json.optJSONArray("ips")
                     if (ipsArr != null) {
@@ -535,7 +535,7 @@ object MikuSyncTransceiver {
     }
 
     fun triggerDaemonSync(start: Boolean, onResult: (Boolean, String) -> Unit) {
-        if (!ingestEnabledFlag) { onResult(false, "Ingress engine is OFF (local SD scans only)"); return }
+        if (!ingestEnabledFlag) { onResult(false, "Network sync is off (SD card only)"); return }
         scope.launch {
             try {
                 val host = activeHost
@@ -552,7 +552,7 @@ object MikuSyncTransceiver {
                 val code = conn.responseCode
                 withContext(Dispatchers.Main) {
                     if (code in 200..299) {
-                        onResult(true, if (start) "Sync pass started on Host Daemon" else "Sync stopped")
+                        onResult(true, if (start) "Sync started on the host daemon" else "Sync stopped")
                     } else {
                         onResult(false, "Daemon returned HTTP $code")
                     }

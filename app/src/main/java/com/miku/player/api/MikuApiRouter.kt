@@ -377,7 +377,9 @@ class MikuApiRouter(private val context: Context) {
                 mmr.setDataSource(trackPath)
                 val pic = mmr.embeddedPicture
                 mmr.release()
-                pic
+                // A cover shared across many albums is a mis-tag (see SharedCoverGuard): no art beats wrong art.
+                com.miku.player.SharedCoverGuard.init(context)
+                pic?.takeUnless { com.miku.player.SharedCoverGuard.isSuspectBytes(it) }
             } catch (_: Throwable) { null }
         } else null
 

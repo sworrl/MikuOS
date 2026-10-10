@@ -164,7 +164,7 @@ fun MikuArcoModal(onDismissRequest: () -> Unit) {
                     }
                     Row {
                         IconButton(onClick = { ctx.startActivity(Intent(ctx, MikuArcoSettingsActivity::class.java)) }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Settings, contentDescription = "Open arcobocconotto Settings", tint = MikuCyan, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Settings, contentDescription = "Open arcobocconotto settings", tint = MikuCyan, modifier = Modifier.size(16.dp))
                         }
                         IconButton(onClick = onDismissRequest, modifier = Modifier.size(28.dp)) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = MikuNeonPink, modifier = Modifier.size(16.dp))
@@ -187,7 +187,7 @@ fun MikuArcoModal(onDismissRequest: () -> Unit) {
                     )
                 } else {
                     // Active effect row
-                    Text("Active Effect", color = MikuTextSecondary, fontSize = 7.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                    Text("Active effect", color = MikuTextSecondary, fontSize = 7.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                     Text(
                         if (activeEffect.isBlank()) "—" else activeEffect,
                         color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Black, fontFamily = AudiowideFont,
@@ -257,7 +257,7 @@ fun MikuArcoModal(onDismissRequest: () -> Unit) {
                     Spacer(Modifier.height(6.dp))
 
                     // Quick themes
-                    Text("Quick Themes", color = MikuTextSecondary, fontSize = 7.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                    Text("Quick themes", color = MikuTextSecondary, fontSize = 7.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                     Spacer(Modifier.height(4.dp))
                     if (themes.isEmpty() && isConnected) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -279,7 +279,7 @@ fun MikuArcoModal(onDismissRequest: () -> Unit) {
 
                     lastError?.let {
                         Spacer(Modifier.height(6.dp))
-                        Text("⚠ $it", color = com.miku.launcher.ui.MikuIdentity.Coral, fontSize = 7.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("$it", color = com.miku.launcher.ui.MikuIdentity.Coral, fontSize = 7.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

@@ -182,13 +182,13 @@ object MikuWeatherTileEngine {
 
             val loc = resolveLocation(app)
             if (loc == null) {
-                _state.update { it.copy(isRefreshing = false, lastError = "No location yet — set a city in the weather sheet") }
+                _state.update { it.copy(isRefreshing = false, lastError = "No location yet. Set a city in the weather sheet.") }
                 return
             }
             _state.update { it.copy(location = loc) }
 
             if (!isOnline(app)) {
-                _state.update { it.copy(isRefreshing = false, online = false, lastError = "Offline — showing last cached reading") }
+                _state.update { it.copy(isRefreshing = false, online = false, lastError = "Offline, showing the last saved reading") }
                 return
             }
             _state.update { it.copy(online = true) }
@@ -223,14 +223,14 @@ object MikuWeatherTileEngine {
                         uvIndex = om.current.uvIndex
                     )
                     val detail = buildString {
-                        append("Windy Point Forecast v2 (${w.model.uppercase(Locale.US)}, 3-hourly) — current & hourly; ")
-                        append("Open-Meteo — daily, sunrise/sunset, UV, AQI. Condition derived from GFS precip/cloud fields.")
+                        append("Windy Point Forecast v2 (${w.model.uppercase(Locale.US)}, 3-hourly) for current and hourly. ")
+                        append("Open-Meteo for daily, sunrise/sunset, UV and AQI. Conditions come from the GFS rain and cloud fields.")
                         if (!w.warning.isNullOrBlank()) append(" Windy: ${w.warning}")
                     }
                     snap = om.copy(current = current, hourly = hourly, source = "Windy·GFS", sourceDetail = detail)
                 } catch (t: Throwable) {
                     Log.w(TAG, "Windy failed: ${t.message}")
-                    notes.add("Windy failed (${t.message ?: "error"}) — Open-Meteo used")
+                    notes.add("Windy failed (${t.message ?: "error"}), used Open-Meteo")
                 }
             }
 

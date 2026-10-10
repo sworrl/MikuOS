@@ -49,7 +49,7 @@ class MikuBpmWidget : AppWidgetProvider() {
             val bpm = if (intervalMs > 0) 60_000 / intervalMs else 0
 
             val line1 = when {
-                title.isNotEmpty() && artist.isNotEmpty() -> "$title — $artist"
+                title.isNotEmpty() && artist.isNotEmpty() -> "$title · $artist"
                 title.isNotEmpty() -> title
                 else -> "MIKU MUSIC"
             }
@@ -63,7 +63,8 @@ class MikuBpmWidget : AppWidgetProvider() {
                 if (playing) 0xFFFF4FA3.toInt() else 0xFF9FF3EC.toInt()
             )
 
-            v.setOnClickPendingIntent(R.id.widget_bpm_root, MikuBatteryWidget.launchLauncher(ctx))
+            // Tapping a BPM widget opens the game itself, not just the home screen.
+            v.setOnClickPendingIntent(R.id.widget_bpm_root, com.miku.launcher.bpm.MikuBpmGameActivity.pendingIntent(ctx, "widget"))
             mgr.updateAppWidget(id, v)
         }
     }

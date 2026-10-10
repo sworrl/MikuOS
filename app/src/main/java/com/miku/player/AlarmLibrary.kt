@@ -59,7 +59,7 @@ object AlarmLibrary {
         AlarmSource.TRACK -> {
             val id = sourceRef?.toLongOrNull()
             val t = tracks?.firstOrNull { it.id == id }
-            if (t != null) "Track: ${t.title} — ${t.artist}" else "Track #${sourceRef ?: "?"}"
+            if (t != null) "Track: ${t.title} · ${t.artist}" else "Track #${sourceRef ?: "?"}"
         }
     }
 

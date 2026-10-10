@@ -63,16 +63,70 @@ object MikuBpmEngine {
     // the output mix. clearLiveTempo() must only ever drop the latter.
     @Volatile private var lastTempoFromLiveDetector = false
 
+    /**
+     * When the live detector last published a LOCKED tempo. While that is recent, the live lock
+     * owns the beat grid and com.miku.player's pulses are ignored.
+     *
+     * WHY. Two beat sources used to write the same state: the player's file-analysis pulse loop
+     * (constant tempo, but its phase is wherever the loop happened to start) and the live
+     * detector's onset lock (phase taken from the real kick in the output mix). Every pulse from
+     * either overwrote bpm AND lastPulseEpochMs, so when both ran the readout flipped between the
+     * two estimates (128 ↔ 131) and the note highway's phase jumped back and forth between two
+     * grids — exactly the "it keeps jumping between BPMs" report. One owner at a time fixes both:
+     * the live lock when it has one (its phase is the audible one), the player otherwise.
+     */
+    @Volatile private var lastLiveLockMs = 0L
+    private const val LIVE_OWNERSHIP_MS = 4_000L
+
+    enum class TempoSource { NONE, PLAYER_ANALYSIS, LIVE_LOCK }
+
+    private val _source = MutableStateFlow(TempoSource.NONE)
+    /** Which path the current tempo came from, so a readout can say "locked" honestly for both. */
+    val source: StateFlow<TempoSource> = _source.asStateFlow()
+
+    /**
+     * Phase-locked beat anchor. A pulse used to SET the grid (lastPulseEpochMs = now), so every
+     * bit of timestamp noise moved every note on the highway and every judgment with it. That
+     * noise is large here: live onsets are only seen when a Visualizer FFT frame arrives (the
+     * capture rate is ~20 Hz, so tens of ms of quantisation), and a broadcast from the player is
+     * delivered whenever the system gets to it. A real beat does not wobble like that.
+     *
+     * So a pulse now NUDGES the grid: predict where this beat should be from the previous anchor
+     * and the period, and move a quarter of the way toward the observed time. Random jitter
+     * averages out; a genuine phase error (a seek, a skipped pulse) still converges within a few
+     * beats; and a long gap or a tempo change just restarts from the observed pulse. The result
+     * is still measured, only less noisy — it never adds a beat that was not heard.
+     */
+    private fun smoothedAnchor(prevAnchor: Long, prevPeriodMs: Long, periodMs: Long, now: Long): Long {
+        if (prevAnchor <= 0L || periodMs <= 0L || kotlin.math.abs(prevPeriodMs - periodMs) > 3L) return now
+        val since = now - prevAnchor
+        if (since < 0L || since > periodMs * 4L) return now
+        val n = Math.round(since.toDouble() / periodMs.toDouble())
+        val predicted = prevAnchor + n * periodMs
+        val err = now - predicted
+        // An error near half a beat is ambiguous (which beat was it?) — trust the observation.
+        if (kotlin.math.abs(err) > periodMs / 3L) return now
+        return predicted + (err * PHASE_GAIN).toLong()
+    }
+    private const val PHASE_GAIN = 0.25
+
+    private fun liveOwnsGrid(): Boolean =
+        lastLiveLockMs != 0L && System.currentTimeMillis() - lastLiveLockMs < LIVE_OWNERSHIP_MS &&
+            MikuTempoLock.tempo.value.isLocked
+
     /** Live output-mix detector reports a beat at [bpm] — authoritative "audio is playing". */
     fun pushLivePulse(bpm: Float) {
         val prev = _state.value
         val b = sanitizeBpm(bpm, prev.bpm)
         lastTempoFromLiveDetector = true
+        lastLiveLockMs = System.currentTimeMillis()
+        _source.value = TempoSource.LIVE_LOCK
+        val interval = sanitizeInterval((60_000f / b).toLong(), b)
         _state.value = prev.copy(
             bpm = b,
-            beatIntervalMs = sanitizeInterval((60_000f / b).toLong(), b),
+            beatIntervalMs = interval,
             isPlaying = true,
-            lastPulseEpochMs = System.currentTimeMillis()
+            lastPulseEpochMs = smoothedAnchor(prev.lastPulseEpochMs, prev.beatIntervalMs, interval, System.currentTimeMillis())
         )
     }
 
@@ -84,8 +138,10 @@ object MikuBpmEngine {
      */
     fun clearLiveTempo() {
         if (!lastTempoFromLiveDetector) return
+        lastLiveLockMs = 0L
         val prev = _state.value
         if (prev.bpm == 0f && prev.lastPulseEpochMs == 0L) return
+        _source.value = TempoSource.NONE
         _state.value = prev.copy(bpm = 0f, beatIntervalMs = 500L, lastPulseEpochMs = 0L)
     }
 
@@ -128,6 +184,14 @@ object MikuBpmEngine {
                     when (intent.action) {
                         ACTION_BPM_UPDATE -> {
                             val prev = _state.value
+                            val playing0 = intent.getBooleanExtra(EXTRA_IS_PLAYING, prev.isPlaying)
+                            val color0 = intent.getIntExtra(EXTRA_DOMINANT_COLOR, prev.dominantColor)
+                            if (liveOwnsGrid()) {
+                                // The live lock owns the tempo right now; take only the
+                                // play state and colour from the player. See lastLiveLockMs.
+                                _state.value = prev.copy(isPlaying = playing0, dominantColor = color0)
+                                return
+                            }
                             lastTempoFromLiveDetector = false
                             val bpm = sanitizeBpm(intent.getFloatExtra(EXTRA_BPM, prev.bpm), prev.bpm)
                             val interval = sanitizeInterval(
@@ -135,6 +199,7 @@ object MikuBpmEngine {
                             )
                             val playing = intent.getBooleanExtra(EXTRA_IS_PLAYING, prev.isPlaying)
                             val color = intent.getIntExtra(EXTRA_DOMINANT_COLOR, prev.dominantColor)
+                            _source.value = if (bpm > 0f) TempoSource.PLAYER_ANALYSIS else TempoSource.NONE
                             _state.value = prev.copy(
                                 bpm = bpm,
                                 beatIntervalMs = interval,
@@ -144,6 +209,11 @@ object MikuBpmEngine {
                         }
                         ACTION_BPM_PULSE -> {
                             val prev = _state.value
+                            if (liveOwnsGrid()) {
+                                // Ignored: a second phase source would drag the beat grid back and
+                                // forth between two clocks. See lastLiveLockMs.
+                                return
+                            }
                             lastTempoFromLiveDetector = false
                             val bpm = sanitizeBpm(intent.getFloatExtra(EXTRA_BPM, prev.bpm), prev.bpm)
                             val interval = sanitizeInterval(
@@ -156,8 +226,9 @@ object MikuBpmEngine {
                                 beatIntervalMs = interval,
                                 isPlaying = playing,
                                 dominantColor = color,
-                                lastPulseEpochMs = System.currentTimeMillis()
+                                lastPulseEpochMs = smoothedAnchor(prev.lastPulseEpochMs, prev.beatIntervalMs, interval, System.currentTimeMillis())
                             )
+                            if (bpm > 0f) _source.value = TempoSource.PLAYER_ANALYSIS
                         }
                     }
                 } catch (t: Throwable) {

@@ -276,6 +276,48 @@ object MikuStagePerformance {
     /** Clears the speech bubble once the UI has shown it long enough. */
     fun clearSaying() { _saying.value = null }
 
+    /** Put a specific line in her mouth (lucky notes, near-misses, records). */
+    fun say(line: String) { _saying.value = line }
+
+    // Reaction lines for the moments the engine now names. Same rule as the rest: she reacts to
+    // what actually happened, and she is a little too invested.
+    private val LINES_NEAR_PERFECT = listOf(
+        "that was SO close to perfect. i felt it in my twintails",
+        "a hair. a single hair off. i'm counting it emotionally",
+        "nearly. NEARLY.",
+        "the PERFECT window saw you coming and flinched"
+    )
+    private val LINES_NEW_BEST = listOf(
+        "new personal best. i'm telling the leeks.",
+        "you just beat yourself. respectfully. on this exact song.",
+        "that's a record. somebody frame this tap.",
+        "PB! the sound guy is crying again"
+    )
+    private val LINES_SECRET = listOf(
+        "wait. something just changed. go look around.",
+        "you found something you weren't supposed to find yet. nice.",
+        "i'm not allowed to say what that was. i can wink though."
+    )
+    private val LINES_LUCKY = listOf(
+        "gold note. GOLD. NOTE.",
+        "luck is a skill if you hit it on the beat",
+        "that note was shiny and you were ready"
+    )
+
+    private var lastNearPerfectMs = 0L
+
+    /** A GREAT that missed PERFECT by a few ms. Rate-limited so it stays funny. */
+    fun onNearPerfect() {
+        val now = System.currentTimeMillis()
+        if (now - lastNearPerfectMs < 9_000L) return
+        lastNearPerfectMs = now
+        if (Random.nextFloat() < 0.5f) _saying.value = LINES_NEAR_PERFECT.random()
+    }
+
+    fun onNewBest() { _saying.value = LINES_NEW_BEST.random() }
+    fun onSecretFound() { _saying.value = LINES_SECRET.random() }
+    fun onLuckyNote() { _saying.value = LINES_LUCKY.random() }
+
     private fun linesFor(m: Mood) = when (m) {
         Mood.DEVASTATED -> LINES_DEVASTATED
         Mood.WORRIED -> LINES_WORRIED

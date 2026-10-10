@@ -33,6 +33,7 @@ object ProjectMNative {
     // legacy enum call — kept only so the AndroidView update path has something safe to call.
     fun setPreset(p: Int) { /* no-op */ }
     @Synchronized fun feedAudio(fft: FloatArray, pcm: FloatArray) { if (isLoaded) try { nativeFeedAudio(fft, pcm) } catch (_: Throwable) {} }
+    /** Callers must run MikuVizPresetGates.apply on [dir] first, or locked reward presets get loaded. */
     @Synchronized fun loadPresets(dir: String) { if (isLoaded) try { nativeLoadPresets(dir) } catch (_: Throwable) {} }
 
     @Volatile private var cachedPresetPath: String? = null
@@ -572,7 +573,13 @@ private class ProjectMRenderer(private var audioSessionId: Int, private val appC
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         ProjectMNative.init()
         val path = ProjectMNative.ensurePresets(appCtx)   // GL thread: sync 130 presets off the UI thread
-        if (!path.isNullOrEmpty()) ProjectMNative.loadPresets(path)
+        if (!path.isNullOrEmpty()) {
+            // The ONLY playlist load in the app (Now Playing, Tape Mode and every other stage all
+            // build this renderer). Gate the BPM-game reward families right here, after any re-sync
+            // and before projectM reads the dir; see MikuVizPresetGates.
+            MikuVizPresetGates.apply(appCtx, java.io.File(path))
+            ProjectMNative.loadPresets(path)
+        }
         PresetPerf.isDisabled("") // Trigger immediate database audit & retroactive cull of low FPS presets
     }
 

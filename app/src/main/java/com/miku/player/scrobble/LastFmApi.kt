@@ -112,7 +112,7 @@ object LastFmApi {
 
     private fun classify(code: Int, msg: String): ApiError = when (code) {
         11, 16, 29, 8 -> ApiError.Temporary(code, msg)        // offline / temporary / rate-limited / op failed
-        9 -> ApiError.Hard(code, "Session expired — sign in again ($msg)", invalidatesSession = true)
+        9 -> ApiError.Hard(code, "Session expired. Sign in again ($msg)", invalidatesSession = true)
         4, 10, 13, 26 -> ApiError.Hard(code, msg)             // auth failed / bad key / bad sig / key suspended
         else -> ApiError.Hard(code, msg)
     }

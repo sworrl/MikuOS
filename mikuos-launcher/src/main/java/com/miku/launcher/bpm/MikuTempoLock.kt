@@ -76,8 +76,8 @@ object MikuTempoLock {
         /** Short, honest status line for any readout that wants one. */
         val label: String
             get() = when {
-                isLocked && challenging > 0 -> "🔒 LOCKED (tempo change? $challenging/$RELOCK_SAMPLES)"
-                isLocked -> "🔒 TEMPO LOCKED"
+                isLocked && challenging > 0 -> "LOCKED (tempo change? $challenging/$RELOCK_SAMPLES)"
+                isLocked -> "TEMPO LOCKED"
                 state == LockState.ACQUIRING -> "listening… ($agreeing/$ACQUIRE_SAMPLES)"
                 else -> "no tempo detected"
             }

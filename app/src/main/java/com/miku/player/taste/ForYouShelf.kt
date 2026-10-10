@@ -128,10 +128,10 @@ fun ForYouShelf(
         if (StationEngine.active) StationOnAirCard(Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
 
         if (r == null) {
-            HonestNote("For You learns from what you play, heart, skip — and when. Nothing here is made up: rows unlock as real listening builds up.")
+            HonestNote("For You learns from what you play, heart and skip, and when. Rows open up as your listening builds up.")
         } else {
             if (r.signalCount < TasteShelves.PROFILE_MIN_SIGNAL) {
-                HonestNote("Listen more to unlock — ${r.signalCount} of ${TasteShelves.PROFILE_MIN_SIGNAL} plays/hearts logged so far. Rows below open up as you go.")
+                HonestNote("Listen more to unlock. ${r.signalCount} of ${TasteShelves.PROFILE_MIN_SIGNAL} plays/hearts logged so far. Rows below open up as you go.")
             }
             for (row in r.rows) {
                 if (row.locked) {
@@ -369,7 +369,7 @@ fun StationSheet(onDismiss: () -> Unit) {
                         AlbumArtImage(p.track.id, Modifier.size(34.dp).clip(RoundedCornerShape(8.dp)), trackPath = p.track.path)
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("${p.track.title} — ${p.track.artist}", color = CardText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${p.track.title} · ${p.track.artist}", color = CardText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             if (p.why.isNotBlank()) Text(p.why, color = MikuTeal.copy(alpha = 0.8f), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -462,14 +462,14 @@ fun TasteProfileSheet(tracks: List<Track>, onDismiss: () -> Unit) {
                 }
                 if (s.signalCount < TasteShelves.PROFILE_MIN_SIGNAL) {
                     Spacer(Modifier.height(10.dp))
-                    Text("Listen more to unlock — ${s.signalCount} of ${TasteShelves.PROFILE_MIN_SIGNAL} plays/hearts. The shares below are what little there is so far, nothing padded.",
+                    Text("Listen more to unlock. ${s.signalCount} of ${TasteShelves.PROFILE_MIN_SIGNAL} plays/hearts so far. The shares below use what there is.",
                         color = MikuGold, fontSize = 11.5.sp, lineHeight = 14.sp)
                 }
                 val genres = remember(s) { TasteShelves.topGenres(s) }
                 val artists = remember(s) { TasteShelves.topArtists(s) }
                 Spacer(Modifier.height(14.dp))
                 Text("TOP GENRES", color = Muted, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                if (genres.isEmpty()) Text("No genre tags in what you've played — genres come from the files' own tags.", color = Muted, fontSize = 11.sp)
+                if (genres.isEmpty()) Text("No genre tags in what you've played. Genres come from the files' own tags.", color = Muted, fontSize = 11.sp)
                 for (g in genres) ShareBar(g, MikuTeal)
                 Spacer(Modifier.height(12.dp))
                 Text("TOP ARTISTS", color = Muted, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -477,7 +477,7 @@ fun TasteProfileSheet(tracks: List<Track>, onDismiss: () -> Unit) {
                 for (a in artists) ShareBar(a, MikuPink)
                 Spacer(Modifier.height(12.dp))
                 Text("LISTENING HOURS", color = Muted, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Text("Sun → Sat rows, midnight → 11pm columns · brighter = more time heard", color = Muted.copy(alpha = 0.85f), fontSize = 10.sp)
+                Text("Rows are Sun to Sat, columns are midnight to 11 PM. Brighter means more time heard.", color = Muted.copy(alpha = 0.85f), fontSize = 10.sp)
                 Spacer(Modifier.height(6.dp))
                 Heatmap(s.heatmap, Modifier.fillMaxWidth().height(96.dp))
                 val slot = TasteDb.currentSlot()

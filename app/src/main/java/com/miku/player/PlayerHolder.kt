@@ -123,6 +123,9 @@ object PlayerHolder {
         // External USB DAC output: route + bit-perfect mixer when a USB sink enumerates (MikuUsbDacOutput).
         runCatching { MikuUsbDacOutput.init(app) }
         runCatching { MikuMirrorOutput.init(app) }
+        runCatching { com.miku.player.volume.MikuOutputVolumes.init(app) }
+        // Listening profiles: restores the current profile's EQ and follows BT/USB/wired outputs.
+        runCatching { com.miku.player.profiles.ListeningProfileManager.init(app) }
 
         // Integer PCM output with bit-perfect DIRECT support for dual CS43198 DACs:
         // Media3's stock DefaultAudioSink either downsamples 24/32-bit to 16-bit (float=false)
@@ -138,6 +141,10 @@ object PlayerHolder {
                 return androidx.media3.exoplayer.audio.MikuDirectAudioSink.Builder(context)
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    // Listening-profile EQ. Inactive (out of the pipeline, bit-perfect) whenever
+                    // the curve is off or flat. The sink runs this chain for 16-bit input only;
+                    // hi-res needs the processor added in the sink's own hi-res branch (MikuEq).
+                    .setAudioProcessors(arrayOf<androidx.media3.common.audio.AudioProcessor>(com.miku.player.profiles.MikuEq.processor))
                     .build()
             }
 

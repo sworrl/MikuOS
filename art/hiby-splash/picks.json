@@ -1,0 +1,13 @@
+{
+  "_comment": "Which candidate (candidates/<name>_<letter>.png) each event uses. Edit, then rerun build_frames.py.",
+  "headset_in": "a",
+  "headset_out": "a",
+  "charging": "a",
+  "low_battery": "a",
+  "low_power_shutdown": "b",
+  "bye": "a",
+  "volume_warning": "a",
+  "volume_dial": "a",
+  "shutdown_bg": "a",
+  "boot_splash": "a"
+}

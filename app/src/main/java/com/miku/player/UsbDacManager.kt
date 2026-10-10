@@ -59,7 +59,8 @@ object UsbDacManager {
 
     /** Whether the OS offers the HiBy DAC screen at all (stock Settings present). */
     fun isSupported(ctx: Context): Boolean =
-        ctx.packageManager.resolveActivity(Intent(ACTION_WORK_MODE_VIEW), 0) != null
+        runCatching { ctx.packageManager.getPackageInfo("com.miku.sysbridge", 0); true }.getOrDefault(false) ||
+            ctx.packageManager.resolveActivity(Intent(ACTION_WORK_MODE_VIEW), 0) != null
 
     private fun sysProp(key: String): String = runCatching {
         val c = Class.forName("android.os.SystemProperties")
@@ -119,38 +120,25 @@ object UsbDacManager {
      * Enter/leave HiBy USB DAC mode. Returns true when the request was handed to the OS
      * (enter: HiBy DAC screen started; leave: gadget put back on MTP/ADB + work_mode reset).
      */
+    /**
+     * Enter/leave USB DAC mode through com.miku.sysbridge, the MikuOS package that runs as the
+     * system UID and so may set the vendor USB properties HiBy's sequence needs (see its
+     * BridgeReceiver). This no longer depends on HiBy's Settings screen being in the image.
+     * Returns true when the request was handed over; [isActive] reads the real result.
+     */
     suspend fun setUsbDacMode(ctx: Context, enabled: Boolean, rate: Int = 0, bits: Int = 0): Boolean =
         withContext(Dispatchers.IO) {
-            try {
-                val cr = ctx.contentResolver
-                if (enabled) {
-                    if (!isSupported(ctx)) {
-                        Log.w(TAG, "No android.settings.WORK_MODE_VIEW handler — stock HiBy Settings missing")
-                        return@withContext false
-                    }
-                    // HiBy's exit restores the functions named here; make sure it's MTP, not "none".
-                    if (Settings.Global.getString(cr, KEY_DEFAULT_FUNCTIONS).isNullOrBlank()) {
-                        Settings.Global.putString(cr, KEY_DEFAULT_FUNCTIONS, "mtp")
-                    }
-                    Settings.Global.putString(cr, KEY_WORK_MODE, MODE_DAC_IN)
-                    val intent = Intent(ACTION_WORK_MODE_VIEW).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    ctx.startActivity(intent)
-                    Log.i(TAG, "USB DAC mode: work_mode=dacin, HiBy WorkModeActivity started")
-                    true
-                } else {
-                    Settings.Global.putString(cr, KEY_WORK_MODE, MODE_ANDROID)
-                    // Same-UID/system-only receiver in HiBy's screen; sent anyway (no-op if refused).
-                    runCatching {
-                        ctx.sendBroadcast(Intent(ACTION_CLOSE_DAC_SCREEN).setPackage("com.android.settings"))
-                    }
-                    val restored = restoreAndroidUsb(ctx)
-                    Log.i(TAG, "USB DAC mode off: work_mode=android, gadget restored=$restored")
-                    restored
+            runCatching {
+                if (enabled && Settings.Global.getString(ctx.contentResolver, KEY_DEFAULT_FUNCTIONS).isNullOrBlank()) {
+                    Settings.Global.putString(ctx.contentResolver, KEY_DEFAULT_FUNCTIONS, "4")   // MTP
                 }
-            } catch (t: Throwable) {
-                Log.e(TAG, "setUsbDacMode($enabled) failed", t)
-                false
-            }
+                ctx.sendBroadcast(
+                    Intent("com.miku.sysbridge.USB_DAC").setPackage("com.miku.sysbridge").putExtra("enable", enabled),
+                    "com.miku.permission.SYSTEM_BRIDGE"
+                )
+                Log.i(TAG, "USB DAC mode ${if (enabled) "on" else "off"} requested via com.miku.sysbridge")
+                true
+            }.onFailure { Log.e(TAG, "setUsbDacMode($enabled) failed", it) }.getOrDefault(false)
         }
 
     /** Put the gadget back on MTP (+ADB stays if enabled) through the public UsbManager API (MANAGE_USB). */

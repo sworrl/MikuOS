@@ -71,7 +71,7 @@ object TasteShelves {
                 heavy.map { Item(it.f.track, heavyWhy(it)) }, null
             ) else Row(
                 "heavy", "Your heavy rotation", "", emptyList(),
-                "Listen more to unlock — ${heavy.size} of $HEAVY_MIN_ITEMS tracks played $HEAVY_MIN_PLAYS+ times this month"
+                "Listen more to unlock. ${heavy.size} of $HEAVY_MIN_ITEMS tracks played $HEAVY_MIN_PLAYS+ times this month"
             )
         )
 
@@ -82,12 +82,12 @@ object TasteShelves {
         }.sortedByDescending { it.baseAffinity }.take(ROW_MAX).toList()
         rows.add(
             if (forgotten.size >= FORGOTTEN_MIN_ITEMS) Row(
-                "forgotten", "Forgotten favourites", "you loved these — not played in $FORGOTTEN_DAYS+ days",
+                "forgotten", "Forgotten favorites", "you loved these, not played in $FORGOTTEN_DAYS+ days",
                 forgotten.map { Item(it.f.track, TasteModel.whyThis(it, listOf("last played ${daysAgo(now, it.f.lastPlayedAt)}"))) }, null
             ) else Row(
-                "forgotten", "Forgotten favourites", "", emptyList(),
-                if (snap.totalHearts + snap.totalListens < 5) "Heart and play things — favourites you haven't touched in $FORGOTTEN_DAYS days show up here"
-                else "Nothing qualifies yet — ${forgotten.size} of $FORGOTTEN_MIN_ITEMS favourites untouched for $FORGOTTEN_DAYS+ days"
+                "forgotten", "Forgotten favorites", "", emptyList(),
+                if (snap.totalHearts + snap.totalListens < 5) "Heart and play things. Favorites you haven't touched in $FORGOTTEN_DAYS days show up here"
+                else "Nothing qualifies yet. ${forgotten.size} of $FORGOTTEN_MIN_ITEMS favorites untouched for $FORGOTTEN_DAYS+ days"
             )
         )
 
@@ -105,12 +105,12 @@ object TasteShelves {
                     good.map { (s, _) -> Item(s.f.track, TasteModel.whyThis(s, listOf("you play ${s.f.track.artist} in the $slotName"))) }, null
                 ) else Row(
                     "goodnow", "Good right now", "", emptyList(),
-                    "No clear $slotName pattern yet — ${good.size} of $GOOD_NOW_MIN_ITEMS tracks lean into this time of day"
+                    "No clear $slotName pattern yet. ${good.size} of $GOOD_NOW_MIN_ITEMS tracks lean into this time of day"
                 )
             )
         } else {
             rows.add(Row("goodnow", "Good right now", "", emptyList(),
-                "Listen more to unlock — ${snap.totalListens} of $GOOD_NOW_MIN_LISTENS listens logged for time-of-day patterns"))
+                "Listen more to unlock. ${snap.totalListens} of $GOOD_NOW_MIN_LISTENS listens logged for time-of-day patterns"))
         }
 
         // ---- Discover in your library ----
@@ -150,11 +150,11 @@ object TasteShelves {
                     "discover", "Discover in your library", "never played, by artists, albums and genres you already love",
                     disc.map { Item(it.first.f.track, it.third) }, null
                 ) else Row("discover", "Discover in your library", "", emptyList(),
-                    "Nothing unplayed left near your taste — ${disc.size} of $DISCOVER_MIN_ITEMS candidates")
+                    "Nothing unplayed left near your taste (${disc.size} of $DISCOVER_MIN_ITEMS candidates)")
             )
         } else {
             rows.add(Row("discover", "Discover in your library", "", emptyList(),
-                "Listen more to unlock — ${snap.signalCount} of $DISCOVER_MIN_SIGNAL plays/hearts needed"))
+                "Listen more to unlock. ${snap.signalCount} of $DISCOVER_MIN_SIGNAL plays/hearts needed"))
         }
 
         return Result(rows, snap)

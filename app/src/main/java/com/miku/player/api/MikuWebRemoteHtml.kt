@@ -356,7 +356,7 @@ object MikuWebRemoteHtml {
         </div>
 
         <div class="details-pane">
-            <div class="track-title" id="trackTitle">Connecting...</div>
+            <div class="track-title" id="trackTitle">Connecting…</div>
             <div class="track-artist" id="trackArtist">—</div>
             <div class="track-album" id="trackAlbum"></div>
 
@@ -381,7 +381,7 @@ object MikuWebRemoteHtml {
             </div>
 
             <div class="controls-row">
-                <button class="btn-ctrl" onclick="toggleShuffle()" title="Shuffle" id="btnShuffle">🔀</button>
+                <button class="btn-ctrl" onclick="toggleShuffle()" title="Shuffle" id="btnShuffle">⇄</button>
                 <button class="btn-ctrl" onclick="prevTrack()" title="Previous" id="btnPrev">⏮</button>
                 <button class="btn-ctrl btn-play" onclick="togglePlay()" title="Play/Pause" id="btnPlay">▶</button>
                 <button class="btn-ctrl" onclick="nextTrack()" title="Next" id="btnNext">⏭</button>
@@ -397,8 +397,8 @@ object MikuWebRemoteHtml {
             <div class="spectrum-bar-box" id="spectrumBox"></div>
 
             <div class="mode-nav">
-                <a href="/" class="nav-link ${if (!isTvMode) "active" else ""}">📱 Mobile Remote</a>
-                <a href="/tv" class="nav-link ${if (isTvMode) "active" else ""}">📺 TV Big Screen</a>
+                <a href="/" class="nav-link ${if (!isTvMode) "active" else ""}">Phone remote</a>
+                <a href="/tv" class="nav-link ${if (isTvMode) "active" else ""}">TV</a>
             </div>
         </div>
     </div>

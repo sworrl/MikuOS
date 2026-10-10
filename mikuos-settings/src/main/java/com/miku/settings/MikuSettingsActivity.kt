@@ -49,80 +49,38 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
+// The old openAospSettings() hand-off is gone: every screen it opened in stock Settings now has a
+// MikuOS page (pages/), and anything not rebuilt yet goes through route/SettingsRouterActivity,
+// which deep-links to the exact stock component and explains when stock Settings is absent.
+
 /**
- * Hand off to the REAL (AOSP) Settings app for screens MikuOS does not implement itself
- * (Wi-Fi picker, Bluetooth pairing, app manager, storage browser, developer options, about).
- *
- * MikuSettings declares these same intent actions (WIFI_SETTINGS, BLUETOOTH_SETTINGS, etc.)
- * in its own manifest, so firing a bare Intent(action) resolves right back to com.miku.settings
- * (an infinite self-loop). We therefore:
- *   1. Scope the intent to com.android.settings so it can never resolve to ourselves.
- *   2. Fall back to an unscoped intent only if it resolves to some OTHER package.
- *   3. Otherwise show a Toast instead of looping or silently failing.
+ * Home tiles. A tile with a [route] opens a MikuPageActivity page (the screens that replace stock
+ * Settings); a tile without one opens its original in-activity screen.
  */
-fun openAospSettings(ctx: Context, action: String, fallbackMsg: String = "Not available on this device") {
-    val pm = ctx.packageManager
-    val explicitComponent = when (action) {
-        Settings.ACTION_BLUETOOTH_SETTINGS -> android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$ConnectedDeviceDashboardActivity")
-        Settings.ACTION_WIFI_SETTINGS, Settings.ACTION_WIRELESS_SETTINGS -> android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity")
-        Settings.ACTION_DISPLAY_SETTINGS -> android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$DisplaySettingsActivity")
-        Settings.ACTION_SOUND_SETTINGS -> android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$SoundSettingsActivity")
-        Settings.ACTION_DEVICE_INFO_SETTINGS -> android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$MyDeviceInfoActivity")
-        Settings.ACTION_APPLICATION_SETTINGS -> android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$ManageApplicationsActivity")
-        Settings.ACTION_INTERNAL_STORAGE_SETTINGS -> android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$StorageDashboardActivity")
-        Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS -> android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$DevelopmentSettingsDashboardActivity")
-        else -> null
-    }
-
-    if (explicitComponent != null) {
-        val intent = Intent(action).apply {
-            component = explicitComponent
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        try { ctx.startActivity(intent); return } catch (_: Throwable) {}
-    }
-
-    // 1. Explicit AOSP Settings package query — find any exported activity in com.android.settings
-    val scoped = Intent(action).apply {
-        setPackage("com.android.settings")
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    val matches = pm.queryIntentActivities(scoped, 0)
-    for (m in matches) {
-        if (m.activityInfo.packageName == "com.android.settings") {
-            val direct = Intent(action).apply {
-                setClassName("com.android.settings", m.activityInfo.name)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try { ctx.startActivity(direct); return } catch (_: Throwable) {}
-        }
-    }
-
-    // 2. Unscoped fallback, only if it resolves to something other than ourselves
-    val generic = Intent(action).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-    val resolved = generic.resolveActivity(pm)
-    if (resolved != null && resolved.packageName != ctx.packageName) {
-        try { ctx.startActivity(generic); return } catch (_: Throwable) {}
-    }
-
-    // 3. Fallback Toast
-    try { Toast.makeText(ctx, fallbackMsg, Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
-}
-
-enum class SettingsSection(val title: String, val icon: ImageVector, val desc: String) {
-    AUDIO_DAC("DAC & Audio", Icons.Default.Headphones, "Cirrus Dual CS43198 MasterHIFI, Gain, Filters & USB DAC"),
+enum class SettingsSection(val title: String, val icon: ImageVector, val desc: String, val route: String? = null) {
+    AUDIO_DAC("DAC", Icons.Default.Headphones, "Opens DAC settings in the Hardware app"),
     // Was "dynamic modes & BPM pulse": this screen stores a mode, it does not animate anything,
     // and the indicator is non-functional on this unit.
-    FN_SWITCH("FN Switch & Keys", Icons.Default.ToggleOn, "Hardware Fn lock switch (Screen & Keys Lock default)"),
-    WIRELESS("Network & ADB", Icons.Default.Wifi, "Wi-Fi, Wireless ADB, Hotspot & Network tools"),
-    BLUETOOTH("Bluetooth", Icons.Default.Bluetooth, "Audio streaming codecs, LDAC, aptX & paired gear"),
-    DISPLAY("Display & Light", Icons.Default.BrightnessMedium, "Brightness, ambient light sensor, screen timeout & theme"),
-    BATTERY("Battery & Power", Icons.Default.BatteryChargingFull, "Live telemetry, voltage, current mA & battery health"),
-    STORAGE_APPS("Apps & Storage", Icons.Default.Storage, "Internal memory, MicroSD card & application manager"),
-    SYSTEM_ABOUT("About MikuOS", Icons.Default.Info, "Build, kernel, SoC & privilege as reported by the running system")
+    FN_SWITCH("FN Switch & Keys", Icons.Default.ToggleOn, "Hardware Fn lock switch and what it locks"),
+    NETWORK("Network & internet", Icons.Default.Language, "Wi-Fi, mobile data, hotspot, VPN and data usage", "internet"),
+    WIRELESS("Network & ADB", Icons.Default.Wifi, "Wireless ADB, Google Fi network tools"),
+    BLUETOOTH("Bluetooth", Icons.Default.Bluetooth, "Codecs, LDAC, aptX and paired devices"),
+    CONNECTED("Connected devices", Icons.Default.Usb, "USB mode, NFC, Bluetooth device name", "connected"),
+    STORAGE_APPS("Apps & Storage", Icons.Default.Storage, "App info, default apps, special access, internal storage and SD card"),
+    NOTIFICATIONS("Notifications", Icons.Default.Notifications, "App notifications and Do Not Disturb", "notifications"),
+    SOUND("Sound & vibration", Icons.Default.VolumeUp, "Volume, ring mode, ringtones and system sounds", "sound"),
+    DISPLAY("Display & Light", Icons.Default.BrightnessMedium, "Brightness, light sensor, screen timeout and theme"),
+    BATTERY("Battery & Power", Icons.Default.BatteryChargingFull, "Live readings, battery saver and app battery use"),
+    SECURITY("Security & privacy", Icons.Default.Lock, "Screen lock, permissions, device admins", "security"),
+    LOCATION("Location", Icons.Default.LocationOn, "Location on or off, app access and scanning", "location"),
+    ACCESSIBILITY("Accessibility", Icons.Default.Accessibility, "Services, color, text and interaction", "a11y"),
+    SYSTEM("System", Icons.Default.SettingsApplications, "Languages, keyboard, date and time, accounts, users, reset", "system"),
+    SYSTEM_ABOUT("About MikuOS", Icons.Default.Info, "Build, kernel, SoC and permissions as the system reports them")
 }
 
 class MikuSettingsActivity : ComponentActivity() {
+    companion object { private val routingClaimed = java.util.concurrent.atomic.AtomicBoolean(false) }
+
     private fun applyImmersiveMode() {
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
@@ -140,12 +98,17 @@ class MikuSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyImmersiveMode()
+        // Once per process: make sure tied settings intents resolve here (cheap, off the UI thread).
+        if (routingClaimed.compareAndSet(false, true)) {
+            val app = applicationContext
+            Thread { runCatching { com.miku.settings.route.PreferredRouting.claim(app) } }.start()
+        }
         val targetAction = intent?.action ?: ""
         val extraSec = intent?.getStringExtra("extra_section") ?: intent?.getStringExtra("section") ?: ""
         val initialSection = when {
             extraSec.equals("wireless", ignoreCase = true) || extraSec.equals("wifi", ignoreCase = true) || targetAction == Settings.ACTION_WIFI_SETTINGS || targetAction == Settings.ACTION_WIRELESS_SETTINGS -> SettingsSection.WIRELESS
             extraSec.equals("bluetooth", ignoreCase = true) || extraSec.equals("bt", ignoreCase = true) || targetAction == Settings.ACTION_BLUETOOTH_SETTINGS -> SettingsSection.BLUETOOTH
-            extraSec.equals("audio_dac", ignoreCase = true) || extraSec.equals("dac", ignoreCase = true) || targetAction == "com.m500.hardware.action.USB_DAC" || targetAction == Settings.ACTION_SOUND_SETTINGS || targetAction == "android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" -> SettingsSection.AUDIO_DAC
+            extraSec.equals("audio_dac", ignoreCase = true) || extraSec.equals("dac", ignoreCase = true) || targetAction == Settings.ACTION_SOUND_SETTINGS || targetAction == "android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" -> SettingsSection.AUDIO_DAC
             extraSec.equals("fn_switch", ignoreCase = true) || extraSec.equals("fn", ignoreCase = true) || targetAction == "com.m500.hardware.action.FN_SETTINGS" -> SettingsSection.FN_SWITCH
             extraSec.equals("display", ignoreCase = true) || targetAction == Settings.ACTION_DISPLAY_SETTINGS -> SettingsSection.DISPLAY
             extraSec.equals("storage_apps", ignoreCase = true) || extraSec.equals("storage", ignoreCase = true) || targetAction == Settings.ACTION_APPLICATION_SETTINGS || targetAction == Settings.ACTION_INTERNAL_STORAGE_SETTINGS -> SettingsSection.STORAGE_APPS
@@ -302,7 +265,10 @@ fun MikuOSSettingsApp(initialSection: SettingsSection?, onExit: () -> Unit) {
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(MikuCardBg)
                                 .border(1.dp, tileAccent.copy(alpha = 0.30f), RoundedCornerShape(16.dp))
-                                .clickable { currentSection = sec }
+                                .clickable {
+                                    if (sec.route != null) com.miku.settings.pages.MikuPageActivity.open(ctx, sec.route)
+                                    else currentSection = sec
+                                }
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -372,7 +338,7 @@ fun MikuOSSettingsApp(initialSection: SettingsSection?, onExit: () -> Unit) {
                         SettingsSection.BATTERY -> BatteryScreen(ctx)
                         SettingsSection.STORAGE_APPS -> StorageAppsScreen(ctx)
                         SettingsSection.SYSTEM_ABOUT -> AboutScreen(ctx)
-                        null -> {}
+                        else -> {}
                     }
                 }
             }
@@ -402,593 +368,29 @@ fun MikuOSSettingsApp(initialSection: SettingsSection?, onExit: () -> Unit) {
 }
 
 // ----------------------------------------------------
-// Section 1: Audio & Cirrus Logic CS43198 Direct MasterHIFI
+// Section 1: DAC. The DAC page lives in the Hardware app (com.m500.hardware); this is a link to it.
 // ----------------------------------------------------
 @Composable
 fun AudioDacScreen(ctx: Context) {
-    val scope = rememberCoroutineScope()
-    var filter by remember { mutableStateOf(CirrusLogicManager.getDigitalFilter(ctx)) }
-    var gain by remember { mutableStateOf(CirrusLogicManager.getGainMode(ctx)) }
-    var dre by remember { mutableStateOf(CirrusLogicManager.isDreEnabled(ctx)) }
-    var turbo by remember { mutableStateOf(CirrusLogicManager.isHighPowerEnabled(ctx)) }
-    var dsdComp by remember { mutableStateOf(CirrusLogicManager.getDsdGainCompensate(ctx)) }
-    var outMode by remember { mutableStateOf(CirrusLogicManager.getOutputMode(ctx)) }
-    var balance by remember { mutableStateOf(CirrusLogicManager.getBalance(ctx)) }
-    // REAL control-path status: is the kernel DAC sysfs readable, and has anything been persisted?
-    val sysfsReachable = remember { CirrusLogicManager.isSysfsReachable() }
-    val hasPersisted = remember { CirrusLogicManager.hasPersistedDacSettings(ctx) }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        // Status Hero Card — reflects what was actually probed, not an unconditional "operational".
-        item {
-            Column(Modifier.mikuHeroCard().padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (sysfsReachable) "🟢" else if (hasPersisted) "🟡" else "⚪", fontSize = 16.sp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        when {
-                            sysfsReachable -> "Dual CS43198 · kernel sysfs control reachable"
-                            hasPersisted -> "Dual CS43198 · Settings.Global fallback (sysfs not readable)"
-                            else -> "Dual CS43198 · no DAC state readable yet"
-                        },
-                        color = if (sysfsReachable) MikuTealBright else MikuMuted,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    when {
-                        sysfsReachable -> "Filter, gain, DRE, power rails and balance are read from /sys/devices/platform/sa_sound_setting/. Selections below are what the kernel reports; nothing is pre-selected from a default."
-                        hasPersisted -> "/sys/devices/platform/sa_sound_setting/ is not readable by this process. Selections below are the last values persisted in Settings.Global (vendor.audio.hiby.*); writes go through the shell path. Unselected = never set."
-                        else -> "Neither the kernel DAC nodes nor the HiBy audio settings report a value yet. Pick a setting to write one; until then nothing is selected."
-                    },
-                    color = MikuMuted,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF0B242A))
+                .border(1.dp, MikuTealBright.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                .clickable { DacSettingsLink.open(ctx) }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Headphones, contentDescription = null, tint = MikuTealBright, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("DAC settings", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("Filter, gain, DRE, high power and USB DAC. Opens the Hardware app.", color = MikuMuted, fontSize = 11.5.sp)
             }
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MikuTealBright, modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = 180f })
         }
-
-        // SeeAudio Yume Reference IEM Profile Card
-        item {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF07242B), Color(0xFF1E0B25))
-                        )
-                    )
-                    .border(1.2.dp, MikuTealBright.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                    .padding(14.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🎧", fontSize = 18.sp)
-                        Spacer(Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                "SeeAudio Yume · M500 Reference Pair",
-                                color = MikuTealBright,
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "Official Bundled 1DD + 2BA Hybrid IEMs",
-                                color = MikuPinkBright,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MikuTealBright.copy(alpha = 0.2f))
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    ) {
-                        Text("32Ω / 106dB", color = MikuTealBright, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "The SeeAudio Yume is matched specifically to the M500's CS43198 DAC output impedance (<0.3Ω). Delivers reference Harman vocal curve with sub-bass extension and zero background hiss floor.",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 11.5.sp,
-                    lineHeight = 15.sp
-                )
-
-                Spacer(Modifier.height(10.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0x22000000))
-                            .padding(6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Rec: Low Gain (0dB)", color = MikuTealBright, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0x22000000))
-                            .padding(6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Rec: Fast Linear Filter", color = MikuTealBright, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                Button(
-                    onClick = {
-                        filter = CirrusLogicManager.DigitalFilter.FAST_LINEAR
-                        gain = CirrusLogicManager.GainMode.LOW
-                        dre = true
-                        balance = 0
-                        scope.launch {
-                            CirrusLogicManager.setDigitalFilter(ctx, CirrusLogicManager.DigitalFilter.FAST_LINEAR)
-                            CirrusLogicManager.setGainMode(ctx, CirrusLogicManager.GainMode.LOW)
-                            CirrusLogicManager.setDreEnabled(ctx, true)
-                            CirrusLogicManager.setBalance(ctx, 0)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(36.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MikuTealBright),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text(
-                        "⚡ Apply Yume Reference Audio Profile",
-                        color = Color(0xFF041215),
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        // Section 1: Digital Reconstruction Filter
-        item {
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Text(
-                    "DIGITAL RECONSTRUCTION FILTER",
-                    color = MikuTealBright,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(Modifier.height(8.dp))
-
-                CirrusLogicManager.DigitalFilter.values().forEach { f ->
-                    val isSel = filter == f
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSel) MikuTealBright.copy(alpha = 0.15f) else Color.Transparent)
-                            .clickable {
-                                filter = f
-                                scope.launch { CirrusLogicManager.setDigitalFilter(ctx, f) }
-                            }
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = isSel,
-                            onClick = {
-                                filter = f
-                                scope.launch { CirrusLogicManager.setDigitalFilter(ctx, f) }
-                            },
-                            colors = RadioButtonDefaults.colors(selectedColor = MikuTealBright, unselectedColor = MikuMuted)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Column {
-                            Text(f.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Text(f.description, color = MikuMuted, fontSize = 11.sp, lineHeight = 14.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Section 2: Analog Headphone Gain (PO Gain)
-        item {
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Text(
-                    "ANALOG HEADPHONE GAIN (PO GAIN)",
-                    color = MikuTealBright,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(Modifier.height(10.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CirrusLogicManager.GainMode.values().forEach { g ->
-                        val isSel = gain == g
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .height(46.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSel) MikuTealBright else MikuSurface2)
-                                .border(1.dp, if (isSel) MikuTealBright else MikuTeal.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                                .clickable {
-                                    gain = g
-                                    scope.launch { CirrusLogicManager.setGainMode(ctx, g) }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                g.label,
-                                color = if (isSel) Color(0xFF041215) else Color.White,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Section 3: Audio Output Routing & Stream Matrix
-        item {
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "AUDIO OUTPUT ROUTING MATRIX",
-                            color = MikuTealBright,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                        Text(
-                            "Select primary active DAC output or Bluetooth audio stream",
-                            color = MikuMuted,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    // Quick Swap Button
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                outMode = CirrusLogicManager.swapOutputMode(ctx)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x3300E5FF)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MikuTealBright),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(30.dp)
-                    ) {
-                        Text(
-                            "⇄ Swap 4.4mm / BT",
-                            color = MikuTealBright,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                CirrusLogicManager.OutputMode.values().forEach { out ->
-                    val isSel = outMode == out
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSel) MikuTealBright.copy(alpha = 0.15f) else Color.Transparent)
-                            .border(1.dp, if (isSel) MikuTealBright.copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(10.dp))
-                            .clickable {
-                                outMode = out
-                                scope.launch { CirrusLogicManager.setOutputMode(ctx, out) }
-                            }
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(out.icon, fontSize = 16.sp)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(out.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                if (isSel) {
-                                    Spacer(Modifier.width(6.dp))
-                                    Box(
-                                        Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(MikuTealBright.copy(alpha = 0.25f))
-                                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                                    ) {
-                                        Text("ACTIVE", color = MikuTealBright, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                            Text(out.description, color = MikuMuted, fontSize = 11.sp, lineHeight = 14.sp)
-                        }
-                        RadioButton(
-                            selected = isSel,
-                            onClick = {
-                                outMode = out
-                                scope.launch { CirrusLogicManager.setOutputMode(ctx, out) }
-                            },
-                            colors = RadioButtonDefaults.colors(selectedColor = MikuTealBright, unselectedColor = MikuMuted)
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                }
-            }
-        }
-
-        // Section 3.5: Play to every output (com.miku.player.MikuMirrorOutput does the work)
-        item {
-            var audioShareEnabled by remember { mutableStateOf(CirrusLogicManager.isAudioShareEnabled(ctx)) }
-
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "PLAY TO EVERY OUTPUT",
-                            color = MikuPinkBright,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                        Text(
-                            "Wired, USB and Bluetooth outputs all play at once (never the built-in " +
-                                "speaker). The wired jack stays bit-perfect; the others get a synced copy.",
-                            color = MikuMuted,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    Switch(
-                        checked = audioShareEnabled,
-                        onCheckedChange = {
-                            audioShareEnabled = it
-                            scope.launch { CirrusLogicManager.setAudioShareEnabled(ctx, it) }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = MikuPinkBright, checkedTrackColor = Color(0xFF380F25))
-                    )
-                }
-
-            }
-        }
-
-        // Section 4: Dynamic Range Enhancement & High Power Mode
-        item {
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Text(
-                    "DYNAMICS & POWER RAILS",
-                    color = MikuTealBright,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(Modifier.height(10.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Dynamic Range Enhancement (DRE)", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Boosts signal-to-noise ratio to 130dB+ for inaudible noise floor", color = MikuMuted, fontSize = 11.5.sp)
-                    }
-                    Switch(
-                        checked = dre,
-                        onCheckedChange = {
-                            dre = it
-                            scope.launch { CirrusLogicManager.setDreEnabled(ctx, it) }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = MikuTealBright, checkedTrackColor = Color(0xFF0F3238))
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Audio Turbo High Power Mode", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Increases operational current rails for demanding dynamic peaks", color = MikuMuted, fontSize = 11.5.sp)
-                    }
-                    Switch(
-                        checked = turbo,
-                        onCheckedChange = {
-                            turbo = it
-                            scope.launch { CirrusLogicManager.setHighPowerEnabled(ctx, it) }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = MikuTealBright, checkedTrackColor = Color(0xFF0F3238))
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("DSD Gain Compensation (+6 dB)", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (dsdComp == null) "Not set on this device yet — toggle to write a value" else "Matches SACD reference levels with standard PCM playback",
-                            color = MikuMuted, fontSize = 11.5.sp
-                        )
-                    }
-                    Switch(
-                        checked = dsdComp == true,
-                        onCheckedChange = {
-                            dsdComp = it
-                            scope.launch { CirrusLogicManager.setDsdGainCompensate(ctx, it) }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = MikuTealBright, checkedTrackColor = Color(0xFF0F3238))
-                    )
-                }
-            }
-        }
-
-        // Section 5: Hardware L/R Channel Balance (with Center Detent & Haptic Feedback)
-        item {
-            val view = androidx.compose.ui.platform.LocalView.current
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("HARDWARE L/R CHANNEL BALANCE", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        if (balance == 0) "Center (0) ✓" else if (balance < 0) "Left ($balance)" else "Right (+$balance)",
-                        color = if (balance == 0) MikuTealBright else Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    // Center Detent Tick Notch
-                    Box(
-                        Modifier
-                            .width(3.dp)
-                            .height(16.dp)
-                            .clip(RoundedCornerShape(1.5.dp))
-                            .background(MikuTealBright.copy(alpha = 0.85f))
-                    )
-
-                    Slider(
-                        value = balance.toFloat(),
-                        onValueChange = { raw ->
-                            // Magnetically snap to center detent when near 0
-                            val snapped = if (kotlin.math.abs(raw) < 0.65f) 0 else raw.roundToInt()
-                            if (snapped != balance) {
-                                if (snapped == 0) {
-                                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
-                                } else {
-                                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
-                                }
-                                balance = snapped
-                                scope.launch { CirrusLogicManager.setBalance(ctx, snapped) }
-                            }
-                        },
-                        valueRange = -10f..10f,
-                        steps = 19,
-                        colors = SliderDefaults.colors(
-                            thumbColor = if (balance == 0) MikuTealBright else Color.White,
-                            activeTrackColor = MikuTeal,
-                            inactiveTrackColor = MikuSurface2
-                        )
-                    )
-                }
-            }
-        }
-
-        // Section 6: Audiophile Impedance & Headphone Compatibility Matrix
-        item {
-            Column(Modifier.mikuCard().padding(14.dp)) {
-                Text(
-                    "AUDIOPHILE HEADPHONE & IEM DRIVE MATRIX",
-                    color = MikuTealBright,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "M500 Hardware Output capability: 140mW @ 32Ω (3.5mm PO) · 440mW @ 32Ω (4.4mm BAL PO). Dual CS43198 + SGM Op-Amp differential rails.",
-                    color = MikuMuted,
-                    fontSize = 11.5.sp,
-                    lineHeight = 15.sp
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                // Tier 1: 🟢 Direct Synergy
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF0C241E))
-                        .border(1.dp, Color(0xFF1ABC9C).copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                        .padding(10.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🟢", fontSize = 12.sp)
-                        Spacer(Modifier.width(6.dp))
-                        Text("100% DIRECT DRIVE · HIGH SYNERGY (< 80Ω)", color = Color(0xFF1ABC9C), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text("• SeeAudio Yume / Yume II (32Ω / 106dB) · Bundled Reference", color = Color.White, fontSize = 11.5.sp)
-                    Text("• Moondrop Blessing 2 / Blessing 3 / Kato (22Ω–32Ω)", color = Color.White, fontSize = 11.5.sp)
-                    Text("• Sennheiser IE 200 / IE 600 / IE 900 (18Ω / 123dB)", color = Color.White, fontSize = 11.5.sp)
-                    Text("• 7Hz Timeless / Dioko Planar IEMs (14.8Ω)", color = Color.White, fontSize = 11.5.sp)
-                    Text("• Audio-Technica ATH-M50x / Meze 99 Classics (32–38Ω)", color = Color.White, fontSize = 11.5.sp)
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                // Tier 2: 🟡 4.4mm Balanced Recommended
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF28230D))
-                        .border(1.dp, Color(0xFFF1C40F).copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                        .padding(10.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🟡", fontSize = 12.sp)
-                        Spacer(Modifier.width(6.dp))
-                        Text("4.4mm BALANCED + HIGH GAIN RECOMMENDED (80–150Ω / Planar)", color = Color(0xFFF1C40F), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text("• Hifiman Sundara / Edition XS (37Ω / 94dB Planar - needs 4.4mm BAL)", color = Color.White, fontSize = 11.5.sp)
-                    Text("• Sennheiser HD 560S / HD 599 (120Ω / 110dB)", color = Color.White, fontSize = 11.5.sp)
-                    Text("• Beyerdynamic DT 770 Pro 80Ω Edition (80Ω)", color = Color.White, fontSize = 11.5.sp)
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                // Tier 3: 🔴 External Desktop Amp Required
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF290E14))
-                        .border(1.dp, Color(0xFFE74C3C).copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                        .padding(10.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🔴", fontSize = 12.sp)
-                        Spacer(Modifier.width(6.dp))
-                        Text("EXTERNAL AMP REQUIRED (HIGH IMPEDANCE > 250Ω)", color = Color(0xFFE74C3C), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text("• Sennheiser HD 600 / HD 650 / HD 660S2 (300Ω / 97dB) · Voltage rail limited; requires 6Vrms+ external desktop amp for dynamic headroom", color = Color(0xFFF9B8B1), fontSize = 11.sp, lineHeight = 14.sp)
-                    Spacer(Modifier.height(3.dp))
-                    Text("• Beyerdynamic DT 880 / DT 990 Pro 250Ω & 600Ω · Needs dedicated high-voltage OTL/solid state amplifier", color = Color(0xFFF9B8B1), fontSize = 11.sp, lineHeight = 14.sp)
-                    Spacer(Modifier.height(3.dp))
-                    Text("• Hifiman HE6se / Susvara (83dB) · Severe current starvation without speaker-tap amp", color = Color(0xFFF9B8B1), fontSize = 11.sp, lineHeight = 14.sp)
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
@@ -1007,9 +409,9 @@ fun FnSwitchScreen(ctx: Context) {
     // three modes - speaker mute / display flip / recorder - that nothing implemented, so the
     // real value "touch_and_key_lock" matched nothing and the screen mislabelled the mode.)
     val fnOptions = listOf(
-        "touch_and_key_lock" to ("🔒 Screen & Keys Lock (Default)" to "Locks the touchscreen, side transport buttons and power button together to prevent pocket presses. Volume wheel stays live unless disabled below in Miku Music."),
-        "touch_lock" to ("📱 Touch Screen Lock Only" to "Disables the touchscreen while keeping physical side transport buttons and volume knob active"),
-        "key_lock" to ("⌨️ Physical Keys Lock Only" to "Disables the physical side buttons while the touchscreen stays unlocked")
+        "touch_and_key_lock" to ("Screen and keys (default)" to "Locks the touchscreen, side buttons and power button so nothing gets pressed in a pocket. The volume wheel still works unless you turn that off in Miku Music."),
+        "touch_lock" to ("Touchscreen only" to "Locks the touchscreen. The side buttons and volume wheel still work"),
+        "key_lock" to ("Keys only" to "Locks the side buttons. The touchscreen still works")
     )
 
     var currentMode by remember {
@@ -1058,17 +460,17 @@ fun FnSwitchScreen(ctx: Context) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (fnStatus) "🔒" else "🔓", fontSize = 18.sp)
+                        Icon(if (fnStatus) Icons.Default.Lock else Icons.Default.LockOpen, contentDescription = null, tint = if (fnStatus) MikuPinkBright else MikuTealBright, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(
-                                "Physical FN Switch Status",
+                                "Fn switch",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                if (fnStatus) "SWITCH ACTIVE (Lock Engaged)" else "SWITCH INACTIVE (Normal Mode)",
+                                if (fnStatus) "ON (locked)" else "OFF (normal)",
                                 color = if (fnStatus) MikuPinkBright else MikuTealBright,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -1098,7 +500,7 @@ fun FnSwitchScreen(ctx: Context) {
         item {
             Column(Modifier.mikuCard().padding(14.dp)) {
                 Text(
-                    "FN SWITCH FUNCTION ASSIGNMENT",
+                    "WHAT THE FN SWITCH LOCKS",
                     color = MikuTealBright,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -1175,7 +577,7 @@ fun FnSwitchScreen(ctx: Context) {
 
             Column(Modifier.mikuCard().padding(14.dp)) {
                 Text(
-                    "SCREEN-OFF PHYSICAL KEY CONTROLS",
+                    "BUTTONS WITH THE SCREEN OFF",
                     color = MikuTealBright,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -1183,7 +585,7 @@ fun FnSwitchScreen(ctx: Context) {
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Allow physical transport buttons (Play/Pause, Next, Prev) and rotary knob to operate even when screen is locked or powered off.",
+                    "Let the play/pause, next and previous buttons and the volume knob work while the screen is off or locked.",
                     color = MikuMuted,
                     fontSize = 11.sp,
                     lineHeight = 14.sp
@@ -1201,8 +603,8 @@ fun FnSwitchScreen(ctx: Context) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Media Transport Keys", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (mediaLockOff) "Active during screen off (0)" else "Locked during screen off (1)", color = if (mediaLockOff) MikuTealBright else MikuMuted, fontSize = 11.sp)
+                        Text("Media buttons", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (mediaLockOff) "Work with the screen off (0)" else "Locked with the screen off (1)", color = if (mediaLockOff) MikuTealBright else MikuMuted, fontSize = 11.sp)
                     }
                     Switch(
                         checked = mediaLockOff,
@@ -1236,8 +638,8 @@ fun FnSwitchScreen(ctx: Context) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Rotary Volume Knob", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (volumeLockOff) "Active during screen off (0)" else "Locked during screen off (1)", color = if (volumeLockOff) MikuTealBright else MikuMuted, fontSize = 11.sp)
+                        Text("Volume knob", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (volumeLockOff) "Work with the screen off (0)" else "Locked with the screen off (1)", color = if (volumeLockOff) MikuTealBright else MikuMuted, fontSize = 11.sp)
                     }
                     Switch(
                         checked = volumeLockOff,
@@ -1285,11 +687,11 @@ fun WirelessScreen(ctx: Context) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.DeveloperMode, contentDescription = null, tint = MikuTealBright)
                     Spacer(Modifier.width(8.dp))
-                    Text("Wireless ADB Debugging", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("Wireless ADB", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Run ADB commands wirelessly over your local network without USB cable.",
+                    "Run adb over your local network, no USB cable needed.",
                     color = MikuMuted,
                     fontSize = 12.sp
                 )
@@ -1309,7 +711,7 @@ fun WirelessScreen(ctx: Context) {
                         Text(
                             when {
                                 adbPort != null && wifiIp != null -> "Connect: adb connect $wifiIp:$adbPort"
-                                adbPort != null -> "Connect device to Wi-Fi"
+                                adbPort != null -> "Connect to Wi-Fi first"
                                 else -> "adbd is not listening on TCP"
                             },
                             color = if (adbPort != null && wifiIp != null) MikuTealBright else MikuPink,
@@ -1339,99 +741,69 @@ fun WirelessScreen(ctx: Context) {
 
                 SettingsLinkRow(
                     icon = Icons.Default.Wifi,
-                    title = "Wi-Fi Settings",
-                    subtitle = "Scan and connect to 2.4GHz & 5GHz networks",
-                    onClick = {
-                        openAospSettings(ctx, Settings.ACTION_WIFI_SETTINGS, "Wi-Fi settings not available")
-                    }
+                    title = "Wi-Fi",
+                    subtitle = "Scan and connect to 2.4 GHz and 5 GHz networks",
+                    onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "wifi") }
                 )
 
                 Spacer(Modifier.height(8.dp))
 
                 SettingsLinkRow(
                     icon = Icons.Default.WifiTethering,
-                    title = "Portable Hotspot & Tethering",
-                    subtitle = "Share 4G LTE mobile data with other devices",
-                    onClick = {
-                        openAospSettings(ctx, Settings.ACTION_WIRELESS_SETTINGS, "Tethering settings not available")
-                    }
+                    title = "Hotspot & tethering",
+                    subtitle = "Share LTE mobile data with other devices",
+                    onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "hotspot") }
                 )
 
                 Spacer(Modifier.height(8.dp))
 
                 SettingsLinkRow(
                     icon = Icons.Default.AirplanemodeActive,
-                    title = "Airplane Mode",
-                    subtitle = "Disable all radio transmissions (Wi-Fi, Bluetooth, LTE)",
-                    onClick = {
-                        openAospSettings(ctx, Settings.ACTION_AIRPLANE_MODE_SETTINGS, "Airplane mode settings not available")
-                    }
+                    title = "Airplane mode & internet",
+                    subtitle = "Airplane mode, mobile network, VPN and private DNS",
+                    onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "internet") }
                 )
             }
         }
 
-        // Google Fi carrier workaround: without the Fi app (Tycho) the SIM's multi-IMSI never gets
-        // provisioned, so when the modem camps on Fi's Verizon leg (311/480) the active T-Mobile
-        // IMSI (310240) is rejected with cause 7 and data never attaches. Manually pinning the
-        // network to T-Mobile (310260) makes the identity match - but only works where T-Mobile
-        // has coverage, so this is a user-facing toggle, honest about the trade-off.
+        // Google Fi status. Fi data needs the Google Fi app: it provisions the SIM, holds the
+        // carrier privileges and writes Fi's APNs. When the line isn't fully activated, the
+        // networks refuse data with cause 7 (EPS services not allowed) whatever the phone does,
+        // so this card only shows the state and opens the Fi app. (Forcing T-Mobile isn't
+        // supported by this modem, and the old "Radio saver" switch had nothing behind it.)
         item {
             Column(Modifier.mikuCard().padding(14.dp)) {
-                Text("GOOGLE FI DATA (NO FI APP)", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("GOOGLE FI", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
                 val tm = remember { ctx.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager }
-                var manual by remember {
-                    mutableStateOf(try { tm?.networkSelectionMode == android.telephony.TelephonyManager.NETWORK_SELECTION_MODE_MANUAL } catch (_: Throwable) { false })
-                }
                 var opInfo by remember { mutableStateOf("") }
-                LaunchedEffect(manual) {
+                LaunchedEffect(Unit) {
                     while (true) {
                         opInfo = try {
                             val op = tm?.networkOperatorName ?: ""
                             val reg = tm?.dataState
-                            "Camped: ${op.ifBlank { "searching…" }} · data ${if (reg == android.telephony.TelephonyManager.DATA_CONNECTED) "CONNECTED" else "not attached"}"
+                            "Network: ${op.ifBlank { "searching…" }}. Data ${if (reg == android.telephony.TelephonyManager.DATA_CONNECTED) "connected" else "not connected"}."
                         } catch (_: Throwable) { "" }
                         kotlinx.coroutines.delay(5000)
                     }
                 }
                 Text(
-                    "Fi switches carriers via its app; without it, data only attaches on T-Mobile towers. " +
-                    "Force T-Mobile so the SIM identity matches - turn OFF if you lose signal (no T-Mobile coverage).",
+                    "Fi data needs the Google Fi app. If data won't connect, open it and finish activation.",
                     color = Color(0xB3FFFFFF), fontSize = 11.sp, lineHeight = 14.sp
                 )
                 if (opInfo.isNotBlank()) { Spacer(Modifier.height(4.dp)); Text(opInfo, color = Color(0xFF7BE8DF), fontSize = 11.sp) }
                 Spacer(Modifier.height(8.dp))
-                var radioSaver by remember {
-                    mutableStateOf(try { Settings.Global.getInt(ctx.contentResolver, "m500_cell_radio_saver", 1) == 1 } catch (_: Throwable) { true })
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Radio saver", color = Color.White, fontSize = 13.sp)
-                        Text("Cell radio off after 10 min with no signal while on Wi-Fi; back on the moment Wi-Fi drops", color = Color(0x80FFFFFF), fontSize = 10.sp, lineHeight = 12.sp)
-                    }
-                    Switch(checked = radioSaver, onCheckedChange = { on ->
-                        radioSaver = on
-                        try { Settings.Global.putInt(ctx.contentResolver, "m500_cell_radio_saver", if (on) 1 else 0) } catch (_: Throwable) {}
-                    })
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Force T-Mobile network", color = Color.White, fontSize = 13.sp)
-                    // Was: "manual = on" straight off the tap, with the failure only logged - a
-                    // refused setNetworkSelectionModeManual left the switch showing the network as
-                    // pinned. Re-read networkSelectionMode and show what the modem actually is on.
-                    Switch(checked = manual, onCheckedChange = { on ->
-                        Thread {
-                            try {
-                                if (on) tm?.setNetworkSelectionModeManual("310260", true)
-                                else tm?.setNetworkSelectionModeAutomatic()
-                            } catch (t: Throwable) { android.util.Log.w("MikuSettings", "network selection failed", t) }
-                            val actual = try {
-                                tm?.networkSelectionMode == android.telephony.TelephonyManager.NETWORK_SELECTION_MODE_MANUAL
-                            } catch (_: Throwable) { false }
-                            android.os.Handler(android.os.Looper.getMainLooper()).post { manual = actual }
-                        }.start()
-                    })
+                val fiIntent = remember { ctx.packageManager.getLaunchIntentForPackage("com.google.android.apps.tycho") }
+                if (fiIntent != null) {
+                    Text(
+                        "Open Google Fi",
+                        color = MikuTealBright, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            runCatching { ctx.startActivity(fiIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }.padding(vertical = 6.dp)
+                    )
+                } else {
+                    Text("The Google Fi app isn't installed.", color = Color(0x80FFFFFF), fontSize = 11.sp)
                 }
             }
         }
@@ -1538,7 +910,7 @@ fun BluetoothScreen(ctx: Context) {
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Bluetooth Radio",
+                                text = "Bluetooth",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
@@ -1589,7 +961,7 @@ fun BluetoothScreen(ctx: Context) {
                         )
 
                         Text(
-                            text = if (isScanning) "Searching..." else "+ Scan Nearby Gear",
+                            text = if (isScanning) "Searching..." else "+ Scan",
                             color = if (isScanning) Color(0xFFFF4081) else MikuTealBright,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -1619,7 +991,7 @@ fun BluetoothScreen(ctx: Context) {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "No paired Bluetooth audio gear found.\nTap '+ Scan Nearby Gear' below to find and connect.",
+                                text = "No paired Bluetooth audio devices.\nTap '+ Scan' to find one.",
                                 color = MikuMuted,
                                 fontSize = 12.sp,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1676,8 +1048,8 @@ fun BluetoothScreen(ctx: Context) {
                                         )
                                         Text(
                                             text = when {
-                                                devItem.isConnected -> "🟢 Active Audio Connection"
-                                                devItem.isConnecting -> "🟡 Connecting..."
+                                                devItem.isConnected -> "Connected"
+                                                devItem.isConnecting -> "Connecting..."
                                                 else -> devItem.address
                                             },
                                             color = if (devItem.isConnected) MikuTealBright else if (devItem.isConnecting) Color(0xFFFFD54F) else MikuMuted,
@@ -1740,7 +1112,7 @@ fun BluetoothScreen(ctx: Context) {
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "AVAILABLE NEARBY GEAR",
+                                text = "NEARBY DEVICES",
                                 color = MikuTealBright,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
@@ -1789,7 +1161,7 @@ fun BluetoothScreen(ctx: Context) {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (isScanning) "Scanning for headphones, DACs, and wireless gear..." else "Tap 'Scan' to search for nearby Bluetooth devices.",
+                                text = if (isScanning) "Scanning for headphones, speakers and DACs..." else "Tap '+ Scan' to look for nearby Bluetooth devices.",
                                 color = MikuMuted,
                                 fontSize = 11.5.sp
                             )
@@ -1845,7 +1217,7 @@ fun BluetoothScreen(ctx: Context) {
             item {
                 Column(Modifier.mikuCard().padding(14.dp)) {
                     Text(
-                        text = "HI-RES AUDIO TRANSMISSION CODEC",
+                        text = "BLUETOOTH CODECS",
                         color = MikuTealBright,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -1853,24 +1225,24 @@ fun BluetoothScreen(ctx: Context) {
                     Spacer(Modifier.height(10.dp))
 
                     Text(
-                        text = "LDAC Audio Quality Bitrate",
+                        text = "LDAC bitrate",
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        if (aptxEnabled && aacEnabled && ldacQuality.contains("990")) "Locked to maximum — re-applied on every connection"
-                        else "Lowered by you — MikuOS applies this instead of the maximum",
+                        if (aptxEnabled && aacEnabled && ldacQuality.contains("990")) "Locked to maximum. Set again on every connection"
+                        else "Lowered by you. MikuOS uses this instead of the maximum",
                         color = if (aptxEnabled && aacEnabled && ldacQuality.contains("990")) MikuTealBright else MikuGold,
                         fontSize = 11.sp
                     )
                     Spacer(Modifier.height(6.dp))
 
                     val ldacOptions = listOf(
-                        "Sound Quality (990 kbps)" to "Master Hi-Res 96kHz/24-bit Lossless",
-                        "Balanced (660 kbps)" to "Standard Hi-Res Studio Transmission",
-                        "Connection (330 kbps)" to "Maximum Anti-Interference Stability",
-                        "Adaptive Bitrate" to "Dynamically scaled to RF packet quality"
+                        "Sound Quality (990 kbps)" to "Best quality, up to 96kHz/24-bit",
+                        "Balanced (660 kbps)" to "Middle ground",
+                        "Connection (330 kbps)" to "Most stable connection",
+                        "Adaptive Bitrate" to "Adjusts to signal quality"
                     )
 
                     ldacOptions.forEach { (opt, desc) ->
@@ -1880,13 +1252,13 @@ fun BluetoothScreen(ctx: Context) {
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (isSel) MikuTealBright.copy(alpha = 0.15f) else Color.Transparent)
-                                .clickable { requestCodecChange(opt, aptxEnabled, aacEnabled, "LDAC bitrate → $opt") }
+                                .clickable { requestCodecChange(opt, aptxEnabled, aacEnabled, "Set LDAC bitrate to $opt") }
                                 .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = isSel,
-                                onClick = { requestCodecChange(opt, aptxEnabled, aacEnabled, "LDAC bitrate → $opt") },
+                                onClick = { requestCodecChange(opt, aptxEnabled, aacEnabled, "Set LDAC bitrate to $opt") },
                                 colors = RadioButtonDefaults.colors(
                                     selectedColor = MikuTealBright,
                                     unselectedColor = MikuMuted
@@ -1912,7 +1284,7 @@ fun BluetoothScreen(ctx: Context) {
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text("Qualcomm aptX / aptX HD", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                            Text(if (aptxEnabled) "24-bit aptX HD / aptX on supported gear (off = falls back to AAC/SBC)" else "Disabled by you — aptX-only gear falls back to AAC/SBC", color = if (aptxEnabled) MikuMuted else MikuGold, fontSize = 11.5.sp)
+                            Text(if (aptxEnabled) "aptX HD or aptX on headphones that support it (off = AAC/SBC)" else "Turned off by you. aptX-only headphones fall back to AAC/SBC", color = if (aptxEnabled) MikuMuted else MikuGold, fontSize = 11.5.sp)
                         }
                         Switch(
                             checked = aptxEnabled,
@@ -1930,8 +1302,8 @@ fun BluetoothScreen(ctx: Context) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("AAC High Definition Audio", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                            Text(if (aacEnabled) "Advanced Audio Coding for Apple AirPods & similar gear (off = SBC on AAC-only gear)" else "Disabled by you — AAC-only gear falls back to SBC", color = if (aacEnabled) MikuMuted else MikuGold, fontSize = 11.5.sp)
+                            Text("AAC", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (aacEnabled) "For AirPods and similar headphones (off = SBC on AAC-only gear)" else "Turned off by you. AAC-only headphones fall back to SBC", color = if (aacEnabled) MikuMuted else MikuGold, fontSize = 11.5.sp)
                         }
                         Switch(
                             checked = aacEnabled,
@@ -1946,7 +1318,7 @@ fun BluetoothScreen(ctx: Context) {
             item {
                 Column(Modifier.mikuCard().padding(14.dp)) {
                     Text(
-                        text = "BLUETOOTH RF & CODEC ARCHITECTURE",
+                        text = "BLUETOOTH DETAILS",
                         color = MikuTealBright,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -1954,7 +1326,7 @@ fun BluetoothScreen(ctx: Context) {
                     Spacer(Modifier.height(10.dp))
 
                     // Live rows come from the stack; hardware spec rows are static datasheet facts.
-                    AboutSpecRow("Active A2DP Codec", activeCodec ?: (if (connectedCount > 0) "connected · codec not reported" else "— (nothing streaming)"))
+                    AboutSpecRow("Active A2DP Codec", activeCodec ?: (if (connectedCount > 0) "connected · codec not reported" else "nothing streaming"))
                     AboutSpecRow("Connected Devices", if (connectedCount > 0) "$connectedCount" else "none")
                     // Static datasheet claims, not probed - say so; the two rows above them ARE live.
                     AboutSpecRow("RF Transceiver (spec)", "Qualcomm WCN3988 (SM6225 companion)")
@@ -1963,7 +1335,7 @@ fun BluetoothScreen(ctx: Context) {
                     Spacer(Modifier.height(12.dp))
                     Button(
                         onClick = {
-                            openAospSettings(ctx, Settings.ACTION_BLUETOOTH_SETTINGS, "Connected devices not available")
+                            com.miku.settings.pages.MikuPageActivity.open(ctx, "connected")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MikuSurface2),
                         border = BorderStroke(1.dp, MikuTeal.copy(alpha = 0.3f)),
@@ -1973,7 +1345,7 @@ fun BluetoothScreen(ctx: Context) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Tune, contentDescription = null, tint = MikuTealBright, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Advanced System Connected Devices", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Device name, USB and NFC", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -2007,7 +1379,7 @@ fun DisplayScreen(ctx: Context) {
             Column(Modifier.mikuCard().padding(14.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("SCREEN BRIGHTNESS", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("${brightness ?: "—"} / 255", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("${brightness ?: "--"} / 255", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(8.dp))
                 Slider(
@@ -2086,8 +1458,8 @@ fun DisplayScreen(ctx: Context) {
                             Toast.makeText(
                                 ctx,
                                 when {
-                                    !wrote || !readBack -> "Could not change screen protector mode \u2014 the setting was refused"
-                                    enabled -> "touch_sensitivity_enabled = 1 (applied if the touch firmware honours it)"
+                                    !wrote || !readBack -> "Could not change screen protector mode. The setting was refused"
+                                    enabled -> "touch_sensitivity_enabled = 1 (works if the touch firmware honors it)"
                                     else -> "touch_sensitivity_enabled = 0"
                                 },
                                 Toast.LENGTH_SHORT
@@ -2106,8 +1478,8 @@ fun DisplayScreen(ctx: Context) {
 
         item {
             Column(Modifier.mikuCard().padding(14.dp)) {
-                Text("UI SCALE & DISPLAY DENSITY", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("Scale up UI elements, touch targets & buttons across MikuOS", color = MikuMuted, fontSize = 10.sp)
+                Text("DISPLAY SIZE", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Makes buttons, touch targets and the rest of the UI bigger", color = MikuMuted, fontSize = 10.sp)
                 Spacer(Modifier.height(10.dp))
 
                 val currentDpi = ctx.resources.displayMetrics.densityDpi
@@ -2141,7 +1513,7 @@ fun DisplayScreen(ctx: Context) {
                                 .clickable {
                                     selectedDpi = dpi
                                     applyDisplayDensity(cr, dpi)
-                                    Toast.makeText(ctx, "UI Scale updated to $dpi DPI", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(ctx, "Display size set to $dpi DPI", Toast.LENGTH_SHORT).show()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -2161,8 +1533,8 @@ fun DisplayScreen(ctx: Context) {
 
         item {
             Column(Modifier.mikuCard().padding(14.dp)) {
-                Text("SYSTEM FONT SCALE", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("Enlarge text across system apps and launchers", color = MikuMuted, fontSize = 10.sp)
+                Text("FONT SIZE", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Makes text bigger across apps and the launcher", color = MikuMuted, fontSize = 10.sp)
                 Spacer(Modifier.height(10.dp))
 
                 var currentFontScale by remember {
@@ -2200,7 +1572,7 @@ fun DisplayScreen(ctx: Context) {
                                 .clickable {
                                     currentFontScale = scale
                                     applyFontScale(cr, scale)
-                                    Toast.makeText(ctx, "Font Scale updated to ${scale}x", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(ctx, "Font size set to ${scale}x", Toast.LENGTH_SHORT).show()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -2262,7 +1634,7 @@ fun DisplayScreen(ctx: Context) {
                                 Toast.makeText(
                                     ctx,
                                     if (ok) "navigation_mode set to gesture (2)"
-                                    else "Could not change navigation mode \u2014 the write was refused",
+                                    else "Could not change navigation mode. The write was refused",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -2272,7 +1644,7 @@ fun DisplayScreen(ctx: Context) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("GESTURE NAV", color = if (isGestureNav == true) MikuTealBright else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(2.dp))
-                            Text("Pixel Edge Swipe Back", color = MikuMuted, fontSize = 9.sp, textAlign = TextAlign.Center)
+                            Text("Swipe from the edge", color = MikuMuted, fontSize = 9.sp, textAlign = TextAlign.Center)
                         }
                     }
 
@@ -2295,7 +1667,7 @@ fun DisplayScreen(ctx: Context) {
                                 Toast.makeText(
                                     ctx,
                                     if (ok) "navigation_mode set to 3-button (0)"
-                                    else "Could not change navigation mode \u2014 the write was refused",
+                                    else "Could not change navigation mode. The write was refused",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -2305,7 +1677,7 @@ fun DisplayScreen(ctx: Context) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("3-BUTTON BAR", color = if (isGestureNav == false) MikuTealBright else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(2.dp))
-                            Text("Classic Buttons", color = MikuMuted, fontSize = 9.sp, textAlign = TextAlign.Center)
+                            Text("Back, home, recents", color = MikuMuted, fontSize = 9.sp, textAlign = TextAlign.Center)
                         }
                     }
                 }
@@ -2314,16 +1686,14 @@ fun DisplayScreen(ctx: Context) {
 
         item {
             Column(Modifier.mikuCard().padding(14.dp)) {
-                Text("ADVANCED SYSTEM DISPLAY", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("OTHER DISPLAY SETTINGS", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(10.dp))
 
                 SettingsLinkRow(
                     icon = Icons.Default.DisplaySettings,
-                    title = "AOSP Display Settings",
-                    subtitle = "Screen timeout, color temperature, night light & lock screen",
-                    onClick = {
-                        openAospSettings(ctx, Settings.ACTION_DISPLAY_SETTINGS, "System display settings not available")
-                    }
+                    title = "More display settings",
+                    subtitle = "Screen timeout, dark theme, Night Light, auto-rotate, wallpaper",
+                    onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "display_more") }
                 )
             }
         }
@@ -2410,10 +1780,11 @@ fun BatteryScreen(ctx: Context) {
     }
     val technology = remember(sticky) { sticky?.getStringExtra(android.os.BatteryManager.EXTRA_TECHNOLOGY)?.takeIf { it.isNotBlank() } ?: "—" }
 
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     Column(Modifier.mikuHeroCard().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
-                Text("BATTERY TELEMETRY", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("BATTERY", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
                 Text(pct?.let { "$it%" } ?: "—%", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
             }
@@ -2440,7 +1811,67 @@ fun BatteryScreen(ctx: Context) {
             MetricPill(label = "SOURCE", value = plugged)
         }
         Spacer(Modifier.height(8.dp))
-        Text("Chemistry: $technology · values not reported by the battery HAL show as —", color = MikuMuted, fontSize = 10.5.sp)
+        Text("Chemistry: $technology · a dash means the battery HAL did not report it", color = MikuMuted, fontSize = 10.5.sp)
+    }
+    BatteryControls(ctx, tick)
+    }
+}
+
+/** Battery saver and app battery controls that used to live only in stock Settings. */
+@Composable
+private fun BatteryControls(ctx: Context, tick: Int) {
+    val pm = remember { ctx.getSystemService(android.os.PowerManager::class.java) }
+    var refresh by remember { mutableIntStateOf(0) }
+    val saver = remember(tick, refresh) { try { pm.isPowerSaveMode } catch (_: Throwable) { null } }
+    com.miku.settings.ui.Section("Power") {
+        // PowerManager.setPowerSaveModeEnabled is @SystemApi (DEVICE_POWER / POWER_SAVER).
+        com.miku.settings.ui.ToggleRow("Battery Saver", "Limits background activity and some visual effects", saver) {
+            if (com.miku.settings.sys.Hidden.call(pm, "setPowerSaveModeEnabled", it) != true) com.miku.settings.ui.toast(ctx, "Battery Saver was not changed")
+            refresh++
+        }
+        com.miku.settings.ui.NavRow("App battery use", "Which apps may run unrestricted in the background") {
+            com.miku.settings.pages.MikuPageActivity.open(ctx, "access/battery")
+        }
+        com.miku.settings.pages.StockRow("Battery usage history", ".Settings\$PowerUsageSummaryActivity")
+    }
+    Spacer(Modifier.height(12.dp))
+    ChargeLimitControls(ctx, tick)
+}
+
+/**
+ * Charge limit. Stored in Settings.Global miku_charge_limit (0 = off, 80, 85, 90). The MikuOS
+ * system bridge (com.miku.sysbridge, persistent) watches it and the battery, and reports whether
+ * it is holding in miku_charge_hold. See miku-sysbridge ChargeLimiter.kt for what a hold does.
+ */
+@Composable
+private fun ChargeLimitControls(ctx: Context, tick: Int) {
+    val cr = ctx.contentResolver
+    var refresh by remember { mutableIntStateOf(0) }
+    val limit = remember(tick, refresh) {
+        try { Settings.Global.getInt(cr, "miku_charge_limit", 0) } catch (_: Throwable) { 0 }
+    }
+    val holding = remember(tick, refresh) {
+        try { Settings.Global.getInt(cr, "miku_charge_hold", 0) == 1 } catch (_: Throwable) { false }
+    }
+    com.miku.settings.ui.Section(
+        "Charge limit",
+        "Stops topping up the battery at the level you pick and starts again 5% below it. " +
+            "Good for a player that lives on a charger."
+    ) {
+        for ((value, label) in listOf(0 to "Off", 80 to "80%", 85 to "85%", 90 to "90%")) {
+            com.miku.settings.ui.RadioRow(label, selected = limit == value) {
+                val ok = try { Settings.Global.putInt(cr, "miku_charge_limit", value) } catch (_: Throwable) { false }
+                if (!ok) com.miku.settings.ui.toast(ctx, "Charge limit was not changed")
+                refresh++
+            }
+        }
+        if (limit != 0) {
+            Spacer(Modifier.height(6.dp))
+            com.miku.settings.ui.BodyText(
+                if (holding) "Holding now. The charger is cut to its lowest setting (100 mA), so the level stays about where it is with the screen off and may drop slowly with it on."
+                else "Charging normally. It holds once the battery reaches $limit%."
+            )
+        }
     }
 }
 
@@ -2450,27 +1881,41 @@ fun BatteryScreen(ctx: Context) {
 @Composable
 fun StorageAppsScreen(ctx: Context) {
     Column(Modifier.mikuCard().padding(14.dp)) {
-        Text("STORAGE & APPLICATION MANAGER", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("APPS & STORAGE", color = MikuTealBright, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
 
         SettingsLinkRow(
             icon = Icons.Default.Apps,
-            title = "Installed Applications",
-            subtitle = "Manage app permissions, background battery & storage cache",
-            onClick = {
-                openAospSettings(ctx, Settings.ACTION_APPLICATION_SETTINGS, "App manager not available")
-            }
+            title = "Apps",
+            subtitle = "App info, permissions, notifications, storage and force stop",
+            onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "apps") }
         )
 
         Spacer(Modifier.height(8.dp))
 
         SettingsLinkRow(
             icon = Icons.Default.SdCard,
-            title = "Storage & MicroSD Card",
-            subtitle = "Internal flash memory and external MicroSD storage management",
-            onClick = {
-                openAospSettings(ctx, Settings.ACTION_INTERNAL_STORAGE_SETTINGS, "Storage settings not available")
-            }
+            title = "Storage & microSD card",
+            subtitle = "Internal storage and the memory card",
+            onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "storage") }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsLinkRow(
+            icon = Icons.Default.AppSettingsAlt,
+            title = "Default apps",
+            subtitle = "Home, browser, assistant and SMS",
+            onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "default_apps") }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsLinkRow(
+            icon = Icons.Default.Security,
+            title = "Special app access",
+            subtitle = "Overlays, all files, usage access, battery and more",
+            onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "special") }
         )
     }
 }
@@ -2554,7 +1999,7 @@ fun AboutScreen(ctx: Context) {
         SettingsLinkRow(
             icon = Icons.Default.Home,
             title = "Open MikuOS Home",
-            subtitle = "Re-running the first-boot setup wizard is done from the launcher itself",
+            subtitle = "Run the first-boot setup again from the launcher",
             onClick = {
                 try {
                     val homeIntent = Intent(Intent.ACTION_MAIN).apply {
@@ -2570,11 +2015,18 @@ fun AboutScreen(ctx: Context) {
 
         SettingsLinkRow(
             icon = Icons.Default.Code,
-            title = "Developer Options",
-            subtitle = "USB debugging, OEM unlocking & GPU profiling",
-            onClick = {
-                openAospSettings(ctx, Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, "Developer options not available")
-            }
+            title = "Developer options",
+            subtitle = "USB debugging, wireless debugging, animation scales",
+            onClick = { com.miku.settings.pages.MikuPageActivity.open(ctx, "developer") }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsLinkRow(
+            icon = Icons.Default.Gavel,
+            title = "Legal information",
+            subtitle = "Open source licenses. Opens the stock Settings page.",
+            onClick = { com.miku.settings.pages.openStockPage(ctx, ".SettingsLicenseActivity", "android.settings.LICENSE") }
         )
     }
 }
@@ -2733,3 +2185,9 @@ fun applyFontScale(cr: android.content.ContentResolver, scale: Float) {
 }
 
 
+
+/** Small colored status dot, used in place of the old emoji circles. */
+@Composable
+fun StatusDot(color: Color, size: androidx.compose.ui.unit.Dp = 8.dp) {
+    Box(Modifier.size(size).clip(CircleShape).background(color))
+}

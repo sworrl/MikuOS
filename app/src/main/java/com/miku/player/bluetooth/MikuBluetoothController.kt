@@ -573,7 +573,7 @@ object MikuBluetoothController {
             val list = bonded.map { dev ->
                 val isConn = isDeviceConnected(dev)
                 val isConnecting = connAddr == dev.address && !isConn
-                val name = try { dev.name ?: "Wireless Audio Gear (${dev.address.takeLast(5)})" } catch (_: Throwable) { "Bluetooth Device (${dev.address.takeLast(5)})" }
+                val name = try { dev.name ?: "Audio device (${dev.address.takeLast(5)})" } catch (_: Throwable) { "Bluetooth Device (${dev.address.takeLast(5)})" }
                 val bondState = try { dev.bondState } catch (_: Throwable) { BluetoothDevice.BOND_BONDED }
                 MikuBtDevice(
                     device = dev,
@@ -599,7 +599,7 @@ object MikuBluetoothController {
                 return
             }
             val name = try { dev.name ?: "" } catch (_: Throwable) { "" }
-            val displayName = if (name.isNotBlank()) name else "Bluetooth Gear (${dev.address.takeLast(5)})"
+            val displayName = if (name.isNotBlank()) name else "Bluetooth device (${dev.address.takeLast(5)})"
             val item = MikuBtDevice(
                 device = dev,
                 name = displayName,

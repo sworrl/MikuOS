@@ -5,6 +5,8 @@
          on a data-only SIM whose PS registration is denied, so the zone comes from the
          weather fix instead. See MikuTimeZoneSync. Signature|privileged, held because
          the launcher is platform-signed. -->
+    <!-- USB DAC mode is switched by com.miku.sysbridge (system UID). -->
+    <uses-permission android:name="com.miku.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.SET_TIME_ZONE" />
 
     <!-- Startup tuning does what a root shell used to: set an app op and grant a runtime
@@ -40,6 +42,8 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <!-- Haptic feedback (BPM tap-tempo orb + UI ticks). -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Severe/extreme NWS weather alert notifications (weather/MikuNwsAlerts). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- ActivityManager.moveTaskToFront (bring launcher/app forward). -->
     <uses-permission android:name="android.permission.REORDER_TASKS" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
@@ -98,7 +102,7 @@
         <service
             android:name=".MikuLiveWallpaperService"
             android:exported="true"
-            android:label="Miku Live Cyber Wallpaper"
+            android:label="Miku Live Wallpaper"
             android:permission="android.permission.BIND_WALLPAPER">
             <intent-filter>
                 <action android:name="android.service.wallpaper.WallpaperService" />
@@ -124,6 +128,31 @@
             android:screenOrientation="portrait"
             android:theme="@style/Theme.M500Hardware"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- The BPM game as its own activity, so Miku Music, the home screen, the app drawer and
+             the BPM widgets can all open it and closing it returns to whoever opened it. Started
+             from an Activity it joins the caller's task (no NEW_TASK); from a widget it gets its
+             own excluded-from-recents task. The LAUNCHER category is its app drawer entry.
+             Contract: see bpm/MikuBpmGameActivity.kt. -->
+        <activity
+            android:name=".bpm.MikuBpmGameActivity"
+            android:exported="true"
+            android:label="BPM Game"
+            android:icon="@drawable/ic_bpm_game"
+            android:taskAffinity="com.miku.launcher.bpmgame"
+            android:excludeFromRecents="true"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+            android:windowSoftInputMode="adjustPan">
+            <intent-filter>
+                <action android:name="com.miku.action.OPEN_BPM_GAME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
         <!-- OS-level Hatsune Miku Custom Lockscreen (ported out of the music app). Shows over the
              keyguard, fullscreen/no-title, excluded from recents, single instance. -->

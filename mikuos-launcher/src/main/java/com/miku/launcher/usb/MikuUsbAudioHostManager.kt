@@ -45,12 +45,16 @@ object MikuUsbAudioHostManager {
     suspend fun setUsbDacMode(ctx: Context, enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
         val target = if (enabled) "dacin" else "android"
         val ok = setWorkMode(ctx, target)
-        if (enabled) {
-            RootShell.execFast("setprop vendor.usb.uac2.function.start 1; setprop vendor.usb.port_type sink; setprop sys.usb.config uac2,adb")
-        } else {
-            RootShell.execFast("setprop vendor.usb.uac2.function.start 0; setprop sys.usb.config mtp,adb")
-        }
-        ok
+        // The gadget switch itself needs system_app (vendor.usb.* props); MikuOS has no su, so
+        // com.miku.sysbridge, the one system-UID Miku package, runs HiBy's sequence for us.
+        val sent = runCatching {
+            ctx.sendBroadcast(
+                android.content.Intent("com.miku.sysbridge.USB_DAC")
+                    .setPackage("com.miku.sysbridge").putExtra("enable", enabled),
+                "com.miku.permission.SYSTEM_BRIDGE"
+            ); true
+        }.getOrDefault(false)
+        ok && sent
     }
 
     suspend fun setMtpMode(ctx: Context): Boolean = withContext(Dispatchers.IO) {

@@ -321,7 +321,7 @@ object MusicBrainzSplitter : DiscImage.WholeDiscSplitter {
         if (chosen == null) {
             val anyFit = DiscMatcher.fittingCandidates(image.durationMs, image.discNumber, releases).isNotEmpty()
             return unmatched(
-                if (anyFit) "ambiguous — two different track lists fit ${fmtMs(image.durationMs)}"
+                if (anyFit) "ambiguous: two different track lists fit ${fmtMs(image.durationMs)}"
                 else "$fetched release${if (fetched == 1) "" else "s"} checked, none runs ${fmtMs(image.durationMs)}"
             )
         }

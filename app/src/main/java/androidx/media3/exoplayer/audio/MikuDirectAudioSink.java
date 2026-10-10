@@ -650,6 +650,9 @@ public final class MikuDirectAudioSink implements AudioSink {
         // <=24-bit sources — float32's 24-bit significand round-trips them losslessly).
         // Tradeoff: no gapless edge-trimming / speed adjust / silence skipping on hi-res, same
         // limitation the stock float path has.
+        // The listening-profile EQ runs at the source's own depth (16/24/32-bit int or float) and
+        // reports itself inactive when it is off or flat, so a flat profile stays bit-perfect.
+        pipelineProcessors.add(com.miku.player.profiles.MikuEq.INSTANCE.getProcessor());
         pipelineProcessors.addAll(toHiResIntPcmAvailableAudioProcessors);
       }
       audioProcessingPipeline = new AudioProcessingPipeline(pipelineProcessors.build());

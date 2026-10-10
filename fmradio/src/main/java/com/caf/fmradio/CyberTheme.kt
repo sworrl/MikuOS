@@ -23,3 +23,8 @@ fun cyber24BitColorShift(phaseDeg: Float, saturation: Float = 0.88f, brightness:
 val MikuTeal = androidx.compose.ui.graphics.Color(0xFF39C5BB)
 val MikuTealBright = androidx.compose.ui.graphics.Color(0xFF7FE6DE)
 val MikuPink = androidx.compose.ui.graphics.Color(0xFFFF5FA2)
+
+/** Caution: marginal reception, grazing line of sight, a transmitter NOAA lists as degraded. */
+val CyberAmber = Color(0xFFFFD54F)
+/** Unknown / not rated. Grey with a little teal in it so it still belongs to the palette. */
+val CyberMuted = Color(0xFF6E8A90)

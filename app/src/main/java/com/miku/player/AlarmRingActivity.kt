@@ -169,7 +169,7 @@ private fun AlarmRingScreen(
             Spacer(Modifier.height(4.dp))
             Text(label, color = MikuTealBright, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             Spacer(Modifier.height(6.dp))
-            Text(nowPlaying?.let { "♪ $it" } ?: "Miku Music Alarm", color = Muted, fontSize = 13.sp, textAlign = TextAlign.Center, maxLines = 2)
+            Text(nowPlaying?.let { "$it" } ?: "Miku Music Alarm", color = Muted, fontSize = 13.sp, textAlign = TextAlign.Center, maxLines = 2)
 
             Spacer(Modifier.height(44.dp))
 

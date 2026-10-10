@@ -23,8 +23,20 @@ object FmV4L2 {
 
     private val reported = java.util.Collections.synchronizedSet(HashSet<String>())
 
+    /**
+     * One conversation with the chip at a time.
+     *
+     * HiBy's driver takes no lock of its own (radio-si4705-common.ko imports no mutex at all),
+     * and a Si47xx command is a write, a wait for CTS, then a read of the response. Two threads
+     * interleaving those read each other's responses. That was measured on 0.1.16: with the RDS
+     * reader, the signal poll and the HCI callback thread all on the chip, every second signal
+     * read came back all zeros. Everything in this process that touches /dev/radio0, including
+     * [FmRdsReader], goes through this lock.
+     */
+    val chipLock = Any()
+
     private fun <T> guard(what: String, block: () -> T): T? = try {
-        block()
+        synchronized(chipLock) { block() }
     } catch (t: Throwable) {
         if (reported.add(what)) {
             Log.w(TAG, "$what unavailable: ${t.javaClass.simpleName}: ${t.message}")
@@ -122,6 +134,10 @@ object FmV4L2 {
     fun signal(): Reading? = guard("getV4L2RadioFmSignal") {
         val a = FmReceiverJNI.getV4L2RadioFmSignal() ?: return@guard null
         fun at(i: Int): Int? = if (i < a.size) a[i] else null
+        // A torn read: RSSI, SNR, multipath and offset all exactly zero. The noise floor on
+        // this tuner never reads below 2, so this is a response that never arrived, not a
+        // measurement, and passing it on made the meter flick to nothing every other second.
+        if ((1..4).all { at(it) == 0 }) return@guard null
         Reading(
             signal = at(0),
             rssi = at(1),

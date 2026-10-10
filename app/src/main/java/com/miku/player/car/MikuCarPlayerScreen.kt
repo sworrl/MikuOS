@@ -33,7 +33,8 @@ class MikuCarPlayerScreen(carContext: CarContext) : Screen(carContext) {
             retriever.setDataSource(path)
             val art = retriever.embeddedPicture
             retriever.release()
-            if (art != null) {
+            com.miku.player.SharedCoverGuard.init(carContext)
+            if (art != null && !com.miku.player.SharedCoverGuard.isSuspectBytes(art)) {
                 BitmapFactory.decodeByteArray(art, 0, art.size)
             } else null
         } catch (e: Exception) {
@@ -44,7 +45,7 @@ class MikuCarPlayerScreen(carContext: CarContext) : Screen(carContext) {
     override fun onGetTemplate(): Template {
         val player = safeGetPlayer()
         val isPlaying = player?.isPlaying == true
-        val title = player?.mediaMetadata?.title?.toString() ?: "No Track Selected"
+        val title = player?.mediaMetadata?.title?.toString() ?: "Nothing playing"
         val artist = player?.mediaMetadata?.artist?.toString() ?: "MikuMusic"
         val path = player?.currentMediaItem?.localConfiguration?.uri?.path
         
@@ -109,7 +110,7 @@ class MikuCarPlayerScreen(carContext: CarContext) : Screen(carContext) {
 
         return PaneTemplate.Builder(pane)
             .setHeaderAction(Action.APP_ICON)
-            .setTitle("MikuMusic Player")
+            .setTitle("Miku Music")
             .build()
     }
 

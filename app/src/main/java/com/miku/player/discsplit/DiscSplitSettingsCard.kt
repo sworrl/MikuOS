@@ -83,8 +83,8 @@ fun DiscSplitSettingsCard(ctx: Context) {
         Spacer(Modifier.height(6.dp))
         Text(
             "Albums ripped as ONE file for the whole CD are split into their real tracks. A .cue sheet or a " +
-                "tracks.txt next to the file always wins and works offline; otherwise the disc is looked up on " +
-                "MusicBrainz by artist, album and exact running time. No confident match — the image stays one " +
+                "tracks.txt next to the file always wins and works offline. Otherwise the disc is looked up on " +
+                "MusicBrainz by artist, album and exact running time. With no confident match the image stays one " +
                 "playable item, never a guess.",
             color = Muted, fontSize = 12.sp
         )
@@ -93,7 +93,7 @@ fun DiscSplitSettingsCard(ctx: Context) {
         DiscToggleRow(
             title = "Split disc images online",
             subtitle = if (online) "Looks up cue-less images on MusicBrainz (1 request/s, in the background; misses remembered 30 days)"
-                       else "Off — no network use; splits already found still apply",
+                       else "Off: no network use. Splits already found still apply",
             checked = online
         ) { online = it; DiscSplitPrefs.setSplitOnline(ctx, it) }
         DiscToggleRow(
@@ -136,7 +136,7 @@ fun DiscSplitSettingsCard(ctx: Context) {
             Spacer(Modifier.width(8.dp))
             DiscActionChip(label = "Reset all lookups", icon = Icons.Default.Delete, tint = MikuPink, fill = Color(0x22FF5FA2), enabled = true) {
                 val n = MusicBrainzSplitter.resetAll(ctx)
-                Toast.makeText(ctx, "Forgot $n lookup${if (n == 1) "" else "s"} — images re-split on the next refresh", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, "Forgot $n lookup${if (n == 1) "" else "s"}. Images re-split on the next refresh", Toast.LENGTH_SHORT).show()
             }
         }
     }

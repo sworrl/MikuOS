@@ -229,6 +229,8 @@ object FastLibraryStore {
             }
             val elapsed = System.currentTimeMillis() - start
             Log.i(TAG, "Saved ${tracks.size} tracks to binary cache in ${elapsed}ms")
+            // Library changed: radio likes we were missing may be here now (wanted/WantedStore).
+            com.miku.player.wanted.WantedStore.onLibraryChanged(context, tracks)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to write library cache", e)
             tempFile.delete()

@@ -10,18 +10,21 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.android.awaitFrame
-import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
-import kotlin.math.min
+import kotlin.math.sin
 
 /**
  * The thing you actually tap against.
@@ -32,17 +35,29 @@ import kotlin.math.min
  * tap when a note reaches it. Your eye leads the note in, so you are anticipating a moment instead
  * of reacting to a sound, which is the difference between guessing and playing.
  *
- * HOW IT IS DRIVEN. Entirely by the real beat clock. `lastPulseEpochMs` is the last beat the
- * detector actually heard; `beatIntervalMs` is the locked tempo. Note n sits at
+ * HOW IT IS DRIVEN. Entirely by the real beat clock. `lastPulseEpochMs` is the (phase-locked) last
+ * beat the detector actually heard; `beatIntervalMs` is the locked tempo. Note n sits at
  * `lastPulse + n * period`, and its position on screen is how far away that time is. Nothing here
- * invents a beat: with no pulse and no lock the highway draws empty and says so, the same way the
- * scoring refuses to judge a tap without one.
+ * invents a beat: with no pulse and no lock the highway draws an empty lane and says so, the same
+ * way the scoring refuses to judge a tap without one.
+ *
+ * WHAT MAKES IT A SHOW, not a metronome:
+ *  - Colour comes from the album playing (two accents), walking along the run of notes, and goes
+ *    rainbow during Fever.
+ *  - Every note has the SKIN's silhouette (hex notes for Cyber Mirai, hearts for Hologram 39…)
+ *    and the lane itself has the skin's texture, scrolling at exactly note speed, so the whole
+ *    strip moves with the music rather than a few dots sliding over a static trough.
+ *  - Lucky notes are gold. Hit one GREAT or better for a surprise (see MikuBeatClickerEngine.luckyNote).
+ *  - The lane flashes on every beat and its rails brighten with the combo rung.
+ *  - Chaos mutators are real here: SILENT DISCO fogs notes out before they arrive, MIRROR STAGE
+ *    sends them from the other side, DOUBLE TIME makes them fly twice as fast.
  *
  * The calibration offset is applied to the HIT LINE, not to the notes, so what you see and what
- * you are judged against are the same number. Push the offset and the line moves.
+ * you are judged against are the same number.
  *
- * Animated with `awaitFrame` and float state read only inside the draw lambda, so the highway
- * invalidates its own canvas per frame and never recomposes anything around it.
+ * COST. One Canvas, invalidated per frame through float/long state read only in the draw lambda,
+ * so nothing around it recomposes. Note shapes are unit Paths built once per skin and drawn with
+ * translate+scale, so a frame allocates nothing.
  */
 @Composable
 fun MikuNoteHighway(
@@ -50,7 +65,7 @@ fun MikuNoteHighway(
     beatIntervalMs: Long,
     calibrationMs: Int,
     windows: MikuRhythmTiming.Windows,
-    /** Last judged offset in ms, for the hit spark. 0 with [lastTapMs] == 0 means no tap yet. */
+    /** Last judged tap time, for the hit spark. 0 means no tap yet. */
     lastTapMs: Long,
     lastOffsetMs: Int,
     accent: Color,
@@ -60,6 +75,13 @@ fun MikuNoteHighway(
     /** Where the hit line sits across the lane, 0..1. 0.5 puts it under a centred tap node. */
     hitFraction: Float = 0.74f,
     modifier: Modifier = Modifier,
+    skin: MikuBeatClickerEngine.BpmSkin = MikuBeatClickerEngine.BpmSkin.SAKURA_DREAM,
+    fever: Boolean = false,
+    chaos: MikuStagePerformance.Chaos = MikuStagePerformance.Chaos.NONE,
+    /** 0..6, the combo rung reached. Brightens the rails. */
+    comboRung: Int = 0,
+    /** Tier of the last judged tap, for the spark colour. Null = free tap / none. */
+    lastAccuracy: HitAccuracy? = null,
     /** Drawn ON the hit line, on top of the lane. This is where the tap node goes. */
     content: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = null
 ) {
@@ -67,13 +89,16 @@ fun MikuNoteHighway(
     val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
     val sparkAge = remember { mutableFloatStateOf(1f) }
     val lastSeenTap = remember { mutableLongStateOf(0L) }
+    // Unit-radius silhouettes, built once per skin: drawing them is translate + scale, no Path per frame.
+    val notePath = remember(skin.nodeShape) { unitShapePath(skin.nodeShape) }
+    val hexPath = remember { unitShapePath(MikuBeatClickerEngine.NodeShape.HEX) }
 
     LaunchedEffect(Unit) {
         while (true) {
             awaitFrame()
             now.longValue = System.currentTimeMillis()
             if (lastSeenTap.longValue != lastTapMs) { lastSeenTap.longValue = lastTapMs; sparkAge.floatValue = 0f }
-            if (sparkAge.floatValue < 1f) sparkAge.floatValue = (sparkAge.floatValue + 0.06f).coerceAtMost(1f)
+            if (sparkAge.floatValue < 1f) sparkAge.floatValue = (sparkAge.floatValue + 0.05f).coerceAtMost(1f)
         }
     }
 
@@ -87,8 +112,11 @@ fun MikuNoteHighway(
             val hitX = w * hitFraction
             val period = beatIntervalMs.toFloat()
             val live = lastPulseEpochMs > 0L && beatIntervalMs in 60..3000
+            // MIRROR STAGE: notes arrive from the other side. dir = +1 from the right, -1 from the left.
+            val dir = if (chaos.mirrorsBar) -1f else 1f
+            val runway = if (dir > 0f) (w - hitX) else hitX
 
-            drawLane(h, w, accent, accent2)
+            drawLane(h, w, accent, accent2, fever)
 
             if (!live) {
                 // No tempo lock: draw the lane and nothing else. Never a fake note.
@@ -98,59 +126,85 @@ fun MikuNoteHighway(
 
             // How many ms of future the lane shows. Two beats of run-up, clamped so a very slow or
             // very fast track still reads: at 60 BPM two beats is 2s, at 200 it is 600ms.
-            val lookaheadMs = (period * 2f).coerceIn(700f, 2200f)
-            // Pixels per millisecond, from the hit line back to the right edge.
-            val pxPerMs = (w - hitX) / lookaheadMs
+            // DOUBLE TIME halves the run-up: same beats, they just arrive at twice the speed.
+            val speed = if (chaos == MikuStagePerformance.Chaos.DOUBLE_TIME) 0.5f else 1f
+            val lookaheadMs = (period * 2f).coerceIn(700f, 2200f) * speed
+            val pxPerMs = runway / lookaheadMs
 
             val t = now.longValue - calibrationMs
-            // Index of the next beat at or after now.
             val sinceLast = (t - lastPulseEpochMs).toFloat()
             val nextIdx = kotlin.math.ceil(sinceLast / period).toInt()
 
-            // How far through the current beat we are, 0 at the beat and 1 just before the next.
-            // Drives the hit line's own pulse, so the target BREATHES on tempo and you can feel
-            // the beat from the line alone even before a note reaches it.
+            // 0 at the beat, →1 just before the next. Drives the line's breathing and the lane flash.
             val phase = (sinceLast.mod(period)) / period
+            val beat = (1f - phase).coerceIn(0f, 1f).let { it * it }
+
+            // The lane texture scrolls at exactly note speed, so the whole strip moves as one.
+            val scrollPx = (t.mod(60_000L)).toFloat() * pxPerMs * dir
+            drawLaneTexture(skin.laneStyle, w, h, scrollPx, beat, accent, accent2, hexPath)
+
+            // Beat flash across the whole lane, and rails that glow brighter the higher the rung.
+            drawRect(accent.copy(alpha = 0.07f * beat + if (fever) 0.05f * beat else 0f), size = Size(w, h))
+            val railA = 0.25f + 0.08f * comboRung.coerceIn(0, 6) + 0.25f * beat
+            drawLine(accent.copy(alpha = railA.coerceAtMost(1f)), Offset(0f, h * 0.10f), Offset(w, h * 0.10f), strokeWidth = 1.5f + comboRung * 0.4f)
+            drawLine(accent2.copy(alpha = railA.coerceAtMost(1f)), Offset(0f, h * 0.90f), Offset(w, h * 0.90f), strokeWidth = 1.5f + comboRung * 0.4f)
 
             // Windows as widths on the lane, so the player can SEE how much room each tier has.
             drawWindowBands(hitX, h, pxPerMs, windows, accent, accent2)
-            drawHitLine(hitX, h, accent, phase)
+            drawHitLine(hitX, h, if (fever) Color.White else accent, phase)
 
             // Notes: the one just past the line (so a late tap still has something to point at),
             // and everything inside the lookahead.
-            for (i in (nextIdx - 1)..(nextIdx + 8)) {
+            for (i in (nextIdx - 1)..(nextIdx + 10)) {
                 val beatAt = lastPulseEpochMs + i.toLong() * beatIntervalMs
                 val msAway = (beatAt - t).toFloat()
                 if (msAway > lookaheadMs) break
-                val x = hitX + msAway * pxPerMs
-                if (x < -20f || x > w + 20f) continue
+                val x = hitX + msAway * pxPerMs * dir
+                if (x < -30f || x > w + 30f) continue
                 // A downbeat every fourth note, drawn bigger. The detector does not know the bar
                 // line, so this is honestly just "every fourth pulse since the lock", a visual
                 // rhythm aid and not a claim about the music's meter.
                 val strong = (i.mod(4)) == 0
-                // Each note takes its colour from the album, walking between the two accents so a
-                // run of notes reads as a gradient rather than a row of identical dots.
-                val hue = ((i.mod(8)) / 8f)
-                val noteColor = lerpColor(accent, accent2, hue)
-                drawNote(x, h, msAway, lookaheadMs, strong, noteColor)
+                val lucky = MikuRhythmTiming.isLuckyBeat(beatAt, beatIntervalMs)
+                val noteColor = when {
+                    lucky -> LUCKY_GOLD
+                    fever -> Color.hsv(((i * 47f + t / 9f) % 360f + 360f) % 360f, 0.75f, 1f)
+                    else -> lerpColor(accent, accent2, (i.mod(8)) / 8f)
+                }
+                // SILENT DISCO: a note fades into fog before it reaches the line. Go on feel.
+                val fog = if (chaos.hidesBeat) ((msAway / lookaheadMs - 0.35f) / 0.25f).coerceIn(0f, 1f) else 1f
+                if (fog <= 0f) continue
+                drawNote(x, h, msAway, lookaheadMs, strong, noteColor, notePath, skin.nodeShape, dir, fog, lucky, t)
             }
 
-            // Hit spark: where the last judged tap landed relative to the line.
+            // Hit spark: where the last judged tap landed relative to the line, in the tier's colour.
             val age = sparkAge.floatValue
             if (lastTapMs > 0L && age < 1f) {
-                val sparkX = hitX + lastOffsetMs * pxPerMs
+                val sparkX = hitX + lastOffsetMs * pxPerMs * dir
                 val a = (1f - age)
-                val good = abs(lastOffsetMs) <= windows.greatMs
-                val c = if (good) accent else Color(0xFFFF4D5E)
+                val c = sparkColor(lastAccuracy, accent)
                 drawCircle(c.copy(alpha = 0.55f * a), radius = h * (0.18f + 0.5f * age), center = Offset(sparkX, h / 2f))
                 drawLine(c.copy(alpha = a), Offset(sparkX, h * 0.1f), Offset(sparkX, h * 0.9f), strokeWidth = 2f)
-                // A second, wider ring on a good hit: the reward has to be visible in peripheral
-                // vision, because on a hit your eye is already on the next note.
-                if (good) {
+                // The reward has to be visible in peripheral vision, because on a hit the eye is
+                // already on the next note: a wider ring on GREAT+, a starburst on PERFECT.
+                if (lastAccuracy?.isGreatOrBetter == true) {
                     drawCircle(
                         c.copy(alpha = 0.35f * a), radius = h * (0.3f + 0.9f * age),
                         center = Offset(sparkX, h / 2f), style = Stroke(width = 2f)
                     )
+                }
+                if (lastAccuracy == HitAccuracy.PERFECT) {
+                    val r1 = h * (0.22f + 0.2f * age)
+                    val r2 = r1 + h * 0.35f * a
+                    for (k in 0 until 8) {
+                        val ang = k * 0.785398f + age
+                        drawLine(
+                            Color.White.copy(alpha = 0.8f * a),
+                            Offset(sparkX + cos(ang) * r1, h / 2f + sin(ang) * r1),
+                            Offset(sparkX + cos(ang) * r2, h / 2f + sin(ang) * r2),
+                            strokeWidth = 2f
+                        )
+                    }
                 }
             }
         }
@@ -174,6 +228,17 @@ fun MikuNoteHighway(
     }
 }
 
+private val LUCKY_GOLD = Color(0xFFFFD700)
+
+private fun sparkColor(a: HitAccuracy?, accent: Color): Color = when (a) {
+    HitAccuracy.PERFECT -> Color(0xFFFF3385)
+    HitAccuracy.GREAT -> accent
+    HitAccuracy.GOOD -> Color(0xFF66E0D8)
+    HitAccuracy.OK -> Color(0xFFFFD166)
+    HitAccuracy.MISS -> Color(0xFFFF4D5E)
+    null -> accent
+}
+
 private fun lerpColor(a: Color, b: Color, t: Float): Color = Color(
     red = a.red + (b.red - a.red) * t,
     green = a.green + (b.green - a.green) * t,
@@ -181,22 +246,151 @@ private fun lerpColor(a: Color, b: Color, t: Float): Color = Color(
     alpha = 1f
 )
 
-private fun DrawScope.drawLane(h: Float, w: Float, accent: Color, accent2: Color) {
+/**
+ * A unit-radius silhouette centred on the origin. Built once per skin; every note on the lane is
+ * this path translated and scaled, so a skin's notes are recognisably its own shape.
+ */
+internal fun unitShapePath(shape: MikuBeatClickerEngine.NodeShape): Path {
+    val p = Path()
+    fun poly(sides: Int, rot: Double) {
+        for (i in 0 until sides) {
+            val a = Math.toRadians(rot + i * 360.0 / sides)
+            val x = cos(a).toFloat(); val y = sin(a).toFloat()
+            if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+        }
+        p.close()
+    }
+    fun star(points: Int, inner: Float) {
+        val steps = points * 2
+        for (i in 0 until steps) {
+            val r = if (i % 2 == 0) 1f else inner
+            val a = Math.toRadians(-90.0 + i * 360.0 / steps)
+            val x = (r * cos(a)).toFloat(); val y = (r * sin(a)).toFloat()
+            if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+        }
+        p.close()
+    }
+    when (shape) {
+        MikuBeatClickerEngine.NodeShape.ORB -> p.addOval(androidx.compose.ui.geometry.Rect(-1f, -1f, 1f, 1f))
+        MikuBeatClickerEngine.NodeShape.DIAMOND -> poly(4, -90.0)
+        MikuBeatClickerEngine.NodeShape.HEX -> poly(6, -90.0)
+        MikuBeatClickerEngine.NodeShape.STAR -> star(5, 0.46f)
+        MikuBeatClickerEngine.NodeShape.SNOWFLAKE -> star(6, 0.55f)
+        MikuBeatClickerEngine.NodeShape.HEART -> {
+            p.moveTo(0f, 0.85f)
+            p.cubicTo(-1.25f, 0.05f, -0.75f, -1.05f, 0f, -0.45f)
+            p.cubicTo(0.75f, -1.05f, 1.25f, 0.05f, 0f, 0.85f)
+            p.close()
+        }
+    }
+    return p
+}
+
+private fun DrawScope.drawLane(h: Float, w: Float, accent: Color, accent2: Color, fever: Boolean) {
     // The lane itself carries the album's two accents, darkened, so the whole strip belongs to
-    // whatever is playing rather than being a grey trough with coloured dots on it.
+    // whatever is playing rather than being a grey trough with coloured dots on it. Fever lifts it.
+    val lift = if (fever) 0.10f else 0f
     drawRect(
         brush = Brush.horizontalGradient(
             listOf(
-                accent2.copy(alpha = 0.05f),
-                accent.copy(alpha = 0.16f),
-                accent2.copy(alpha = 0.26f)
+                accent2.copy(alpha = 0.06f + lift),
+                accent.copy(alpha = 0.18f + lift),
+                accent2.copy(alpha = 0.28f + lift)
             )
         ),
         size = Size(w, h)
     )
-    // Rails, tinted.
-    drawLine(accent.copy(alpha = 0.35f), Offset(0f, h * 0.10f), Offset(w, h * 0.10f), strokeWidth = 1.5f)
-    drawLine(accent2.copy(alpha = 0.35f), Offset(0f, h * 0.90f), Offset(w, h * 0.90f), strokeWidth = 1.5f)
+}
+
+/**
+ * Per-skin lane texture, scrolling at note speed. Each style is a handful of primitive draws
+ * (lines, circles, one reused hex path) — cheap enough for a 60 Hz lane on this GPU.
+ */
+private fun DrawScope.drawLaneTexture(
+    style: MikuBeatClickerEngine.LaneStyle,
+    w: Float, h: Float, scrollPx: Float, beat: Float,
+    accent: Color, accent2: Color, hexPath: Path
+) {
+    when (style) {
+        MikuBeatClickerEngine.LaneStyle.PETAL_STREAM -> {
+            val spacing = w / 9f
+            for (i in 0 until 11) {
+                val x = ((i * spacing - scrollPx) % w + w) % w
+                val y = h * (0.2f + 0.6f * (((i * 37) % 10) / 10f)) + sin((x / w) * 6.28f + i) * h * 0.05f
+                drawCircle(accent.copy(alpha = 0.16f), radius = h * 0.035f, center = Offset(x, y))
+                drawCircle(accent2.copy(alpha = 0.10f), radius = h * 0.06f, center = Offset(x + h * 0.03f, y))
+            }
+        }
+        MikuBeatClickerEngine.LaneStyle.NEON_GRID -> {
+            val spacing = h * 0.32f
+            val n = (w / spacing).toInt() + 2
+            val off = ((scrollPx % spacing) + spacing) % spacing
+            for (i in 0..n) {
+                val x = i * spacing - off
+                drawLine(accent.copy(alpha = 0.10f + 0.12f * beat), Offset(x, h * 0.1f), Offset(x, h * 0.9f), strokeWidth = 1f)
+            }
+            for (j in 1..3) {
+                val y = h * (0.1f + 0.2f * j)
+                drawLine(accent2.copy(alpha = 0.08f), Offset(0f, y), Offset(w, y), strokeWidth = 1f)
+            }
+        }
+        MikuBeatClickerEngine.LaneStyle.HONEYCOMB -> {
+            val r = h * 0.13f
+            val spacing = r * 1.8f
+            val n = (w / spacing).toInt() + 2
+            val off = ((scrollPx % spacing) + spacing) % spacing
+            for (i in 0..n) {
+                for (row in 0..1) {
+                    val x = i * spacing - off + if (row == 1) spacing / 2f else 0f
+                    val y = h * (0.33f + 0.34f * row)
+                    translate(x, y) { scale(r, r, pivot = Offset.Zero) {
+                        drawPath(hexPath, accent.copy(alpha = 0.09f + 0.06f * beat))
+                    } }
+                }
+            }
+        }
+        MikuBeatClickerEngine.LaneStyle.VELVET_LACE -> {
+            // A slow heartbeat swell and lace dots along both rails.
+            drawRect(accent2.copy(alpha = 0.10f * beat), size = Size(w, h))
+            val spacing = h * 0.14f
+            val n = (w / spacing).toInt() + 2
+            val off = ((scrollPx % spacing) + spacing) % spacing
+            for (i in 0..n) {
+                val x = i * spacing - off
+                val big = i % 3 == 0
+                drawCircle(accent.copy(alpha = if (big) 0.30f else 0.16f), radius = if (big) 2.6f else 1.6f, center = Offset(x, h * 0.16f))
+                drawCircle(accent.copy(alpha = if (big) 0.30f else 0.16f), radius = if (big) 2.6f else 1.6f, center = Offset(x, h * 0.84f))
+            }
+        }
+        MikuBeatClickerEngine.LaneStyle.FROST_STREAK -> {
+            val spacing = w / 7f
+            for (i in 0 until 9) {
+                val x = ((i * spacing - scrollPx) % w + w) % w
+                val y0 = h * (0.2f + 0.15f * (i % 4))
+                drawLine(
+                    Color.White.copy(alpha = 0.10f + 0.08f * beat),
+                    Offset(x, y0), Offset(x + h * 0.45f, y0 + h * 0.18f),
+                    strokeWidth = 1.2f
+                )
+                drawCircle(accent.copy(alpha = 0.18f), radius = 1.8f, center = Offset(x + h * 0.45f, y0 + h * 0.18f))
+            }
+        }
+        MikuBeatClickerEngine.LaneStyle.HOLO_SCAN -> {
+            // Interference bands rolling down the lane, and a glitch slice just after each beat.
+            val band = h * 0.12f
+            val roll = ((scrollPx * 0.15f) % (band * 2f) + band * 2f) % (band * 2f)
+            var y = -band * 2f + roll
+            while (y < h) {
+                drawRect(accent.copy(alpha = 0.06f), topLeft = Offset(0f, y), size = Size(w, band))
+                y += band * 2f
+            }
+            if (beat > 0.75f) {
+                val gy = h * 0.42f
+                drawRect(accent2.copy(alpha = 0.22f), topLeft = Offset(6f, gy), size = Size(w, h * 0.08f))
+                drawRect(accent.copy(alpha = 0.18f), topLeft = Offset(-6f, gy + h * 0.1f), size = Size(w, h * 0.04f))
+            }
+        }
+    }
 }
 
 /** The hit line: the moment. Everything else on the lane is relative to it. */
@@ -219,24 +413,17 @@ private fun DrawScope.drawWindowBands(
     hitX: Float, h: Float, pxPerMs: Float,
     windows: MikuRhythmTiming.Windows, accent: Color, accent2: Color
 ) {
-    data class Band(val ms: Int, val color: Color)
     // Widest band in the cooler accent, tightening toward the hotter one: the closer to perfect,
     // the hotter the colour, so the gradient itself teaches the scale.
-    val bands = listOf(
-        Band(windows.okMs, accent2.copy(alpha = 0.07f)),
-        Band(windows.goodMs, accent2.copy(alpha = 0.12f)),
-        Band(windows.greatMs, accent.copy(alpha = 0.20f)),
-        Band(windows.perfectMs, accent.copy(alpha = 0.34f))
-    )
-    for (b in bands) {
-        val halfPx = b.ms * pxPerMs
-        if (halfPx <= 0.5f) continue
-        drawRect(
-            color = b.color,
-            topLeft = Offset(hitX - halfPx, h * 0.12f),
-            size = Size(halfPx * 2f, h * 0.76f)
-        )
-    }
+    band(hitX, h, windows.okMs * pxPerMs, accent2.copy(alpha = 0.07f))
+    band(hitX, h, windows.goodMs * pxPerMs, accent2.copy(alpha = 0.12f))
+    band(hitX, h, windows.greatMs * pxPerMs, accent.copy(alpha = 0.20f))
+    band(hitX, h, windows.perfectMs * pxPerMs, accent.copy(alpha = 0.34f))
+}
+
+private fun DrawScope.band(hitX: Float, h: Float, halfPx: Float, color: Color) {
+    if (halfPx <= 0.5f) return
+    drawRect(color = color, topLeft = Offset(hitX - halfPx, h * 0.12f), size = Size(halfPx * 2f, h * 0.76f))
 }
 
 /**
@@ -246,37 +433,53 @@ private fun DrawScope.drawWindowBands(
  */
 private fun DrawScope.drawNote(
     x: Float, h: Float, msAway: Float, lookaheadMs: Float,
-    strong: Boolean, accent: Color
+    strong: Boolean, color: Color, unitPath: Path,
+    shape: MikuBeatClickerEngine.NodeShape, dir: Float, fog: Float, lucky: Boolean, t: Long
 ) {
     // 0 at the far edge, 1 at the line.
     val near = (1f - (msAway / lookaheadMs)).coerceIn(0f, 1f)
     val past = msAway < 0f
-    val fade = if (past) (1f + msAway / 260f).coerceIn(0f, 1f) else 1f
+    val fade = (if (past) (1f + msAway / 260f).coerceIn(0f, 1f) else 1f) * fog
     if (fade <= 0f) return
 
-    val baseR = h * (if (strong) 0.26f else 0.18f)
+    val baseR = h * (if (strong || lucky) 0.27f else 0.19f)
     val r = baseR * (0.55f + 0.45f * near)
     val alpha = (0.25f + 0.75f * near) * fade
-    val c = if (strong) accent else accent.copy(red = min(1f, accent.red + 0.25f))
+    val cy = h / 2f
 
-    // Trail, so motion is legible at 30 fps as well as 60.
+    // Trail behind the note (on the side it came from), so motion is legible at 30 fps as well as 60.
     if (!past && near > 0.15f) {
         drawLine(
-            c.copy(alpha = 0.18f * alpha),
-            Offset(x + r * 2.2f, h / 2f), Offset(x, h / 2f),
-            strokeWidth = max(1f, r * 0.5f)
+            color.copy(alpha = 0.20f * alpha),
+            Offset(x + r * 2.4f * dir, cy), Offset(x, cy),
+            strokeWidth = max(1f, r * 0.55f)
         )
     }
-    drawCircle(c.copy(alpha = 0.22f * alpha), radius = r * 1.7f, center = Offset(x, h / 2f))
-    drawCircle(c.copy(alpha = alpha), radius = r, center = Offset(x, h / 2f))
-    drawCircle(
-        Color.White.copy(alpha = 0.7f * alpha * near),
-        radius = r * 0.45f, center = Offset(x, h / 2f)
-    )
-    if (strong) {
-        drawCircle(
-            c.copy(alpha = 0.5f * alpha), radius = r * 1.3f,
-            center = Offset(x, h / 2f), style = Stroke(width = 1.5f)
-        )
+    drawCircle(color.copy(alpha = 0.22f * alpha), radius = r * 1.7f, center = Offset(x, cy))
+    if (shape == MikuBeatClickerEngine.NodeShape.ORB) {
+        drawCircle(color.copy(alpha = alpha), radius = r, center = Offset(x, cy))
+    } else {
+        translate(x, cy) { scale(r * 1.15f, r * 1.15f, pivot = Offset.Zero) {
+            drawPath(unitPath, color.copy(alpha = alpha))
+        } }
+    }
+    drawCircle(Color.White.copy(alpha = 0.7f * alpha * near), radius = r * 0.38f, center = Offset(x, cy))
+    if (strong && !lucky) {
+        drawCircle(color.copy(alpha = 0.5f * alpha), radius = r * 1.35f, center = Offset(x, cy), style = Stroke(width = 1.5f))
+    }
+    if (lucky) {
+        // A slowly turning four-point sparkle, so gold reads as "special" and not just "yellow".
+        val spin = (t % 2000L) / 2000f * 6.283f
+        val r1 = r * 1.3f
+        val r2 = r * 2.1f
+        for (k in 0 until 4) {
+            val a = spin + k * 1.5708f
+            drawLine(
+                Color.White.copy(alpha = 0.85f * alpha),
+                Offset(x + cos(a) * r1, cy + sin(a) * r1), Offset(x + cos(a) * r2, cy + sin(a) * r2),
+                strokeWidth = 2f
+            )
+        }
+        drawCircle(LUCKY_GOLD.copy(alpha = 0.6f * alpha), radius = r * 1.55f, center = Offset(x, cy), style = Stroke(width = 2f))
     }
 }

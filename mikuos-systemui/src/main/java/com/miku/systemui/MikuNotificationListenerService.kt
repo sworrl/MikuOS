@@ -1,18 +1,35 @@
 package com.miku.systemui
 
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
+import android.os.Bundle
+import android.os.Parcelable
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+
+/** One notification action. [remoteInputs] non-empty = it takes typed text (a reply). */
+data class MikuNotifAction(
+    val title: String,
+    val intent: PendingIntent?,
+    val remoteInputs: List<RemoteInput>
+) {
+    val isReply: Boolean get() = remoteInputs.any { it.allowFreeFormInput }
+}
+
+/** One line of a messaging-style notification (SMS, chat). */
+data class MikuNotifMessage(val sender: String?, val text: String)
 
 /**
  * One posted notification, flattened for the shade. Everything the Pixel-style row needs:
@@ -30,8 +47,11 @@ data class MikuNotif(
     val postTime: Long,
     val isOngoing: Boolean,
     val isClearable: Boolean,
+    val autoCancel: Boolean,
     val contentIntent: PendingIntent?,
-    val actions: List<Pair<String, PendingIntent?>>,
+    val actions: List<MikuNotifAction>,
+    val messages: List<MikuNotifMessage>,
+    val conversationTitle: String?,
     val largeIcon: Bitmap?,
     val groupKey: String?,
     val isGroupSummary: Boolean,
@@ -40,7 +60,9 @@ data class MikuNotif(
     val progress: Int?,
     val progressMax: Int?,
     val progressIndeterminate: Boolean
-)
+) {
+    val replyAction: MikuNotifAction? get() = actions.firstOrNull { it.isReply }
+}
 
 /** Process-wide store the shade observes; fed by [MikuNotificationListenerService]. */
 object MikuNotificationStore {
@@ -51,14 +73,21 @@ object MikuNotificationStore {
     val connected: StateFlow<Boolean> = _connected
 
     @Volatile internal var listener: MikuNotificationListenerService? = null
+    @Volatile private var appCtx: Context? = null
 
-    internal fun setConnected(on: Boolean) { _connected.value = on; if (!on) _items.value = emptyList() }
+    internal fun setConnected(ctx: Context, on: Boolean) {
+        appCtx = ctx.applicationContext
+        _connected.value = on
+        if (!on) { _items.value = emptyList(); MikuNotificationTrayProvider.notifyChanged(ctx) }
+    }
 
     internal fun refresh(ctx: Context, sbns: Array<StatusBarNotification>?) {
         val list = ArrayList<MikuNotif>()
         val pm = ctx.packageManager
         sbns?.forEach { sbn ->
-            runCatching { flatten(ctx, pm, sbn) }.getOrNull()?.let { list.add(it) }
+            runCatching { flatten(ctx, pm, sbn) }
+                .onFailure { Log.w(TAG, "flatten ${sbn.key}: $it") }
+                .getOrNull()?.let { list.add(it) }
         }
         // Group handling: drop a summary when any child of the same group is present.
         val childGroups = list.filter { !it.isGroupSummary && it.groupKey != null }.map { it.groupKey }.toSet()
@@ -66,6 +95,7 @@ object MikuNotificationStore {
             .filter { it.pkg != ctx.packageName }
             .sortedWith(compareBy<MikuNotif> { it.isOngoing }.thenByDescending { it.postTime })
         _items.value = visible
+        MikuNotificationTrayProvider.notifyChanged(ctx)
     }
 
     private fun flatten(ctx: Context, pm: android.content.pm.PackageManager, sbn: StatusBarNotification): MikuNotif? {
@@ -74,9 +104,13 @@ object MikuNotificationStore {
         val appInfo = runCatching { pm.getApplicationInfo(sbn.packageName, 0) }.getOrNull()
         val appLabel = appInfo?.let { runCatching { pm.getApplicationLabel(it).toString() }.getOrNull() } ?: sbn.packageName
         val appIcon = appInfo?.let { runCatching { pm.getApplicationIcon(it) }.getOrNull() }
+        val messages = messagesOf(ex)
+        val convTitle = ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()
-            ?: ex.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString() ?: appLabel
-        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+            ?: ex.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
+            ?: convTitle ?: appLabel
+        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            ?: messages.lastOrNull()?.text ?: ""
         val big = ex.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
             ?: ex.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString("\n") { it.toString() }
         val sub = ex.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
@@ -84,7 +118,13 @@ object MikuNotificationStore {
             val icon = n.getLargeIcon() ?: ex.getParcelable<Icon>(Notification.EXTRA_LARGE_ICON)
             icon?.loadDrawable(ctx)?.toBitmapSafe(96)
         }.getOrNull()
-        val actions = n.actions?.map { a -> (a.title?.toString() ?: "") to a.actionIntent } ?: emptyList()
+        val actions = n.actions?.map { a ->
+            MikuNotifAction(
+                title = a.title?.toString() ?: "",
+                intent = a.actionIntent,
+                remoteInputs = a.remoteInputs?.toList() ?: emptyList()
+            )
+        } ?: emptyList()
         val hasSession = ex.containsKey(Notification.EXTRA_MEDIA_SESSION) ||
             (n.category == Notification.CATEGORY_TRANSPORT)
         val max = ex.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
@@ -93,13 +133,31 @@ object MikuNotificationStore {
             key = sbn.key, pkg = sbn.packageName, appLabel = appLabel, appIcon = appIcon,
             title = title, text = text, bigText = big?.takeIf { it.isNotBlank() && it != text }, subText = sub,
             postTime = sbn.postTime, isOngoing = sbn.isOngoing, isClearable = sbn.isClearable,
-            contentIntent = n.contentIntent, actions = actions, largeIcon = large,
+            autoCancel = (n.flags and Notification.FLAG_AUTO_CANCEL) != 0,
+            contentIntent = n.contentIntent, actions = actions,
+            messages = messages, conversationTitle = convTitle, largeIcon = large,
             groupKey = sbn.groupKey, isGroupSummary = (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0,
             accent = n.color, hasMediaSession = hasSession,
             progress = prog, progressMax = if (max > 0) max else null,
             progressIndeterminate = ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE)
         )
     }
+
+    /** MessagingStyle history (SMS, chat): the last few lines with their senders. */
+    private fun messagesOf(ex: Bundle): List<MikuNotifMessage> = runCatching {
+        @Suppress("DEPRECATION")
+        val arr: Array<Parcelable>? = ex.getParcelableArray(Notification.EXTRA_MESSAGES)
+        arr?.mapNotNull { p ->
+            val b = p as? Bundle ?: return@mapNotNull null
+            val text = b.getCharSequence("text")?.toString() ?: return@mapNotNull null
+            @Suppress("DEPRECATION")
+            val person = b.getParcelable<android.app.Person>("sender_person")
+            val sender = person?.name?.toString() ?: b.getCharSequence("sender")?.toString()
+            MikuNotifMessage(sender, text)
+        }?.takeLast(6) ?: emptyList()
+    }.getOrDefault(emptyList())
+
+    fun find(key: String): MikuNotif? = _items.value.firstOrNull { it.key == key }
 
     fun dismiss(key: String) {
         runCatching { listener?.cancelNotification(key) }.onFailure { Log.w(TAG, "dismiss: $it") }
@@ -109,8 +167,18 @@ object MikuNotificationStore {
         runCatching { listener?.cancelAllNotifications() }.onFailure { Log.w(TAG, "dismissAll: $it") }
     }
 
+    /**
+     * Tap on a notification: fire its content intent, then cancel it if the app asked for that
+     * (FLAG_AUTO_CANCEL). Stock SystemUI does the same through NotificationManager on a click.
+     */
+    fun open(ctx: Context, n: MikuNotif): Boolean {
+        val ok = send(ctx, n.contentIntent)
+        if (ok && n.autoCancel && n.isClearable) dismiss(n.key)
+        return ok
+    }
+
     /** Fire a notification's content/action intent; the shade closes itself afterwards. */
-    fun send(ctx: Context, pi: PendingIntent?): Boolean {
+    fun send(ctx: Context, pi: PendingIntent?, fillIn: Intent? = null): Boolean {
         pi ?: return false
         return runCatching {
             val opts = android.app.ActivityOptions.makeBasic()
@@ -119,22 +187,61 @@ object MikuNotificationStore {
                 val m = opts.javaClass.getMethod("setPendingIntentBackgroundActivityStartMode", Int::class.javaPrimitiveType)
                 m.invoke(opts, 1 /* MODE_BACKGROUND_ACTIVITY_START_ALLOWED */)
             }
-            pi.send(ctx, 0, null, null, null, null, opts.toBundle())
+            pi.send(ctx, 0, fillIn, null, null, null, opts.toBundle())
             true
-        }.getOrDefault(false)
+        }.onFailure { Log.w(TAG, "send: $it") }.getOrDefault(false)
     }
 
-    /** Make sure the system knows about our listener (platform-signed → WRITE_SECURE_SETTINGS). */
+    /** Send typed text through a reply action, the same way stock SystemUI's inline reply does. */
+    fun reply(ctx: Context, action: MikuNotifAction, text: CharSequence): Boolean {
+        val inputs = action.remoteInputs.toTypedArray()
+        if (inputs.isEmpty()) return false
+        val intent = Intent().addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+        val results = Bundle()
+        inputs.filter { it.allowFreeFormInput }.forEach { results.putCharSequence(it.resultKey, text) }
+        RemoteInput.addResultsToIntent(inputs, intent, results)
+        if (android.os.Build.VERSION.SDK_INT >= 28) RemoteInput.setResultsSource(intent, RemoteInput.SOURCE_FREE_FORM_INPUT)
+        return send(ctx, action.intent, intent)
+    }
+
+    /**
+     * Make sure the system has granted our listener access. Writing Settings.Secure
+     * enabled_notification_listeners is NOT enough on Android 14: NotificationManagerService keeps
+     * its own approved list and ignores that setting after first boot, so the listener was never
+     * bound and the shade showed no notifications at all. The hidden
+     * NotificationManager.setNotificationListenerAccessGranted is the call stock Settings makes
+     * (needs MANAGE_NOTIFICATION_LISTENERS, a signature permission we hold as a platform app).
+     */
     fun ensureEnabled(ctx: Context) {
+        val cn = ComponentName(ctx, MikuNotificationListenerService::class.java)
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        val granted = android.os.Build.VERSION.SDK_INT >= 27 &&
+            runCatching { nm?.isNotificationListenerAccessGranted(cn) == true }.getOrDefault(false)
+        if (!granted) {
+            val ok = runCatching {
+                runCatching {
+                    nm!!.javaClass.getMethod("setNotificationListenerAccessGranted",
+                        ComponentName::class.java, Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+                        .invoke(nm, cn, true, true)
+                }.getOrElse {
+                    nm!!.javaClass.getMethod("setNotificationListenerAccessGranted",
+                        ComponentName::class.java, Boolean::class.javaPrimitiveType)
+                        .invoke(nm, cn, true)
+                }
+                true
+            }.onFailure { Log.w(TAG, "grant listener access: $it") }.getOrDefault(false)
+            Log.i(TAG, "listener access was off; grant ${if (ok) "ok" else "failed"}")
+        }
+        // Keep the legacy setting in step too (older builds and Settings read it).
         try {
             val cr = ctx.contentResolver
-            val me = ComponentName(ctx, MikuNotificationListenerService::class.java).flattenToString()
+            val me = cn.flattenToString()
             val cur = Settings.Secure.getString(cr, "enabled_notification_listeners") ?: ""
             if (!cur.split(':').contains(me)) {
                 Settings.Secure.putString(cr, "enabled_notification_listeners", if (cur.isBlank()) me else "$cur:$me")
-                Log.i(TAG, "enabled notification listener")
             }
-        } catch (t: Throwable) { Log.w(TAG, "ensureEnabled: $t") }
+        } catch (t: Throwable) { Log.w(TAG, "ensureEnabled setting: $t") }
+        if (!_connected.value) runCatching { NotificationListenerService.requestRebind(cn) }
     }
 }
 
@@ -152,7 +259,7 @@ class MikuNotificationListenerService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         MikuNotificationStore.listener = this
-        MikuNotificationStore.setConnected(true)
+        MikuNotificationStore.setConnected(this, true)
         refresh()
         Log.i(tag, "listener connected")
     }
@@ -160,7 +267,7 @@ class MikuNotificationListenerService : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         MikuNotificationStore.listener = null
-        MikuNotificationStore.setConnected(false)
+        MikuNotificationStore.setConnected(this, false)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) { refresh() }

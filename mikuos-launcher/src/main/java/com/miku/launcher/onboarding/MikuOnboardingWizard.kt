@@ -101,7 +101,7 @@ val SupportedTimeZones = listOf(
     TimeZoneOption("America/Anchorage", "Alaska Time (Anchorage)", "Anchorage", "Americas", "UTC-9:00"),
     TimeZoneOption("America/Los_Angeles", "Pacific Time (Los Angeles, Seattle)", "Los Angeles", "Americas", "UTC-8:00"),
     TimeZoneOption("America/Denver", "Mountain Time (Denver, Salt Lake)", "Denver", "Americas", "UTC-7:00"),
-    TimeZoneOption("America/Phoenix", "Mountain Standard (Phoenix - No DST)", "Phoenix", "Americas", "UTC-7:00"),
+    TimeZoneOption("America/Phoenix", "Mountain Standard (Phoenix, no DST)", "Phoenix", "Americas", "UTC-7:00"),
     TimeZoneOption("America/Chicago", "Central Time (Chicago, Dallas, Austin)", "Chicago", "Americas", "UTC-6:00"),
     TimeZoneOption("America/New_York", "Eastern Time (New York, Miami)", "New York", "Americas", "UTC-5:00"),
     TimeZoneOption("America/Toronto", "Eastern Time (Toronto, Montreal)", "Toronto", "Americas", "UTC-5:00"),
@@ -145,7 +145,7 @@ val PlayStoreApp = ProvisionableApp(
     id = "playstore",
     name = "Google Play Store",
     category = "Core System",
-    description = "App storefront — required for cloud updates & non-bundled apps",
+    description = "App store. Needed for app updates and apps that are not bundled",
     packageName = "com.android.vending",
     icon = Icons.Default.Shop,
     accentColor = MikuOnboardingGreen,
@@ -158,7 +158,7 @@ val GoogleCoreApps = listOf(
         id = "gms",
         name = "Google Play Services (GMS)",
         category = "Core System",
-        description = "Unified Google Play services & framework backend",
+        description = "Google services that most Google apps need",
         packageName = "com.google.android.gms",
         icon = Icons.Default.CloudSync,
         accentColor = MikuOnboardingTeal,
@@ -168,7 +168,7 @@ val GoogleCoreApps = listOf(
         id = "chrome",
         name = "Google Chrome",
         category = "Browser",
-        description = "High-speed modern web browser with cloud sync",
+        description = "Web browser with Google account sync",
         packageName = "com.android.chrome",
         icon = Icons.Default.Language,
         accentColor = MikuOnboardingGold,
@@ -178,7 +178,7 @@ val GoogleCoreApps = listOf(
         id = "photos",
         name = "Google Photos",
         category = "Media",
-        description = "High-resolution gallery with cloud backup & editing",
+        description = "Photo gallery with cloud backup and editing",
         packageName = "com.google.android.apps.photos",
         icon = Icons.Default.PhotoLibrary,
         accentColor = MikuOnboardingPink,
@@ -188,7 +188,7 @@ val GoogleCoreApps = listOf(
         id = "camera",
         name = "Pixel Camera (GCam)",
         category = "Imaging",
-        description = "Advanced computational photography & HDR+ imaging",
+        description = "Google's camera app with HDR+",
         packageName = "com.google.android.GoogleCamera",
         icon = Icons.Default.CameraAlt,
         accentColor = MikuOnboardingGreen,
@@ -198,7 +198,7 @@ val GoogleCoreApps = listOf(
         id = "maps",
         name = "Google Maps",
         category = "Navigation",
-        description = "Turn-by-turn navigation & global satellite mapping",
+        description = "Maps and turn-by-turn directions",
         packageName = "com.google.android.apps.maps",
         icon = Icons.Default.Map,
         accentColor = MikuOnboardingTeal,
@@ -211,7 +211,7 @@ val OptionalApps = listOf(
         id = "spotify",
         name = "Spotify",
         category = "Music Streaming",
-        description = "High-bitrate global music catalog and playlists",
+        description = "Music streaming and playlists",
         packageName = "com.spotify.music",
         icon = Icons.Default.Headphones,
         accentColor = Color(0xFF1DB954),
@@ -220,8 +220,8 @@ val OptionalApps = listOf(
     ProvisionableApp(
         id = "tidal",
         name = "TIDAL Hi-Fi",
-        category = "Master Audio",
-        description = "Bit-perfect FLAC streaming tuned for CS43198 DAC",
+        category = "Music Streaming",
+        description = "Lossless FLAC streaming",
         packageName = "com.aspiro.tidal",
         icon = Icons.Default.Equalizer,
         accentColor = Color(0xFF00FFFF),
@@ -230,8 +230,8 @@ val OptionalApps = listOf(
     ProvisionableApp(
         id = "applemusic",
         name = "Apple Music Lossless",
-        category = "Hi-Res Lossless",
-        description = "24-bit/192kHz ALAC Hi-Res Lossless streaming",
+        category = "Music Streaming",
+        description = "Lossless ALAC streaming, up to 24-bit/192kHz",
         packageName = "com.apple.android.music",
         icon = Icons.Default.MusicNote,
         accentColor = Color(0xFFFA243C),
@@ -241,7 +241,7 @@ val OptionalApps = listOf(
         id = "telegram",
         name = "Telegram Messenger",
         category = "Messaging",
-        description = "Fast, secure cloud messaging & audio sharing",
+        description = "Cloud messaging, can send audio files",
         packageName = "org.telegram.messenger",
         icon = Icons.AutoMirrored.Filled.Send,
         accentColor = Color(0xFF2AABEE),
@@ -250,8 +250,8 @@ val OptionalApps = listOf(
     ProvisionableApp(
         id = "signal",
         name = "Signal Private Messenger",
-        category = "Encrypted Comms",
-        description = "End-to-end encrypted messaging & voice calls",
+        category = "Messaging",
+        description = "End-to-end encrypted messages and calls",
         packageName = "org.thoughtcrime.securesms",
         icon = Icons.Default.Security,
         accentColor = Color(0xFF3A76F0),
@@ -260,8 +260,8 @@ val OptionalApps = listOf(
     ProvisionableApp(
         id = "magisk",
         name = "Magisk Root & SU",
-        category = "System & Modding",
-        description = "Systemless Root Management & Kernel Module Framework",
+        category = "Root",
+        description = "Root access and modules",
         packageName = "com.topjohnwu.magisk",
         icon = Icons.Default.AdminPanelSettings,
         accentColor = MikuOnboardingPink,
@@ -274,7 +274,7 @@ val BundledApps = listOf(
         id = "Gallery2",
         name = "AOSP Gallery",
         category = "Media",
-        description = "Lightweight offline photo gallery viewer",
+        description = "Simple offline photo gallery",
         packageName = "com.android.gallery3d",
         icon = Icons.Default.PhotoLibrary,
         accentColor = MikuOnboardingGreen,
@@ -283,8 +283,8 @@ val BundledApps = listOf(
     ProvisionableApp(
         id = "HiByMusic",
         name = "HiBy Music (Legacy)",
-        category = "Hi-Res Audio",
-        description = "Stock HiBy lossless player with MSEB tuning",
+        category = "Music Player",
+        description = "The stock HiBy player, with MSEB",
         packageName = "com.hiby.music",
         icon = Icons.Default.Headphones,
         accentColor = MikuOnboardingGold,
@@ -294,7 +294,7 @@ val BundledApps = listOf(
         id = "SnapdragonCamera",
         name = "Snapdragon Camera",
         category = "Imaging",
-        description = "Qualcomm native camera with RAW capture",
+        description = "Qualcomm camera app, can shoot RAW",
         packageName = "org.codeaurora.snapcam",
         icon = Icons.Default.CameraAlt,
         accentColor = MikuOnboardingPink,
@@ -617,14 +617,14 @@ fun LanguageSelectionScreen(
 
     Column(Modifier.fillMaxSize()) {
         Text(
-            "SELECT LANGUAGE",
+            "LANGUAGE",
             color = MikuOnboardingTeal,
             fontSize = 20.sp,
             fontWeight = FontWeight.Black,
             letterSpacing = 1.sp
         )
         Text(
-            "Choose your system display and input language for MikuOS.",
+            "Pick the language for menus and the keyboard.",
             color = Color.White.copy(alpha = 0.75f),
             fontSize = 13.sp
         )
@@ -635,7 +635,7 @@ fun LanguageSelectionScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search languages...", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp) },
+            placeholder = { Text("Search languages", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = MikuOnboardingTeal, modifier = Modifier.size(18.dp)) },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
@@ -729,7 +729,7 @@ fun LanguageSelectionScreen(
                                         .background(MikuOnboardingTeal.copy(alpha = 0.2f))
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
-                                    Text("CYBER UI", color = MikuOnboardingTeal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("FULL UI", color = MikuOnboardingTeal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -795,7 +795,7 @@ fun DateTimeSelectionScreen(
     }
 
     // Actually live: the old version formatted Date() once inside remember(), so a banner labelled
-    // "LIVE CLOCK PREVIEW" showed a frozen HH:mm:ss stuck at the instant the step was composed.
+    // "PREVIEW" showed a frozen HH:mm:ss stuck at the instant the step was composed.
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -815,14 +815,14 @@ fun DateTimeSelectionScreen(
 
     Column(Modifier.fillMaxSize()) {
         Text(
-            "REGIONAL DATE & HARDWARE",
+            "CLOCK AND TOUCH",
             color = MikuOnboardingTeal,
             fontSize = 20.sp,
             fontWeight = FontWeight.Black,
             letterSpacing = 1.sp
         )
         Text(
-            "Configure 24-hour military clock & screen protector touch boost.",
+            "Pick 12 or 24-hour time, and turn on touch boost if you use a screen protector.",
             color = Color.White.copy(alpha = 0.75f),
             fontSize = 13.sp
         )
@@ -843,7 +843,7 @@ fun DateTimeSelectionScreen(
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("LIVE CLOCK PREVIEW", color = MikuOnboardingTeal, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text("PREVIEW", color = MikuOnboardingTeal, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     Spacer(Modifier.width(8.dp))
                     Box(
                         Modifier
@@ -1035,7 +1035,7 @@ fun DateTimeSelectionScreen(
                     if (autoDetectedZone != null)
                         "System zone: ${SupportedTimeZones.firstOrNull { it.id == autoDetectedZone }?.name ?: autoDetectedZone}"
                     else
-                        "Couldn't match the system zone (${TimeZone.getDefault().id}) — pick one below",
+                        "Couldn't match the system zone (${TimeZone.getDefault().id}). Pick one below.",
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 11.sp,
                     maxLines = 1,
@@ -1061,7 +1061,7 @@ fun DateTimeSelectionScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search cities or timezones...", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp) },
+            placeholder = { Text("Search cities or time zones", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = MikuOnboardingTeal, modifier = Modifier.size(18.dp)) },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
@@ -1204,7 +1204,7 @@ fun AppsProvisioningScreen(
                     letterSpacing = 1.sp
                 )
                 Text(
-                    "Select which apps to provision during setup.",
+                    "Pick the apps to install now.",
                     color = Color.White.copy(alpha = 0.75f),
                     fontSize = 13.sp
                 )
@@ -1233,7 +1233,7 @@ fun AppsProvisioningScreen(
             val categories = listOf(
                 "Core System" to GoogleCoreApps,
                 "Media & Streaming" to OptionalApps,
-                "Bundled System Utilities" to BundledApps
+                "Bundled Apps" to BundledApps
             )
 
             categories.forEach { (catName, appList) ->
@@ -1348,7 +1348,7 @@ fun AppInstallScreen(
 
     Column(Modifier.fillMaxSize()) {
         Text("INSTALLING APPS", color = MikuOnboardingTeal, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-        Text("Zero-touch unattended application provisioning.", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
+        Text("This runs on its own. You can leave it.", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
 
         Spacer(Modifier.height(14.dp))
 
@@ -1487,7 +1487,7 @@ fun CompletionScreen(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            "YOU'RE READY FOR MIKUOS",
+            "SETUP DONE",
             color = Color.White,
             fontSize = 20.sp,
             fontWeight = FontWeight.Black,
@@ -1498,7 +1498,7 @@ fun CompletionScreen(
         Spacer(Modifier.height(4.dp))
 
         Text(
-            "Setup complete. Your M500 is tuned and ready to play.",
+            "Setup is done. Here's what was set.",
             color = MikuOnboardingTeal,
             fontSize = 14.sp,
             textAlign = TextAlign.Center
@@ -1515,7 +1515,7 @@ fun CompletionScreen(
                 .border(1.dp, MikuOnboardingBorder.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
                 .padding(16.dp)
         ) {
-            Text("CONFIGURATION SUMMARY", color = MikuOnboardingTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text("SUMMARY", color = MikuOnboardingTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(Modifier.height(10.dp))
 
             SummaryItem(Icons.Default.Language, "Language", SystemLanguages.firstOrNull { it.code == lang }?.nativeName ?: "English")
@@ -1534,9 +1534,9 @@ fun CompletionScreen(
             SummaryItem(
                 Icons.Default.Schedule, "Time Format",
                 when (liveFmt) {
-                    "24" -> "24-Hour (Military)"
-                    "12" -> "12-Hour (AM/PM)"
-                    else -> "— (system default)"
+                    "24" -> "24-hour"
+                    "12" -> "12-hour (AM/PM)"
+                    else -> "System default"
                 }
             )
             // Stored preference only — nothing in MikuOS reads these keys back (see

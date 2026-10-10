@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -20,6 +21,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,10 +60,13 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var isRooted by remember { mutableStateOf(false) }
-    // null = not probed yet; true/false = real result of reading the DAC sysfs directory
-    var sysfsReachable by remember { mutableStateOf<Boolean?>(null) }
+    // null = not probed yet; true/false = whether com.miku.sysbridge is installed
+    var bridgeOk by remember { mutableStateOf<Boolean?>(null) }
+    // What the DAC was last told (persist.vendor.audio.miku.*), and the last failed set, if any
+    var dacApplied by remember { mutableStateOf("") }
+    var dacProblem by remember { mutableStateOf<String?>(null) }
 
-    // Cirrus Logic CS43198 DAC States — null until READ from sysfs / Settings.Global. Nothing is
+    // Cirrus Logic CS43198 DAC States — null until READ from the persist props / Settings.Global. Nothing is
     // pre-selected from a local default (the old NOS / LOW / +6 dB defaults were shown as if real).
     var csFilter by remember { mutableStateOf<CirrusLogicManager.DigitalFilter?>(null) }
     var csGain by remember { mutableStateOf<CirrusLogicManager.GainMode?>(null) }
@@ -85,6 +97,46 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
     // CPU Performance
     var cpuGovernorOn by remember { mutableStateOf(CpuPerformance.isEnabled(ctx)) }
 
+    // Re-read the four live knobs. Runs after every set, so a control that did not apply snaps
+    // back to what the DAC actually has.
+    suspend fun reloadDac() = withContext(Dispatchers.IO) {
+        bridgeOk = DacBridge.available(ctx)
+        csFilter = CirrusLogicManager.getDigitalFilter(ctx)
+        csGain = CirrusLogicManager.getGainMode(ctx)
+        csDre = CirrusLogicManager.isDreEnabled(ctx)
+        csTurbo = CirrusLogicManager.isHighPowerEnabled(ctx)
+        dacApplied = CirrusLogicManager.appliedSummary()
+    }
+    // The screen's colors come from the applied combo (dacTheme, same function as the status bar
+    // badge and the SystemUI tiles): filter sets the hue, gain the saturation, DRE the second
+    // accent, high power the glow and a slow pulse. Changes fade over 450 ms.
+    val dacPal = remember(csFilter, csGain, csDre, csTurbo) { dacTheme(csFilter?.id, csGain?.id, csDre, csTurbo) }
+    val dacPrimary by animateColorAsState(Color(dacPal.primary), tween(450), label = "dacPrimary")
+    val dacSecondary by animateColorAsState(Color(dacPal.secondary), tween(450), label = "dacSecondary")
+    val dacBg by animateColorAsState(Color(dacPal.background), tween(450), label = "dacBg")
+    val dacGlowBase by animateFloatAsState(dacPal.glow, tween(450), label = "dacGlow")
+    val dacGlow = if (dacPal.pulse) {
+        val t = rememberInfiniteTransition(label = "dacPulse")
+        dacGlowBase * t.animateFloat(0.7f, 1f, infiniteRepeatable(tween(1400), RepeatMode.Reverse), label = "dacPulseV").value
+    } else dacGlowBase
+
+    // A change made somewhere else (Miku Music, SystemUI tiles) lands in miku_dac_state.
+    DisposableEffect(Unit) {
+        val obs = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { scope.launch { reloadDac() } }
+        }
+        runCatching { ctx.contentResolver.registerContentObserver(Settings.Global.getUriFor("miku_dac_state"), false, obs) }
+        onDispose { runCatching { ctx.contentResolver.unregisterContentObserver(obs) } }
+    }
+
+    fun applyDac(block: suspend () -> DacBridge.Result) {
+        scope.launch {
+            val r = block()
+            dacProblem = DacBridge.lastProblem.takeIf { r != DacBridge.Result.CONFIRMED }
+            reloadDac()
+        }
+    }
+
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             isRooted = android.os.Process.myUid() == 1000 || RootShell.isAvailable() || ctx.checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -99,10 +151,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
             } catch (e: Throwable) {
                 Log.e("SettingsOverlayCheck", "Failed to query settings resources", e)
             }
-            sysfsReachable = CirrusLogicManager.isSysfsReachable()
-            csFilter = CirrusLogicManager.getDigitalFilter(ctx)
-            csGain = CirrusLogicManager.getGainMode(ctx)
-            csTurbo = CirrusLogicManager.isHighPowerEnabled(ctx)
+            reloadDac()
             csDsdComp = CirrusLogicManager.getDsdGainCompensate(ctx)
             csOutput = CirrusLogicManager.getOutputMode(ctx)
             // getBalance() substitutes 0 when nothing is readable, which the UI then printed as
@@ -127,10 +176,10 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = HwMikuTeal)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = HwBgDark)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = dacBg)
             )
         },
-        containerColor = HwBgDark
+        containerColor = dacBg
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -145,53 +194,60 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF07272B))
-                        .border(1.dp, HwMikuTeal.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                        .background(Brush.linearGradient(listOf(lerp(dacBg, dacPrimary, 0.10f), lerp(dacBg, dacSecondary, 0.22f))))
+                        .border((1f + dacGlow * 1.5f).dp, Brush.linearGradient(listOf(dacPrimary.copy(alpha = 0.3f + 0.6f * dacGlow), dacSecondary.copy(alpha = 0.3f + 0.6f * dacGlow))), RoundedCornerShape(16.dp))
                         .padding(16.dp)
                 ) {
-                    // Status reflects what was ACTUALLY probed: the DAC sysfs directory and the
-                    // process's privilege. No unconditional "online / active" claims.
+                    // The combo in plain words, in the combo's own color.
+                    Text(dacPal.label, color = dacPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 20.sp)
+                    Spacer(Modifier.height(10.dp))
+                    // Status reflects what was actually probed: whether the bridge is installed,
+                    // and the values the DAC was last told (persist.vendor.audio.miku.*).
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(when (sysfsReachable) { true -> "🟢"; false -> "🟡"; null -> "⚪" }, fontSize = 16.sp)
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(when (bridgeOk) { true -> Color(0xFF1ABC9C); false -> Color(0xFFF1C40F); null -> HwMuted }))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            when (sysfsReachable) {
-                                null -> "Probing DAC control path…"
-                                true -> if (isRooted) "CS43198 DAC sysfs reachable (privileged)" else "CS43198 DAC sysfs reachable"
-                                false -> "DAC sysfs not readable — Settings.Global fallback"
+                            when (bridgeOk) {
+                                null -> "Checking the DAC control path…"
+                                true -> "DAC settings go through the MikuOS system bridge"
+                                false -> "MikuOS system bridge not found"
                             },
-                            color = if (sysfsReachable == true) HwMikuTeal else HwMuted,
-                            fontSize = 14.sp,
+                            color = if (bridgeOk == true) dacSecondary else HwMuted,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        when (sysfsReachable) {
-                            true -> "Filter, gain, DRE, output and balance are read from and written to ${CirrusLogicManager.SYSFS_BASE}. Controls below show the value the kernel reports; \"unknown\" means neither the kernel nor Settings.Global answered."
-                            false -> "${CirrusLogicManager.SYSFS_BASE} is not readable by this process; controls show the last value persisted in Settings.Global (vendor.audio.hiby.*) and writes go through the shell path. \"unknown\" means no value has been set."
-                            null -> "Reading kernel DAC nodes and HiBy audio settings…"
+                        when (bridgeOk) {
+                            true -> "Applied now. $dacApplied"
+                            false -> "com.miku.sysbridge is not installed, so filter, gain, DRE and high power cannot change. Controls show the last saved choice."
+                            null -> "Reading the DAC settings…"
                         },
                         color = HwMuted,
                         fontSize = 12.sp,
                         lineHeight = 16.sp
                     )
+                    dacProblem?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(it, color = Color(0xFFF1C40F), fontSize = 12.sp, lineHeight = 16.sp)
+                    }
                 }
             }
 
             // Section 1: Cirrus Logic Dual CS43198 MasterHIFI™ Audio Architecture
             item {
-                HwSettingsSection("Cirrus Logic Dual CS43198 Architecture")
+                HwSettingsSection("Cirrus Logic Dual CS43198 DAC")
 
                 Column(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(HwSurface1)
-                        .border(1.dp, HwMikuTeal.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
+                        .background(lerp(HwSurface1, dacBg, 0.5f))
+                        .border(1.dp, dacPrimary.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
                         .padding(14.dp)
                 ) {
-                    Text("DIGITAL RECONSTRUCTION FILTER", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("DIGITAL FILTER", color = dacPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
 
                     CirrusLogicManager.DigitalFilter.values().forEach { filter ->
@@ -200,7 +256,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                                 .fillMaxWidth()
                                 .clickable {
                                     csFilter = filter
-                                    scope.launch { CirrusLogicManager.setDigitalFilter(ctx, filter) }
+                                    applyDac { CirrusLogicManager.setDigitalFilter(ctx, filter) }
                                 }
                                 .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -209,9 +265,9 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                                 selected = csFilter == filter,
                                 onClick = {
                                     csFilter = filter
-                                    scope.launch { CirrusLogicManager.setDigitalFilter(ctx, filter) }
+                                    applyDac { CirrusLogicManager.setDigitalFilter(ctx, filter) }
                                 },
-                                colors = RadioButtonDefaults.colors(selectedColor = HwMikuTeal, unselectedColor = HwMuted)
+                                colors = RadioButtonDefaults.colors(selectedColor = dacPrimary, unselectedColor = HwMuted)
                             )
                             Spacer(Modifier.width(8.dp))
                             Column {
@@ -222,7 +278,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                     }
 
                     Spacer(Modifier.height(14.dp))
-                    Text("ANALOG HEADPHONE GAIN", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("HEADPHONE GAIN", color = dacPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -232,10 +288,10 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                                     .weight(1f)
                                     .height(42.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (csGain == gain) HwMikuTeal else HwSurface2)
+                                    .background(if (csGain == gain) dacPrimary else HwSurface2)
                                     .clickable {
                                         csGain = gain
-                                        scope.launch { CirrusLogicManager.setGainMode(ctx, gain) }
+                                        applyDac { CirrusLogicManager.setGainMode(ctx, gain) }
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -245,7 +301,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                     }
 
                     Spacer(Modifier.height(14.dp))
-                    Text("OUTPUT ROUTING (3.5mm SE / 4.4mm BAL)", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("OUTPUT ROUTING (3.5mm SE / 4.4mm BAL)", color = dacPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -271,33 +327,35 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
 
                     HwSettingsToggleRow(
                         title = "Dynamic Range Enhancement (DRE)",
-                        subtitle = if (csDre == null) "Reading state…" else "Dynamically boosts SNR to 130dB+ for inaudible noise floor",
-                        checked = csDre == true
+                        subtitle = if (csDre == null) "Not set yet" else "Lowers the noise floor at low volume",
+                        checked = csDre == true,
+                        accent = dacPrimary
                     ) { enabled ->
                         csDre = enabled
-                        scope.launch { CirrusLogicManager.setDreEnabled(ctx, enabled) }
+                        applyDac { CirrusLogicManager.setDreEnabled(ctx, enabled) }
                     }
 
                     HwSettingsToggleRow(
-                        title = "Audio Turbo High Power",
-                        subtitle = if (csTurbo == null) "Reading state…" else "Increases current rails for demanding dynamic peaks",
-                        checked = csTurbo == true
+                        title = "High power mode",
+                        subtitle = if (csTurbo == null) "Not set yet" else "Switches in the external amp stage. The same volume step gets louder, so music volume is lowered to 30% when you turn it on",
+                        checked = csTurbo == true,
+                        accent = dacPrimary
                     ) { enabled ->
                         csTurbo = enabled
-                        scope.launch { CirrusLogicManager.setHighPowerEnabled(ctx, enabled) }
+                        applyDac { CirrusLogicManager.setHighPowerEnabled(ctx, enabled) }
                     }
 
                     Spacer(Modifier.height(10.dp))
-                    Text(if (csDsdComp == null) "DSD GAIN COMPENSATION (not set)" else "DSD GAIN COMPENSATION", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(if (csDsdComp == null) "DSD GAIN COMPENSATION (not set)" else "DSD GAIN COMPENSATION", color = dacPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(0 to "0 dB (Direct)", 6 to "+6 dB (SACD Standard)").forEach { (db, label) ->
+                        listOf(0 to "0 dB (Direct)", 6 to "+6 dB (SACD level)").forEach { (db, label) ->
                             Box(
                                 Modifier
                                     .weight(1f)
                                     .height(36.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (csDsdComp == db) HwMikuTeal else HwSurface2)
+                                    .background(if (csDsdComp == db) dacPrimary else HwSurface2)
                                     .clickable {
                                         csDsdComp = db
                                         scope.launch { CirrusLogicManager.setDsdGainCompensate(ctx, db) }
@@ -311,7 +369,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
 
                     Spacer(Modifier.height(14.dp))
                     val bal = csBalance
-                    Text("HARDWARE L/R BALANCE (${when { bal == null -> "unknown"; bal.toInt() == 0 -> "Center"; bal > 0 -> "+${bal.toInt()} R"; else -> "${bal.toInt()} L" }})", color = HwMikuTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("L/R BALANCE (${when { bal == null -> "unknown"; bal.toInt() == 0 -> "Center"; bal > 0 -> "+${bal.toInt()} R"; else -> "${bal.toInt()} L" }})", color = dacPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Slider(
                         value = bal ?: 0f,
                         enabled = bal != null,
@@ -321,7 +379,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                         },
                         valueRange = -10f..10f,
                         steps = 19,
-                        colors = SliderDefaults.colors(thumbColor = HwMikuTeal, activeTrackColor = HwMikuTeal, inactiveTrackColor = HwSurface2)
+                        colors = SliderDefaults.colors(thumbColor = dacPrimary, activeTrackColor = dacPrimary, inactiveTrackColor = HwSurface2)
                     )
                 }
             }
@@ -342,7 +400,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                 ) {
                     HwSettingsToggleRow(
                         title = "Pocket Lock (Touch & Key Lock)",
-                        subtitle = "Hardware-inhibits touchscreen digitizer and side buttons simultaneously",
+                        subtitle = "Locks the touchscreen and side buttons at the hardware level",
                         checked = isPocket
                     ) { enabled ->
                         val next = if (enabled) "touch_and_key_lock" else "key_lock"
@@ -353,8 +411,8 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                     if (isPocket) {
                         Spacer(Modifier.height(8.dp))
                         HwSettingsToggleRow(
-                            title = "Allow Volume Wheel in Pocket",
-                            subtitle = "Keep physical rotary knob active while screen and side buttons are locked",
+                            title = "Volume Wheel Works in Pocket",
+                            subtitle = "Keep the volume wheel working while the screen and side buttons are locked",
                             checked = allowVolumeWheel
                         ) { enabled ->
                             allowVolumeWheel = enabled
@@ -367,7 +425,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
 
             // Section 4: USB DAC UAC2 Bit-Perfect Subsystem
             item {
-                HwSettingsSection("USB DAC (UAC2 Desktop Receiver)")
+                HwSettingsSection("USB DAC (UAC2)")
 
                 Column(
                     Modifier
@@ -457,7 +515,7 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
 
             // Section 5: Snapdragon 680 Audiophile Governor
             item {
-                HwSettingsSection("Snapdragon 680 Audiophile Governor")
+                HwSettingsSection("CPU Governor")
 
                 Column(
                     Modifier
@@ -472,8 +530,8 @@ fun HardwareSettingsScreen(onBack: () -> Unit) {
                     // normal state here) - so the row claimed the cores were pinned when the
                     // governor had not moved. Now re-read from cpu0/cpufreq/scaling_governor.
                     HwSettingsToggleRow(
-                        title = "Peak Clock Performance Governor",
-                        subtitle = "Sets every CPU core's scaling_governor to \"performance\". Needs root on this build; the switch follows the governor the kernel actually reports.",
+                        title = "Performance Governor",
+                        subtitle = "Sets every CPU core's scaling_governor to \"performance\". Needs root on this build. The switch follows the governor the kernel actually reports.",
                         checked = cpuGovernorOn
                     ) { enabled ->
                         scope.launch {
@@ -505,6 +563,7 @@ fun HwSettingsToggleRow(
     title: String,
     subtitle: String,
     checked: Boolean,
+    accent: Color = HwMikuTeal,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
@@ -523,7 +582,7 @@ fun HwSettingsToggleRow(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = HwMikuTeal,
+                checkedThumbColor = accent,
                 checkedTrackColor = HwSurface2,
                 uncheckedThumbColor = HwMuted,
                 uncheckedTrackColor = HwSurface1

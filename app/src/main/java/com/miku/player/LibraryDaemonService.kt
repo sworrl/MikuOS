@@ -35,7 +35,7 @@ class LibraryDaemonService : Service() {
             android.graphics.BitmapFactory.decodeResource(resources, R.drawable.miku_banner_cyber_stage)
         } catch (_: Throwable) { null }
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Monitoring audio library · Real-time sync"))
+        startForeground(NOTIFICATION_ID, buildNotification("Watching the music library"))
         registerMediaObserver()
         // The network ingress engine (m500d discovery / rsync transceiver) only runs while the
         // user has it switched ON (Settings.Global miku_ingest_enabled, default OFF). The local
@@ -43,7 +43,7 @@ class LibraryDaemonService : Service() {
         if (MikuIngestGate.isEnabled(this)) MikuSyncTransceiver.startMonitoring(this)
         MikuIngestGate.observe(this) { enabled ->
             if (enabled) MikuSyncTransceiver.startMonitoring(this) else MikuSyncTransceiver.stopMonitoring()
-            updateNotification(if (enabled) "Ingress engine ON · monitoring" else "Ingress engine OFF · local SD only", true)
+            updateNotification(if (enabled) "Network sync on · watching" else "Network sync off · SD card only", true)
         }
         try {
             com.miku.player.api.MikuApiServer.start(this)
@@ -58,9 +58,9 @@ class LibraryDaemonService : Service() {
             MikuSyncTransceiver.state.collect { sync ->
                 val transportBadge = sync.transport.badge
                 val status = if (sync.isTransferring) {
-                    "🚀 SYNC IN PROGRESS (${String.format("%.1f", sync.transferRateMBs)} MB/s) · $transportBadge"
+                    "Syncing (${String.format("%.1f", sync.transferRateMBs)} MB/s) · $transportBadge"
                 } else {
-                    "✨ Monitoring ${lastTrackCount.coerceAtLeast(0)} tracks · $transportBadge"
+                    "Watching ${lastTrackCount.coerceAtLeast(0)} tracks · $transportBadge"
                 }
                 updateNotification(status, sync.isTransferring)
             }
@@ -83,7 +83,7 @@ class LibraryDaemonService : Service() {
             if (since <= INITIAL_SYNC_SKIP_WINDOW_MS && uiCount > 0) {
                 lastTrackCount = uiCount
                 Log.i(TAG, "Initial sync skipped — a full library query landed ${since}ms ago ($uiCount tracks)")
-                updateNotification("Monitoring $uiCount tracks · Live audio sync")
+                updateNotification("Watching $uiCount tracks")
             } else {
                 syncLibrary("Initial background sync")
             }
@@ -141,10 +141,10 @@ class LibraryDaemonService : Service() {
                 }
                 Log.i(TAG, "Daemon synced ${tracks.size} tracks ($triggerReason)")
 
-                updateNotification("Monitoring ${tracks.size} tracks · Live audio sync")
+                updateNotification("Watching ${tracks.size} tracks")
             } catch (e: Throwable) {
                 Log.e(TAG, "Error in daemon sync", e)
-                updateNotification("Monitoring ${lastTrackCount.coerceAtLeast(0)} tracks · Active")
+                updateNotification("Watching ${lastTrackCount.coerceAtLeast(0)} tracks")
             } finally {
                 isSyncing = false
             }
@@ -222,10 +222,10 @@ class LibraryDaemonService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Miku Library Daemon",
+                "Library sync",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps music library continuously synced in the background"
+                description = "Keeps the music library up to date in the background"
                 setShowBadge(false)
             }
             val nm = getSystemService(NotificationManager::class.java)
@@ -252,9 +252,9 @@ class LibraryDaemonService : Service() {
 
         val sync = MikuSyncTransceiver.state.value
         val syncDetail = if (!MikuIngestGate.isEnabled(this)) {
-            "Ingress engine is OFF — local SD card scans only. Flip it on from the MikuOS quick settings."
+            "Network sync is off, so only the SD card is scanned. Turn it on from the MikuOS quick settings."
         } else if (sync.isTransferring) {
-            "Active ingress at ${String.format("%.1f", sync.transferRateMBs)} MB/s to ${MikuVolumes.removableLabel(this) ?: "the MicroSD"}/MUSIC."
+            "Receiving at ${String.format("%.1f", sync.transferRateMBs)} MB/s to ${MikuVolumes.removableLabel(this) ?: "the MicroSD"}/MUSIC."
         } else {
             "Daemon listening on port ${MikuSyncTransceiver.RSYNC_PORT}. FastLibraryStore index is current."
         }
@@ -267,7 +267,7 @@ class LibraryDaemonService : Service() {
         } else {
             NotificationCompat.BigTextStyle()
                 .setBigContentTitle("Miku Monitor")
-                .setSummaryText("Local Storage and Ingress")
+                .setSummaryText("Local storage and network sync")
                 .bigText("$status\n\n$syncDetail")
         }
 

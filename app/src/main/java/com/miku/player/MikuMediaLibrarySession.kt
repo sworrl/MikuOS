@@ -180,7 +180,7 @@ class MikuLibraryCallback(context: Context) : MediaLibrarySession.Callback {
             .build()
 
         val btnLike = CommandButton.Builder()
-            .setDisplayName(if (isLiked) "Liked ♥" else "Like ♡")
+            .setDisplayName(if (isLiked) "Liked" else "Like")
             .setIconResId(if (isLiked) android.R.drawable.btn_star_big_on else android.R.drawable.btn_star_big_off)
             .setSessionCommand(SessionCommand(ACTION_TOGGLE_LIKE, Bundle.EMPTY))
             .build()
@@ -416,7 +416,7 @@ class MikuLibraryCallback(context: Context) : MediaLibrarySession.Callback {
 
     private fun modeItems(): List<MediaItem> = listOf(
         modeItem(MODE_NORMAL, "Normal", "Shuffle off · Repeat off"),
-        modeItem(MODE_SHUFFLE, "Shuffle Mix", "Shuffle the queue"),
+        modeItem(MODE_SHUFFLE, "Shuffle", "Shuffle the queue"),
         modeItem(MODE_REPEAT_ALL, "Repeat All", "Loop the whole queue"),
         modeItem(MODE_REPEAT_ONE, "Repeat One", "Loop the current track"),
         modeItem(MODE_TAPE, "Tape / Cassette", "Cassette view on the device")

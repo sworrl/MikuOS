@@ -128,7 +128,7 @@ private fun ArcoSettingsScreen(onBack: () -> Unit) {
             Spacer(Modifier.width(4.dp))
             Column {
                 Text("ARCOBOCCONOTTO", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black, fontFamily = AudiowideFont, letterSpacing = 1.sp)
-                Text("RGB Fleet Controller Integration", color = MikuTextSecondary, fontSize = 9.sp)
+                Text("RGB fleet controller", color = MikuTextSecondary, fontSize = 9.sp)
             }
         }
 
@@ -327,7 +327,7 @@ private fun ArcoConnectionPane(onPaired: () -> Unit) {
     if (session != null) {
         Column(arcoCardModifier(MikuNeonPink)) {
             ArcoCardTitle("CONFIRM CODE (${secondsLeft}s)", MikuNeonPink)
-            Text("Check that the desktop / tray notification on ${session.server_name} shows the SAME code:", color = MikuTextSecondary, fontSize = 9.5.sp)
+            Text("Check that the notification on ${session.server_name} shows the SAME code:", color = MikuTextSecondary, fontSize = 9.5.sp)
             Spacer(Modifier.height(6.dp))
             Box(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0x22FF4081)).padding(vertical = 12.dp),
@@ -337,7 +337,7 @@ private fun ArcoConnectionPane(onPaired: () -> Unit) {
             }
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ArcoModalActionButtonFull(label = if (isWorking) "CONFIRMING…" else "CONFIRM & PAIR", accentColor = com.miku.launcher.ui.MikuIdentity.Leek, enabled = !isWorking, modifier = Modifier.weight(1f)) {
+                ArcoModalActionButtonFull(label = if (isWorking) "CONFIRMING…" else "CONFIRM AND PAIR", accentColor = com.miku.launcher.ui.MikuIdentity.Leek, enabled = !isWorking, modifier = Modifier.weight(1f)) {
                     isWorking = true
                     errorText = null
                     scope.launch {
@@ -353,7 +353,7 @@ private fun ArcoConnectionPane(onPaired: () -> Unit) {
     }
 
     errorText?.let {
-        Text("⚠ $it", color = com.miku.launcher.ui.MikuIdentity.Coral, fontSize = 9.5.sp, modifier = Modifier.padding(vertical = 4.dp))
+        Text("$it", color = com.miku.launcher.ui.MikuIdentity.Coral, fontSize = 9.5.sp, modifier = Modifier.padding(vertical = 4.dp))
     }
 }
 
@@ -389,7 +389,7 @@ private fun ArcoDashboardPane() {
         ArcoCardTitle("LIVE STATUS", MikuCyan)
         // Blank = never read from the rig (see ArcoClient._activeEffect).
         Text(
-            "Active effect: " + activeEffect.ifBlank { "— (not reported)" },
+            "Active effect: " + activeEffect.ifBlank { "not reported" },
             color = MikuTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold
         )
         Text("Link: ${connectionState.name}", color = MikuTextSecondary, fontSize = 9.5.sp)
@@ -416,7 +416,7 @@ private fun ArcoDashboardPane() {
             )
         }
         Spacer(Modifier.height(6.dp))
-        ArcoSmallButton("Blackout Now", com.miku.launcher.ui.MikuIdentity.Coral) { scope.launch { ArcoClient.stop() } }
+        ArcoSmallButton("Black out now", com.miku.launcher.ui.MikuIdentity.Coral) { scope.launch { ArcoClient.stop() } }
     }
 
     Column(arcoCardModifier(MikuGold)) {
@@ -435,16 +435,16 @@ private fun ArcoDashboardPane() {
             colors = SliderDefaults.colors(thumbColor = MikuGold, activeTrackColor = MikuGold)
         )
         Text(
-            "The server exposes no brightness read-back, so this slider sends a value — it does not report the rig's current brightness.",
+            "The server can't report brightness back, so this slider only sends a value. It doesn't show the rig's current brightness.",
             color = MikuTextSecondary, fontSize = 8.sp
         )
         if (brightnessUnsupported) {
-            Text("Server build doesn't expose a brightness endpoint yet (client is ready — see ArcoClient.setBrightness).", color = Color(0xFFFF9100), fontSize = 8.sp)
+            Text("This server build has no brightness endpoint yet. The client side is ready (ArcoClient.setBrightness).", color = Color(0xFFFF9100), fontSize = 8.sp)
         }
     }
 
     Column(arcoCardModifier(MikuNeonPink)) {
-        ArcoCardTitle("MUSIC VISUALIZER BRIDGE", MikuNeonPink)
+        ArcoCardTitle("MUSIC VISUALIZER", MikuNeonPink)
         Text(
             "Feeds MikuOS's live BPM engine (com.miku.action.BPM_UPDATE / BPM_PULSE, Settings.Global miku_live_bpm) into arco's visualizer themes (music_spectrum, music_bass_pulse, …) via POST /api/audio.",
             color = MikuTextSecondary, fontSize = 8.5.sp
@@ -462,7 +462,7 @@ private fun ArcoDashboardPane() {
             )
         }
         Text(
-            "Note: bands are synthesized from tempo/beat-phase only, not real FFT — MikuOS doesn't broadcast per-band spectral data yet. See ArcoMusicVisualizerBridge.kt's TODO(monolith) for the real wiring point.",
+            "The bands are made up from the tempo and beat phase, not a real FFT. MikuOS doesn't broadcast per-band spectrum data yet.",
             color = MikuTextSecondary, fontSize = 7.5.sp
         )
     }
@@ -509,7 +509,7 @@ private fun ArcoThemeBrowserPane() {
     }
 
     if (filtered.isEmpty()) {
-        Text("No themes loaded yet — connect to the fleet controller first.", color = MikuTextSecondary, fontSize = 10.sp, modifier = Modifier.padding(8.dp))
+        Text("No themes loaded yet. Connect to the fleet controller first.", color = MikuTextSecondary, fontSize = 10.sp, modifier = Modifier.padding(8.dp))
     } else {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 150.dp),
@@ -565,12 +565,12 @@ private fun ArcoZonesPane() {
 
     Column(arcoCardModifier(MikuGold)) {
         ArcoCardTitle(
-            if (zonesAreLive) "ZONES (${zones.size}, LIVE)" else "ZONES (${zones.size}, FALLBACK ENUM)",
+            if (zonesAreLive) "ZONES (${zones.size}, LIVE)" else "ZONES (${zones.size}, DEFAULT LIST)",
             MikuGold
         )
         Text(
             if (zonesAreLive)
-                "Fetched live from the server at connect time — this list grows automatically as zones/LEDs are added to the rig."
+                "Read from the server when it connects. New zones and LEDs on the rig show up here on their own."
             else
                 "This server build exposes no zones endpoint, so these are the documented notify-zone NAMES, not the rig's real LED map. LED counts are unknown.",
             color = MikuTextSecondary, fontSize = 8.5.sp
@@ -635,9 +635,9 @@ private fun ArcoAdvancedPane() {
     val isDirectKeyConfigured = ArcoClient.isDirectKeyConfigured
 
     Column(arcoCardModifier(MikuGold)) {
-        ArcoCardTitle("DIRECT KEY (HMAC) — ADVANCED", MikuGold)
+        ArcoCardTitle("DIRECT KEY (HMAC), ADVANCED", MikuGold)
         Text(
-            "Bypasses interactive SAS pairing for REST calls using a pre-shared HMAC-SHA512 key (X-Api-Key-Id / X-Signature). Does not open the live WebSocket — that requires a paired Bearer token. Never stored as source code; saved only to EncryptedSharedPreferences (or read from the optional gitignored arco.properties at build time).",
+            "Skips SAS pairing for REST calls by using a pre-shared HMAC-SHA512 key (X-Api-Key-Id / X-Signature). It doesn't open the live WebSocket, which needs a paired Bearer token. The key is saved only in EncryptedSharedPreferences, or read from an optional gitignored arco.properties at build time.",
             color = MikuTextSecondary, fontSize = 8.5.sp
         )
         Spacer(Modifier.height(8.dp))
@@ -671,7 +671,7 @@ private fun ArcoAdvancedPane() {
             ArcoSmallButton("Refresh", MikuCyan) { scope.launch { ArcoClient.listDevices() } }
         }
         if (devices.isEmpty()) {
-            Text("No devices loaded — tap Refresh while connected.", color = MikuTextSecondary, fontSize = 9.5.sp)
+            Text("No devices loaded. Tap Refresh while connected.", color = MikuTextSecondary, fontSize = 9.5.sp)
         }
         devices.forEach { d ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

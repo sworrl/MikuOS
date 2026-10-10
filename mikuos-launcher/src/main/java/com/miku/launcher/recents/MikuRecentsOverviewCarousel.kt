@@ -85,7 +85,7 @@ fun MikuRecentsOverviewCarousel(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "NO RECENT TASKS",
+                    text = "NO RECENT APPS",
                     color = MikuCyan,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Black,
@@ -116,7 +116,7 @@ fun MikuRecentsOverviewCarousel(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "ACTIVE APPS",
+                            text = "RECENT APPS",
                             color = MikuCyan,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Black,
@@ -237,7 +237,7 @@ fun MikuRecentsOverviewCarousel(
 
                 // Bottom Hint
                 Text(
-                    text = "▲ Swipe up to dismiss · Tap to switch",
+                    text = "Swipe up to close · tap to switch",
                     color = MikuTextSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,

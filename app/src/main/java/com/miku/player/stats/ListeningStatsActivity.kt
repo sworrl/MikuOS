@@ -104,7 +104,7 @@ fun ListeningStatsSettingsCard(ctx: Context) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text("Listening stats", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text("Every listen logged: top tracks, hours, streaks, discoveries — your year in music", color = Muted, fontSize = 11.5.sp, lineHeight = 15.sp)
+                Text("Every listen logged: top tracks, hours, streaks and discoveries", color = Muted, fontSize = 11.5.sp, lineHeight = 15.sp)
             }
             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = MikuTealBright, modifier = Modifier.size(18.dp).rotate(180f))
         }
@@ -121,7 +121,7 @@ fun ListeningStatsSettingsCard(ctx: Context) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text("Miku Rewind", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text("Your week, month, year and all-time recap as swipeable story cards — shareable", color = Muted, fontSize = 11.5.sp, lineHeight = 15.sp)
+                Text("Your week, month, year and all-time recap as story cards you can share", color = Muted, fontSize = 11.5.sp, lineHeight = 15.sp)
             }
             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = MikuNeonPink, modifier = Modifier.size(18.dp).rotate(180f))
         }
@@ -131,7 +131,7 @@ fun ListeningStatsSettingsCard(ctx: Context) {
         }
         StatsToggleRow(
             "Log coarse location",
-            if (!hasPerm) "Location permission not granted — stays off until it is"
+            if (!hasPerm) "Location permission not granted, so this stays off"
             else "One cached last-known fix per track, refreshed at most every 10 min. Never turns on GPS.",
             locOn, enabled = hasPerm
         ) { locOn = it; StatsPreferences.setLocationEnabled(ctx, it) }
@@ -293,7 +293,7 @@ fun ListeningStatsScreen(onBack: () -> Unit) {
                         Chip("All plays", rankBy == StatsRepository.RankBy.PLAYS, small = true) { rankBy = StatsRepository.RankBy.PLAYS }
                     }
                     Spacer(Modifier.height(10.dp))
-                    if (top.isEmpty()) Text("Nothing here yet — play something.", color = Muted, fontSize = 12.sp)
+                    if (top.isEmpty()) Text("Nothing here yet. Play something.", color = Muted, fontSize = 12.sp)
                     top.forEachIndexed { i, e -> TopRow(i + 1, e, rankBy) }
                 }
             }

@@ -1,0 +1,6 @@
+# Never commit the encrypted firmware or the updater; only derived UI assets live here.
+*.fw
+*.exe
+*.bin
+*.img
+8269

@@ -1,0 +1,3579 @@
+{
+ "generator": {
+  "tool": "tools/voice/build_all.py",
+  "engine": "Kokoro-82M v1.0 (ONNX), Apache-2.0",
+  "post": "Praat PSOLA reshaping + ffmpeg EQ/chorus + BS.1770 loudness"
+ },
+ "format": {
+  "container": "ogg",
+  "codec": "opus",
+  "sample_rate": 48000,
+  "channels": 1,
+  "target_lufs": -16.0,
+  "max_true_peak_dbtp": -1.0
+ },
+ "voices": {
+  "mirai": {
+   "title": "Mirai",
+   "character": "bright, cheerful, quick"
+  },
+  "hoshi": {
+   "title": "Hoshi",
+   "character": "soft, calm, unhurried"
+  },
+  "cyber": {
+   "title": "Cyber",
+   "character": "synthetic, tuned, vocaloid-ish sheen"
+  }
+ },
+ "events": {
+  "iem_connected_35mm": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "IEMs connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/iem_connected_35mm.ogg",
+       "duration": 1.27,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.06,
+       "bytes": 6107,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/iem_connected_35mm.ogg",
+       "duration": 1.35,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.41,
+       "bytes": 5632,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/iem_connected_35mm.ogg",
+       "duration": 1.48,
+       "lufs": -16.4,
+       "true_peak_dbtp": -2.23,
+       "bytes": 6191,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "IEMs plugged in.",
+     "files": {
+      "mirai": {
+       "path": "mirai/iem_connected_35mm_alt1.ogg",
+       "duration": 1.32,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.65,
+       "bytes": 5600,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/iem_connected_35mm_alt1.ogg",
+       "duration": 1.35,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.54,
+       "bytes": 5668,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/iem_connected_35mm_alt1.ogg",
+       "duration": 1.46,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.93,
+       "bytes": 6157,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "iem_connected_44mm": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Balanced IEMs connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/iem_connected_44mm.ogg",
+       "duration": 1.66,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.41,
+       "bytes": 7823,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/iem_connected_44mm.ogg",
+       "duration": 1.76,
+       "lufs": -16.0,
+       "true_peak_dbtp": -2.03,
+       "bytes": 9554,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/iem_connected_44mm.ogg",
+       "duration": 1.97,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.69,
+       "bytes": 8196,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Balanced output connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/iem_connected_44mm_alt1.ogg",
+       "duration": 1.57,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.39,
+       "bytes": 7346,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/iem_connected_44mm_alt1.ogg",
+       "duration": 1.66,
+       "lufs": -16.0,
+       "true_peak_dbtp": -2.0,
+       "bytes": 8359,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/iem_connected_44mm_alt1.ogg",
+       "duration": 1.69,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.6,
+       "bytes": 8089,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "iem_removed_35mm": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "IEMs unplugged.",
+     "files": {
+      "mirai": {
+       "path": "mirai/iem_removed_35mm.ogg",
+       "duration": 1.33,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.11,
+       "bytes": 5549,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/iem_removed_35mm.ogg",
+       "duration": 1.4,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.89,
+       "bytes": 5801,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/iem_removed_35mm.ogg",
+       "duration": 1.5,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.75,
+       "bytes": 6249,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Your IEMs are unplugged.",
+     "files": {
+      "mirai": {
+       "path": "mirai/iem_removed_35mm_alt1.ogg",
+       "duration": 1.54,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.97,
+       "bytes": 6499,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/iem_removed_35mm_alt1.ogg",
+       "duration": 1.66,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.19,
+       "bytes": 6920,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/iem_removed_35mm_alt1.ogg",
+       "duration": 1.85,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.2,
+       "bytes": 7682,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "iem_removed_44mm": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Balanced IEMs unplugged.",
+     "files": {
+      "mirai": {
+       "path": "mirai/iem_removed_44mm.ogg",
+       "duration": 1.67,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.32,
+       "bytes": 8064,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/iem_removed_44mm.ogg",
+       "duration": 1.82,
+       "lufs": -16.0,
+       "true_peak_dbtp": -2.32,
+       "bytes": 9079,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/iem_removed_44mm.ogg",
+       "duration": 1.97,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.8,
+       "bytes": 9751,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Balanced output removed.",
+     "files": {
+      "mirai": {
+       "path": "mirai/iem_removed_44mm_alt1.ogg",
+       "duration": 1.56,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.42,
+       "bytes": 7622,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/iem_removed_44mm_alt1.ogg",
+       "duration": 1.65,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.32,
+       "bytes": 8047,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/iem_removed_44mm_alt1.ogg",
+       "duration": 1.67,
+       "lufs": -15.9,
+       "true_peak_dbtp": -1.28,
+       "bytes": 6918,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "bt_headphones_connected": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Bluetooth headphones connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/bt_headphones_connected.ogg",
+       "duration": 1.63,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.71,
+       "bytes": 6739,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/bt_headphones_connected.ogg",
+       "duration": 1.73,
+       "lufs": -16.6,
+       "true_peak_dbtp": -1.15,
+       "bytes": 7235,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/bt_headphones_connected.ogg",
+       "duration": 1.73,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.31,
+       "bytes": 7154,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Bluetooth connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/bt_headphones_connected_alt1.ogg",
+       "duration": 1.15,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.9,
+       "bytes": 4788,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/bt_headphones_connected_alt1.ogg",
+       "duration": 1.26,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.71,
+       "bytes": 5343,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/bt_headphones_connected_alt1.ogg",
+       "duration": 1.24,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.96,
+       "bytes": 5186,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "bt_headphones_disconnected": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Bluetooth headphones disconnected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/bt_headphones_disconnected.ogg",
+       "duration": 1.85,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.64,
+       "bytes": 7708,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/bt_headphones_disconnected.ogg",
+       "duration": 1.95,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.3,
+       "bytes": 8135,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/bt_headphones_disconnected.ogg",
+       "duration": 1.94,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.45,
+       "bytes": 8024,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Bluetooth disconnected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/bt_headphones_disconnected_alt1.ogg",
+       "duration": 1.32,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.63,
+       "bytes": 5518,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/bt_headphones_disconnected_alt1.ogg",
+       "duration": 1.45,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.69,
+       "bytes": 6069,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/bt_headphones_disconnected_alt1.ogg",
+       "duration": 1.43,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.07,
+       "bytes": 5923,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "usb_headphones_connected": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "USB headphones connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/usb_headphones_connected.ogg",
+       "duration": 1.68,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.46,
+       "bytes": 7046,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/usb_headphones_connected.ogg",
+       "duration": 1.84,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.64,
+       "bytes": 7730,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/usb_headphones_connected.ogg",
+       "duration": 1.84,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.83,
+       "bytes": 7625,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "USB audio connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/usb_headphones_connected_alt1.ogg",
+       "duration": 1.6,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.89,
+       "bytes": 6776,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/usb_headphones_connected_alt1.ogg",
+       "duration": 1.78,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.01,
+       "bytes": 7535,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/usb_headphones_connected_alt1.ogg",
+       "duration": 1.74,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.07,
+       "bytes": 7271,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "usb_headphones_disconnected": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "USB headphones disconnected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/usb_headphones_disconnected.ogg",
+       "duration": 1.92,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.36,
+       "bytes": 8063,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/usb_headphones_disconnected.ogg",
+       "duration": 2.05,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.46,
+       "bytes": 8608,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/usb_headphones_disconnected.ogg",
+       "duration": 2.07,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.73,
+       "bytes": 8604,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "USB audio disconnected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/usb_headphones_disconnected_alt1.ogg",
+       "duration": 1.8,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.43,
+       "bytes": 7526,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/usb_headphones_disconnected_alt1.ogg",
+       "duration": 1.95,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.7,
+       "bytes": 8199,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/usb_headphones_disconnected_alt1.ogg",
+       "duration": 1.89,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.22,
+       "bytes": 7909,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "usb_dac_mode_on": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "USB DAC mode on.",
+     "files": {
+      "mirai": {
+       "path": "mirai/usb_dac_mode_on.ogg",
+       "duration": 1.45,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.86,
+       "bytes": 6230,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/usb_dac_mode_on.ogg",
+       "duration": 1.5,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.74,
+       "bytes": 6304,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/usb_dac_mode_on.ogg",
+       "duration": 1.5,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.85,
+       "bytes": 6337,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "USB DAC mode is on.",
+     "files": {
+      "mirai": {
+       "path": "mirai/usb_dac_mode_on_alt1.ogg",
+       "duration": 1.52,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.31,
+       "bytes": 6458,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/usb_dac_mode_on_alt1.ogg",
+       "duration": 1.75,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.23,
+       "bytes": 7305,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/usb_dac_mode_on_alt1.ogg",
+       "duration": 1.73,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.79,
+       "bytes": 7247,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "usb_dac_mode_off": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "USB DAC mode off.",
+     "files": {
+      "mirai": {
+       "path": "mirai/usb_dac_mode_off.ogg",
+       "duration": 1.46,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.3,
+       "bytes": 6169,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/usb_dac_mode_off.ogg",
+       "duration": 1.55,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.86,
+       "bytes": 6504,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/usb_dac_mode_off.ogg",
+       "duration": 1.55,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.69,
+       "bytes": 6456,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "USB DAC mode is off.",
+     "files": {
+      "mirai": {
+       "path": "mirai/usb_dac_mode_off_alt1.ogg",
+       "duration": 1.59,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.11,
+       "bytes": 6679,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/usb_dac_mode_off_alt1.ogg",
+       "duration": 1.76,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.82,
+       "bytes": 7392,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/usb_dac_mode_off_alt1.ogg",
+       "duration": 1.69,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.74,
+       "bytes": 7079,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "profile_applied": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Listening profile applied.",
+     "files": {
+      "mirai": {
+       "path": "mirai/profile_applied.ogg",
+       "duration": 1.56,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.2,
+       "bytes": 6519,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/profile_applied.ogg",
+       "duration": 1.74,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.69,
+       "bytes": 7247,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/profile_applied.ogg",
+       "duration": 1.74,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.35,
+       "bytes": 7222,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Profile applied.",
+     "files": {
+      "mirai": {
+       "path": "mirai/profile_applied_alt1.ogg",
+       "duration": 1.08,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.73,
+       "bytes": 4560,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/profile_applied_alt1.ogg",
+       "duration": 1.23,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.99,
+       "bytes": 5148,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/profile_applied_alt1.ogg",
+       "duration": 1.26,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.51,
+       "bytes": 5236,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "volume_limit_reached": {
+   "category": "audio_output",
+   "priority": "warn",
+   "phrases": [
+    {
+     "text": "Volume limit reached.",
+     "files": {
+      "mirai": {
+       "path": "mirai/volume_limit_reached.ogg",
+       "duration": 1.28,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.72,
+       "bytes": 5374,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/volume_limit_reached.ogg",
+       "duration": 1.33,
+       "lufs": -15.7,
+       "true_peak_dbtp": -2.34,
+       "bytes": 5605,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/volume_limit_reached.ogg",
+       "duration": 1.46,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.91,
+       "bytes": 6111,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "That's the volume limit.",
+     "files": {
+      "mirai": {
+       "path": "mirai/volume_limit_reached_alt1.ogg",
+       "duration": 1.33,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.38,
+       "bytes": 5569,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/volume_limit_reached_alt1.ogg",
+       "duration": 1.45,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.81,
+       "bytes": 6066,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/volume_limit_reached_alt1.ogg",
+       "duration": 1.44,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.24,
+       "bytes": 6048,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "high_gain_enabled": {
+   "category": "audio_output",
+   "priority": "warn",
+   "phrases": [
+    {
+     "text": "Gain set to high. Check your volume.",
+     "files": {
+      "mirai": {
+       "path": "mirai/high_gain_enabled.ogg",
+       "duration": 2.12,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.21,
+       "bytes": 8877,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/high_gain_enabled.ogg",
+       "duration": 2.27,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.12,
+       "bytes": 9544,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/high_gain_enabled.ogg",
+       "duration": 2.25,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.87,
+       "bytes": 9296,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "High gain is on. Careful with the volume.",
+     "files": {
+      "mirai": {
+       "path": "mirai/high_gain_enabled_alt1.ogg",
+       "duration": 2.51,
+       "lufs": -16.0,
+       "true_peak_dbtp": -1.93,
+       "bytes": 10520,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/high_gain_enabled_alt1.ogg",
+       "duration": 2.63,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.03,
+       "bytes": 11015,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/high_gain_enabled_alt1.ogg",
+       "duration": 2.63,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.95,
+       "bytes": 10872,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "high_gain_disabled": {
+   "category": "audio_output",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Gain set to low.",
+     "files": {
+      "mirai": {
+       "path": "mirai/high_gain_disabled.ogg",
+       "duration": 1.13,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.47,
+       "bytes": 4776,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/high_gain_disabled.ogg",
+       "duration": 1.19,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.56,
+       "bytes": 4916,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/high_gain_disabled.ogg",
+       "duration": 1.28,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.93,
+       "bytes": 5327,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "High gain is off.",
+     "files": {
+      "mirai": {
+       "path": "mirai/high_gain_disabled_alt1.ogg",
+       "duration": 1.11,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.25,
+       "bytes": 4661,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/high_gain_disabled_alt1.ogg",
+       "duration": 1.23,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.36,
+       "bytes": 5106,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/high_gain_disabled_alt1.ogg",
+       "duration": 1.2,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.72,
+       "bytes": 4999,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "charging_started": {
+   "category": "power",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Charging now.",
+     "files": {
+      "mirai": {
+       "path": "mirai/charging_started.ogg",
+       "duration": 0.91,
+       "lufs": -16.4,
+       "true_peak_dbtp": -2.5,
+       "bytes": 3752,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/charging_started.ogg",
+       "duration": 1.12,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.11,
+       "bytes": 4664,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/charging_started.ogg",
+       "duration": 1.07,
+       "lufs": -16.4,
+       "true_peak_dbtp": -1.96,
+       "bytes": 4436,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Charging started.",
+     "files": {
+      "mirai": {
+       "path": "mirai/charging_started_alt1.ogg",
+       "duration": 1.17,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.11,
+       "bytes": 4915,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/charging_started_alt1.ogg",
+       "duration": 1.25,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.52,
+       "bytes": 5213,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/charging_started_alt1.ogg",
+       "duration": 1.31,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.1,
+       "bytes": 5492,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "charging_full": {
+   "category": "power",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Fully charged!",
+     "files": {
+      "mirai": {
+       "path": "mirai/charging_full.ogg",
+       "duration": 1.05,
+       "lufs": -16.5,
+       "true_peak_dbtp": -1.4,
+       "bytes": 4372,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/charging_full.ogg",
+       "duration": 1.09,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.86,
+       "bytes": 4596,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/charging_full.ogg",
+       "duration": 1.04,
+       "lufs": -16.4,
+       "true_peak_dbtp": -1.14,
+       "bytes": 4316,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Battery's full.",
+     "files": {
+      "mirai": {
+       "path": "mirai/charging_full_alt1.ogg",
+       "duration": 0.96,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.57,
+       "bytes": 4739,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/charging_full_alt1.ogg",
+       "duration": 1.11,
+       "lufs": -16.0,
+       "true_peak_dbtp": -3.05,
+       "bytes": 5166,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/charging_full_alt1.ogg",
+       "duration": 1.07,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.72,
+       "bytes": 5213,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "battery_low_20": {
+   "category": "power",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Battery at twenty percent.",
+     "files": {
+      "mirai": {
+       "path": "mirai/battery_low_20.ogg",
+       "duration": 1.49,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.06,
+       "bytes": 7278,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/battery_low_20.ogg",
+       "duration": 1.51,
+       "lufs": -16.0,
+       "true_peak_dbtp": -2.26,
+       "bytes": 7597,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/battery_low_20.ogg",
+       "duration": 1.57,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.57,
+       "bytes": 6529,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Twenty percent battery left.",
+     "files": {
+      "mirai": {
+       "path": "mirai/battery_low_20_alt1.ogg",
+       "duration": 1.6,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.81,
+       "bytes": 6687,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/battery_low_20_alt1.ogg",
+       "duration": 1.68,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.11,
+       "bytes": 6995,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/battery_low_20_alt1.ogg",
+       "duration": 1.71,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.96,
+       "bytes": 7107,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "battery_low_10": {
+   "category": "power",
+   "priority": "warn",
+   "phrases": [
+    {
+     "text": "Battery low. Ten percent left.",
+     "files": {
+      "mirai": {
+       "path": "mirai/battery_low_10.ogg",
+       "duration": 2.04,
+       "lufs": -16.5,
+       "true_peak_dbtp": -1.14,
+       "bytes": 9202,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/battery_low_10.ogg",
+       "duration": 1.91,
+       "lufs": -16.0,
+       "true_peak_dbtp": -2.43,
+       "bytes": 9105,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/battery_low_10.ogg",
+       "duration": 2.1,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.47,
+       "bytes": 8717,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Ten percent battery left.",
+     "files": {
+      "mirai": {
+       "path": "mirai/battery_low_10_alt1.ogg",
+       "duration": 1.5,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.91,
+       "bytes": 6267,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/battery_low_10_alt1.ogg",
+       "duration": 1.57,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.24,
+       "bytes": 6557,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/battery_low_10_alt1.ogg",
+       "duration": 1.52,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.64,
+       "bytes": 6348,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "battery_low_5": {
+   "category": "power",
+   "priority": "critical",
+   "phrases": [
+    {
+     "text": "Five percent battery. Please charge soon.",
+     "files": {
+      "mirai": {
+       "path": "mirai/battery_low_5.ogg",
+       "duration": 2.6,
+       "lufs": -16.4,
+       "true_peak_dbtp": -2.2,
+       "bytes": 10856,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/battery_low_5.ogg",
+       "duration": 2.64,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.84,
+       "bytes": 11042,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/battery_low_5.ogg",
+       "duration": 2.63,
+       "lufs": -16.4,
+       "true_peak_dbtp": -1.4,
+       "bytes": 10854,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Five percent left. Time to charge.",
+     "files": {
+      "mirai": {
+       "path": "mirai/battery_low_5_alt1.ogg",
+       "duration": 2.32,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.26,
+       "bytes": 9716,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/battery_low_5_alt1.ogg",
+       "duration": 2.27,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.63,
+       "bytes": 9561,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/battery_low_5_alt1.ogg",
+       "duration": 2.34,
+       "lufs": -16.0,
+       "true_peak_dbtp": -2.03,
+       "bytes": 9690,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "fm_radio_on": {
+   "category": "radio",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "FM radio on.",
+     "files": {
+      "mirai": {
+       "path": "mirai/fm_radio_on.ogg",
+       "duration": 1.16,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.93,
+       "bytes": 5679,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/fm_radio_on.ogg",
+       "duration": 1.33,
+       "lufs": -16.0,
+       "true_peak_dbtp": -3.22,
+       "bytes": 6532,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/fm_radio_on.ogg",
+       "duration": 1.36,
+       "lufs": -16.0,
+       "true_peak_dbtp": -1.86,
+       "bytes": 6882,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Radio's on.",
+     "files": {
+      "mirai": {
+       "path": "mirai/fm_radio_on_alt1.ogg",
+       "duration": 0.99,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.6,
+       "bytes": 4876,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/fm_radio_on_alt1.ogg",
+       "duration": 1.09,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.67,
+       "bytes": 4612,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/fm_radio_on_alt1.ogg",
+       "duration": 1.05,
+       "lufs": -16.4,
+       "true_peak_dbtp": -2.27,
+       "bytes": 4423,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "fm_station_found": {
+   "category": "radio",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Station found.",
+     "files": {
+      "mirai": {
+       "path": "mirai/fm_station_found.ogg",
+       "duration": 1.08,
+       "lufs": -16.6,
+       "true_peak_dbtp": -2.57,
+       "bytes": 4453,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/fm_station_found.ogg",
+       "duration": 1.16,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.87,
+       "bytes": 4784,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/fm_station_found.ogg",
+       "duration": 1.14,
+       "lufs": -16.5,
+       "true_peak_dbtp": -2.3,
+       "bytes": 4746,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Found a station.",
+     "files": {
+      "mirai": {
+       "path": "mirai/fm_station_found_alt1.ogg",
+       "duration": 1.01,
+       "lufs": -16.5,
+       "true_peak_dbtp": -1.71,
+       "bytes": 4282,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/fm_station_found_alt1.ogg",
+       "duration": 1.11,
+       "lufs": -16.5,
+       "true_peak_dbtp": -1.17,
+       "bytes": 4662,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/fm_station_found_alt1.ogg",
+       "duration": 1.08,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.54,
+       "bytes": 4520,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "song_identified": {
+   "category": "radio",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Song identified.",
+     "files": {
+      "mirai": {
+       "path": "mirai/song_identified.ogg",
+       "duration": 1.15,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.47,
+       "bytes": 4848,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/song_identified.ogg",
+       "duration": 1.24,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.41,
+       "bytes": 5190,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/song_identified.ogg",
+       "duration": 1.28,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.54,
+       "bytes": 5320,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Got the song name.",
+     "files": {
+      "mirai": {
+       "path": "mirai/song_identified_alt1.ogg",
+       "duration": 1.07,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.75,
+       "bytes": 4468,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/song_identified_alt1.ogg",
+       "duration": 1.16,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.03,
+       "bytes": 4821,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/song_identified_alt1.ogg",
+       "duration": 1.15,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.36,
+       "bytes": 4801,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "recording_started": {
+   "category": "recording",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Recording started.",
+     "files": {
+      "mirai": {
+       "path": "mirai/recording_started.ogg",
+       "duration": 1.15,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.56,
+       "bytes": 4845,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/recording_started.ogg",
+       "duration": 1.25,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.94,
+       "bytes": 5281,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/recording_started.ogg",
+       "duration": 1.25,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.72,
+       "bytes": 5266,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Now recording.",
+     "files": {
+      "mirai": {
+       "path": "mirai/recording_started_alt1.ogg",
+       "duration": 1.02,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.87,
+       "bytes": 5098,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/recording_started_alt1.ogg",
+       "duration": 1.12,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.55,
+       "bytes": 4754,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/recording_started_alt1.ogg",
+       "duration": 1.12,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.51,
+       "bytes": 5577,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "recording_stopped": {
+   "category": "recording",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Recording saved.",
+     "files": {
+      "mirai": {
+       "path": "mirai/recording_stopped.ogg",
+       "duration": 1.14,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.78,
+       "bytes": 4767,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/recording_stopped.ogg",
+       "duration": 1.23,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.4,
+       "bytes": 5130,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/recording_stopped.ogg",
+       "duration": 1.17,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.89,
+       "bytes": 4843,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Recording stopped and saved.",
+     "files": {
+      "mirai": {
+       "path": "mirai/recording_stopped_alt1.ogg",
+       "duration": 1.6,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.51,
+       "bytes": 6699,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/recording_stopped_alt1.ogg",
+       "duration": 1.7,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.38,
+       "bytes": 7116,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/recording_stopped_alt1.ogg",
+       "duration": 1.7,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.12,
+       "bytes": 7058,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "screen_locked_fn": {
+   "category": "system",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Screen locked.",
+     "files": {
+      "mirai": {
+       "path": "mirai/screen_locked_fn.ogg",
+       "duration": 0.94,
+       "lufs": -16.2,
+       "true_peak_dbtp": -3.79,
+       "bytes": 3875,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/screen_locked_fn.ogg",
+       "duration": 1.09,
+       "lufs": -16.1,
+       "true_peak_dbtp": -4.2,
+       "bytes": 4442,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/screen_locked_fn.ogg",
+       "duration": 1.07,
+       "lufs": -15.7,
+       "true_peak_dbtp": -3.92,
+       "bytes": 4378,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Controls locked.",
+     "files": {
+      "mirai": {
+       "path": "mirai/screen_locked_fn_alt1.ogg",
+       "duration": 1.14,
+       "lufs": -16.2,
+       "true_peak_dbtp": -3.21,
+       "bytes": 4707,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/screen_locked_fn_alt1.ogg",
+       "duration": 1.21,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.93,
+       "bytes": 4966,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/screen_locked_fn_alt1.ogg",
+       "duration": 1.23,
+       "lufs": -16.2,
+       "true_peak_dbtp": -3.74,
+       "bytes": 5044,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "screen_unlocked_fn": {
+   "category": "system",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Screen unlocked.",
+     "files": {
+      "mirai": {
+       "path": "mirai/screen_unlocked_fn.ogg",
+       "duration": 1.1,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.13,
+       "bytes": 4506,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/screen_unlocked_fn.ogg",
+       "duration": 1.2,
+       "lufs": -16.1,
+       "true_peak_dbtp": -5.72,
+       "bytes": 4945,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/screen_unlocked_fn.ogg",
+       "duration": 1.21,
+       "lufs": -16.3,
+       "true_peak_dbtp": -3.71,
+       "bytes": 4994,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Controls unlocked.",
+     "files": {
+      "mirai": {
+       "path": "mirai/screen_unlocked_fn_alt1.ogg",
+       "duration": 1.26,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.43,
+       "bytes": 5205,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/screen_unlocked_fn_alt1.ogg",
+       "duration": 1.32,
+       "lufs": -16.1,
+       "true_peak_dbtp": -4.33,
+       "bytes": 5414,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/screen_unlocked_fn_alt1.ogg",
+       "duration": 1.38,
+       "lufs": -15.9,
+       "true_peak_dbtp": -3.28,
+       "bytes": 5695,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "wifi_connected": {
+   "category": "network",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Wi-Fi connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/wifi_connected.ogg",
+       "duration": 1.19,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.11,
+       "bytes": 5042,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/wifi_connected.ogg",
+       "duration": 1.27,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.66,
+       "bytes": 5351,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/wifi_connected.ogg",
+       "duration": 1.24,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.91,
+       "bytes": 5103,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Wi-Fi is connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/wifi_connected_alt1.ogg",
+       "duration": 1.34,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.44,
+       "bytes": 5624,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/wifi_connected_alt1.ogg",
+       "duration": 1.43,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.25,
+       "bytes": 6011,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/wifi_connected_alt1.ogg",
+       "duration": 1.47,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.38,
+       "bytes": 6055,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "wifi_disconnected": {
+   "category": "network",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Wi-Fi disconnected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/wifi_disconnected.ogg",
+       "duration": 1.36,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.35,
+       "bytes": 5731,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/wifi_disconnected.ogg",
+       "duration": 1.44,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.33,
+       "bytes": 6044,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/wifi_disconnected.ogg",
+       "duration": 1.47,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.65,
+       "bytes": 6081,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Lost the Wi-Fi connection.",
+     "files": {
+      "mirai": {
+       "path": "mirai/wifi_disconnected_alt1.ogg",
+       "duration": 1.55,
+       "lufs": -16.4,
+       "true_peak_dbtp": -2.25,
+       "bytes": 6559,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/wifi_disconnected_alt1.ogg",
+       "duration": 1.69,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.46,
+       "bytes": 7114,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/wifi_disconnected_alt1.ogg",
+       "duration": 1.71,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.64,
+       "bytes": 7119,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "update_installed": {
+   "category": "system",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Update installed.",
+     "files": {
+      "mirai": {
+       "path": "mirai/update_installed.ogg",
+       "duration": 1.1,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.39,
+       "bytes": 4634,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/update_installed.ogg",
+       "duration": 1.2,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.54,
+       "bytes": 4991,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/update_installed.ogg",
+       "duration": 1.2,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.25,
+       "bytes": 4945,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "All updated.",
+     "files": {
+      "mirai": {
+       "path": "mirai/update_installed_alt1.ogg",
+       "duration": 0.96,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.67,
+       "bytes": 4714,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/update_installed_alt1.ogg",
+       "duration": 1.04,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.91,
+       "bytes": 4327,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/update_installed_alt1.ogg",
+       "duration": 1.04,
+       "lufs": -16.0,
+       "true_peak_dbtp": -1.87,
+       "bytes": 5175,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "boot_complete": {
+   "category": "system",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "MikuOS is ready.",
+     "files": {
+      "mirai": {
+       "path": "mirai/boot_complete.ogg",
+       "duration": 1.45,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.03,
+       "bytes": 6100,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/boot_complete.ogg",
+       "duration": 1.49,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.48,
+       "bytes": 6229,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/boot_complete.ogg",
+       "duration": 1.51,
+       "lufs": -16.3,
+       "true_peak_dbtp": -1.72,
+       "bytes": 6323,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Ready to go.",
+     "files": {
+      "mirai": {
+       "path": "mirai/boot_complete_alt1.ogg",
+       "duration": 0.91,
+       "lufs": -16.4,
+       "true_peak_dbtp": -1.67,
+       "bytes": 3836,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/boot_complete_alt1.ogg",
+       "duration": 1.03,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.38,
+       "bytes": 4298,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/boot_complete_alt1.ogg",
+       "duration": 1.02,
+       "lufs": -16.5,
+       "true_peak_dbtp": -2.25,
+       "bytes": 4337,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "alarm": {
+   "category": "clock",
+   "priority": "warn",
+   "phrases": [
+    {
+     "text": "Alarm. It's time.",
+     "files": {
+      "mirai": {
+       "path": "mirai/alarm.ogg",
+       "duration": 1.23,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.9,
+       "bytes": 6121,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/alarm.ogg",
+       "duration": 1.26,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.08,
+       "bytes": 6255,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/alarm.ogg",
+       "duration": 1.26,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.62,
+       "bytes": 6372,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Hey, it's time. This is your alarm.",
+     "files": {
+      "mirai": {
+       "path": "mirai/alarm_alt1.ogg",
+       "duration": 2.07,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.19,
+       "bytes": 8617,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/alarm_alt1.ogg",
+       "duration": 1.95,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.04,
+       "bytes": 8155,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/alarm_alt1.ogg",
+       "duration": 2.11,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.03,
+       "bytes": 8697,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "timer_done": {
+   "category": "clock",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Timer's done.",
+     "files": {
+      "mirai": {
+       "path": "mirai/timer_done.ogg",
+       "duration": 0.92,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.5,
+       "bytes": 3848,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/timer_done.ogg",
+       "duration": 1.02,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.47,
+       "bytes": 4277,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/timer_done.ogg",
+       "duration": 0.98,
+       "lufs": -16.3,
+       "true_peak_dbtp": -2.18,
+       "bytes": 4079,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Your timer is done.",
+     "files": {
+      "mirai": {
+       "path": "mirai/timer_done_alt1.ogg",
+       "duration": 1.22,
+       "lufs": -16.3,
+       "true_peak_dbtp": -3.16,
+       "bytes": 5204,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/timer_done_alt1.ogg",
+       "duration": 1.3,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.55,
+       "bytes": 5481,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/timer_done_alt1.ogg",
+       "duration": 1.33,
+       "lufs": -16.4,
+       "true_peak_dbtp": -2.69,
+       "bytes": 5564,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "android_auto_connected": {
+   "category": "car",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Android Auto connected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/android_auto_connected.ogg",
+       "duration": 1.48,
+       "lufs": -16.5,
+       "true_peak_dbtp": -2.86,
+       "bytes": 6920,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/android_auto_connected.ogg",
+       "duration": 1.59,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.75,
+       "bytes": 6681,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/android_auto_connected.ogg",
+       "duration": 1.54,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.34,
+       "bytes": 7312,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Android Auto connected. Drive safe.",
+     "files": {
+      "mirai": {
+       "path": "mirai/android_auto_connected_alt1.ogg",
+       "duration": 2.6,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.96,
+       "bytes": 10832,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/android_auto_connected_alt1.ogg",
+       "duration": 2.55,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.48,
+       "bytes": 10598,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/android_auto_connected_alt1.ogg",
+       "duration": 2.59,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.68,
+       "bytes": 11635,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  },
+  "android_auto_disconnected": {
+   "category": "car",
+   "priority": "info",
+   "phrases": [
+    {
+     "text": "Android Auto disconnected.",
+     "files": {
+      "mirai": {
+       "path": "mirai/android_auto_disconnected.ogg",
+       "duration": 1.64,
+       "lufs": -16.1,
+       "true_peak_dbtp": -1.62,
+       "bytes": 8367,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/android_auto_disconnected.ogg",
+       "duration": 1.76,
+       "lufs": -16.1,
+       "true_peak_dbtp": -3.0,
+       "bytes": 7437,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/android_auto_disconnected.ogg",
+       "duration": 1.8,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.18,
+       "bytes": 8746,
+       "asr_wer": 0.0
+      }
+     }
+    },
+    {
+     "text": "Android Auto ended.",
+     "files": {
+      "mirai": {
+       "path": "mirai/android_auto_disconnected_alt1.ogg",
+       "duration": 1.34,
+       "lufs": -16.2,
+       "true_peak_dbtp": -1.71,
+       "bytes": 5597,
+       "asr_wer": 0.0
+      },
+      "hoshi": {
+       "path": "hoshi/android_auto_disconnected_alt1.ogg",
+       "duration": 1.43,
+       "lufs": -16.1,
+       "true_peak_dbtp": -2.64,
+       "bytes": 6028,
+       "asr_wer": 0.0
+      },
+      "cyber": {
+       "path": "cyber/android_auto_disconnected_alt1.ogg",
+       "duration": 1.41,
+       "lufs": -16.2,
+       "true_peak_dbtp": -2.95,
+       "bytes": 5985,
+       "asr_wer": 0.0
+      }
+     }
+    }
+   ]
+  }
+ },
+ "totals": {
+  "files": 204,
+  "bytes": 1306428
+ },
+ "apps": {
+  "camera": {
+   "say_cheese": {
+    "phrases": [
+     {
+      "text": "Say cheese!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/say_cheese.ogg",
+        "duration": 0.88,
+        "lufs": -16.5,
+        "true_peak_dbtp": -1.23,
+        "bytes": 3649,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/say_cheese.ogg",
+        "duration": 0.98,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.27,
+        "bytes": 4090,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/say_cheese.ogg",
+        "duration": 1.04,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.01,
+        "bytes": 4324,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "smile": {
+    "phrases": [
+     {
+      "text": "Smile!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/smile.ogg",
+        "duration": 0.7,
+        "lufs": -16.3,
+        "true_peak_dbtp": -5.48,
+        "bytes": 2881,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/smile.ogg",
+        "duration": 0.81,
+        "lufs": -16.1,
+        "true_peak_dbtp": -4.28,
+        "bytes": 3278,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/smile.ogg",
+        "duration": 0.77,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.93,
+        "bytes": 3113,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "got_it": {
+    "phrases": [
+     {
+      "text": "Got it!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/got_it.ogg",
+        "duration": 0.69,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.11,
+        "bytes": 3411,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/got_it.ogg",
+        "duration": 0.77,
+        "lufs": -16.1,
+        "true_peak_dbtp": -4.08,
+        "bytes": 3171,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/got_it.ogg",
+        "duration": 0.77,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.59,
+        "bytes": 3537,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "photo_saved": {
+    "phrases": [
+     {
+      "text": "Photo saved.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/photo_saved.ogg",
+        "duration": 1.01,
+        "lufs": -16.8,
+        "true_peak_dbtp": -1.64,
+        "bytes": 4175,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/photo_saved.ogg",
+        "duration": 1.05,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.43,
+        "bytes": 4377,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/photo_saved.ogg",
+        "duration": 1.0,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.16,
+        "bytes": 4202,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "video_recording": {
+    "phrases": [
+     {
+      "text": "Recording.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/video_recording.ogg",
+        "duration": 0.81,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.63,
+        "bytes": 3413,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/video_recording.ogg",
+        "duration": 0.96,
+        "lufs": -16.0,
+        "true_peak_dbtp": -3.2,
+        "bytes": 4027,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/video_recording.ogg",
+        "duration": 0.88,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.33,
+        "bytes": 3696,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "video_stopped": {
+    "phrases": [
+     {
+      "text": "Video stopped.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/video_stopped.ogg",
+        "duration": 1.01,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.47,
+        "bytes": 4202,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/video_stopped.ogg",
+        "duration": 1.09,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.03,
+        "bytes": 4468,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/video_stopped.ogg",
+        "duration": 1.1,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.19,
+        "bytes": 4524,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "video_saved": {
+    "phrases": [
+     {
+      "text": "Video saved.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/video_saved.ogg",
+        "duration": 1.03,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.83,
+        "bytes": 4323,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/video_saved.ogg",
+        "duration": 1.1,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.47,
+        "bytes": 4572,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/video_saved.ogg",
+        "duration": 1.08,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.73,
+        "bytes": 4486,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "countdown": {
+    "phrases": [
+     {
+      "text": "Three, two, one!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/countdown.ogg",
+        "duration": 0.98,
+        "lufs": -16.4,
+        "true_peak_dbtp": -3.38,
+        "bytes": 4136,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/countdown.ogg",
+        "duration": 1.09,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.93,
+        "bytes": 4535,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/countdown.ogg",
+        "duration": 1.09,
+        "lufs": -16.5,
+        "true_peak_dbtp": -2.77,
+        "bytes": 4605,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ],
+    "note": "quick spoken countdown, about 1 s, for right before the shot"
+   },
+   "count_3": {
+    "phrases": [
+     {
+      "text": "Three.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/count_3.ogg",
+        "duration": 0.62,
+        "lufs": -16.2,
+        "true_peak_dbtp": -3.96,
+        "bytes": 2565,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/count_3.ogg",
+        "duration": 0.71,
+        "lufs": -16.0,
+        "true_peak_dbtp": -4.44,
+        "bytes": 2928,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/count_3.ogg",
+        "duration": 0.67,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.62,
+        "bytes": 2759,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ],
+    "note": "per-second countdown: play with timer_beep at t-3"
+   },
+   "count_2": {
+    "phrases": [
+     {
+      "text": "Two.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/count_2.ogg",
+        "duration": 0.6,
+        "lufs": -16.3,
+        "true_peak_dbtp": -4.74,
+        "bytes": 2431,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/count_2.ogg",
+        "duration": 0.68,
+        "lufs": -16.1,
+        "true_peak_dbtp": -4.88,
+        "bytes": 2789,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/count_2.ogg",
+        "duration": 0.65,
+        "lufs": -16.2,
+        "true_peak_dbtp": -4.15,
+        "bytes": 2634,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "count_1": {
+    "phrases": [
+     {
+      "text": "One.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/count_1.ogg",
+        "duration": 0.57,
+        "lufs": -16.2,
+        "true_peak_dbtp": -3.46,
+        "bytes": 2343,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/count_1.ogg",
+        "duration": 0.66,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.77,
+        "bytes": 2702,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/count_1.ogg",
+        "duration": 0.61,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.92,
+        "bytes": 2518,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "camera_switched": {
+    "phrases": [
+     {
+      "text": "Camera switched.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/camera_switched.ogg",
+        "duration": 0.98,
+        "lufs": -16.3,
+        "true_peak_dbtp": -1.82,
+        "bytes": 4069,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/camera_switched.ogg",
+        "duration": 1.08,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.78,
+        "bytes": 4513,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/camera_switched.ogg",
+        "duration": 1.08,
+        "lufs": -16.3,
+        "true_peak_dbtp": -1.73,
+        "bytes": 4484,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "flash_on": {
+    "phrases": [
+     {
+      "text": "Flash on.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/flash_on.ogg",
+        "duration": 0.8,
+        "lufs": -16.5,
+        "true_peak_dbtp": -3.16,
+        "bytes": 3329,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/flash_on.ogg",
+        "duration": 0.9,
+        "lufs": -16.5,
+        "true_peak_dbtp": -1.42,
+        "bytes": 3738,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/flash_on.ogg",
+        "duration": 0.83,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.26,
+        "bytes": 3486,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "flash_off": {
+    "phrases": [
+     {
+      "text": "Flash off.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/flash_off.ogg",
+        "duration": 0.82,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.91,
+        "bytes": 3391,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/flash_off.ogg",
+        "duration": 0.87,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.14,
+        "bytes": 3616,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/flash_off.ogg",
+        "duration": 0.82,
+        "lufs": -16.5,
+        "true_peak_dbtp": -1.88,
+        "bytes": 3365,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "flash_auto": {
+    "phrases": [
+     {
+      "text": "Flash on auto.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/flash_auto.ogg",
+        "duration": 1.01,
+        "lufs": -16.4,
+        "true_peak_dbtp": -4.34,
+        "bytes": 4207,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/flash_auto.ogg",
+        "duration": 1.15,
+        "lufs": -16.2,
+        "true_peak_dbtp": -3.78,
+        "bytes": 4839,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/flash_auto.ogg",
+        "duration": 1.1,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.22,
+        "bytes": 4615,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "hold_still": {
+    "phrases": [
+     {
+      "text": "Hold still.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/hold_still.ogg",
+        "duration": 0.84,
+        "lufs": -16.4,
+        "true_peak_dbtp": -3.29,
+        "bytes": 3560,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/hold_still.ogg",
+        "duration": 0.98,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.12,
+        "bytes": 4088,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/hold_still.ogg",
+        "duration": 0.96,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.39,
+        "bytes": 3962,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ],
+    "note": "night or long exposure capture"
+   },
+   "storage_almost_full": {
+    "phrases": [
+     {
+      "text": "Storage is almost full.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/storage_almost_full.ogg",
+        "duration": 1.44,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.29,
+        "bytes": 6080,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/storage_almost_full.ogg",
+        "duration": 1.62,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.46,
+        "bytes": 6717,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/camera/storage_almost_full.ogg",
+        "duration": 1.55,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.59,
+        "bytes": 6462,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "countdown_timed": {
+    "phrases": [
+     {
+      "text": "Three. Two. One.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/camera/countdown_timed.ogg",
+        "duration": 2.57,
+        "lufs": -17.6,
+        "true_peak_dbtp": -2.91,
+        "bytes": 8303
+       },
+       "hoshi": {
+        "path": "hoshi/app/camera/countdown_timed.ogg",
+        "duration": 2.66,
+        "lufs": -17.0,
+        "true_peak_dbtp": -3.29,
+        "bytes": 9130
+       },
+       "cyber": {
+        "path": "cyber/app/camera/countdown_timed.ogg",
+        "duration": 2.61,
+        "lufs": -17.1,
+        "true_peak_dbtp": -1.18,
+        "bytes": 8831
+       }
+      }
+     }
+    ],
+    "note": "one number per second, starting at 0.03 s; fire the shutter at 3.0 s. Built from count_3, count_2, count_1"
+   }
+  },
+  "recorder": {
+   "recording_started": {
+    "phrases": [
+     {
+      "text": "Recording started.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/recorder/recording_started.ogg",
+        "duration": 1.15,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.56,
+        "bytes": 4845,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/recorder/recording_started.ogg",
+        "duration": 1.25,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.94,
+        "bytes": 5281,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/recorder/recording_started.ogg",
+        "duration": 1.25,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.72,
+        "bytes": 5266,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "paused": {
+    "phrases": [
+     {
+      "text": "Recording paused.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/recorder/paused.ogg",
+        "duration": 1.09,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.85,
+        "bytes": 4619,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/recorder/paused.ogg",
+        "duration": 1.2,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.96,
+        "bytes": 5039,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/recorder/paused.ogg",
+        "duration": 1.21,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.28,
+        "bytes": 5030,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "resumed": {
+    "phrases": [
+     {
+      "text": "Recording resumed.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/recorder/resumed.ogg",
+        "duration": 1.2,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.81,
+        "bytes": 5067,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/recorder/resumed.ogg",
+        "duration": 1.3,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.36,
+        "bytes": 5415,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/recorder/resumed.ogg",
+        "duration": 1.27,
+        "lufs": -16.3,
+        "true_peak_dbtp": -1.73,
+        "bytes": 5277,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "saved": {
+    "phrases": [
+     {
+      "text": "Recording saved.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/recorder/saved.ogg",
+        "duration": 1.14,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.78,
+        "bytes": 4767,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/recorder/saved.ogg",
+        "duration": 1.23,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.4,
+        "bytes": 5130,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/recorder/saved.ogg",
+        "duration": 1.17,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.89,
+        "bytes": 4843,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   }
+  },
+  "clock": {
+   "good_morning": {
+    "phrases": [
+     {
+      "text": "Good morning! Time to wake up.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/clock/good_morning.ogg",
+        "duration": 1.69,
+        "lufs": -16.3,
+        "true_peak_dbtp": -1.8,
+        "bytes": 7055,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/clock/good_morning.ogg",
+        "duration": 1.76,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.77,
+        "bytes": 7369,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/clock/good_morning.ogg",
+        "duration": 1.65,
+        "lufs": -16.3,
+        "true_peak_dbtp": -1.62,
+        "bytes": 6876,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "times_up": {
+    "phrases": [
+     {
+      "text": "Time's up!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/clock/times_up.ogg",
+        "duration": 0.8,
+        "lufs": -16.2,
+        "true_peak_dbtp": -3.11,
+        "bytes": 3231,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/clock/times_up.ogg",
+        "duration": 0.89,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.3,
+        "bytes": 3630,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/clock/times_up.ogg",
+        "duration": 0.84,
+        "lufs": -16.2,
+        "true_peak_dbtp": -3.29,
+        "bytes": 3422,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "snooze_5": {
+    "phrases": [
+     {
+      "text": "Snoozing for five minutes.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/clock/snooze_5.ogg",
+        "duration": 1.51,
+        "lufs": -16.3,
+        "true_peak_dbtp": -2.3,
+        "bytes": 6299,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/clock/snooze_5.ogg",
+        "duration": 1.61,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.2,
+        "bytes": 6681,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/clock/snooze_5.ogg",
+        "duration": 1.59,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.04,
+        "bytes": 6593,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "snooze_10": {
+    "phrases": [
+     {
+      "text": "Snoozing for ten minutes.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/clock/snooze_10.ogg",
+        "duration": 1.47,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.6,
+        "bytes": 6123,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/clock/snooze_10.ogg",
+        "duration": 1.55,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.49,
+        "bytes": 6390,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/clock/snooze_10.ogg",
+        "duration": 1.56,
+        "lufs": -16.3,
+        "true_peak_dbtp": -1.91,
+        "bytes": 6452,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "alarm_off": {
+    "phrases": [
+     {
+      "text": "Alarm turned off.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/clock/alarm_off.ogg",
+        "duration": 1.09,
+        "lufs": -16.0,
+        "true_peak_dbtp": -2.28,
+        "bytes": 5317,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/clock/alarm_off.ogg",
+        "duration": 1.18,
+        "lufs": -16.0,
+        "true_peak_dbtp": -3.98,
+        "bytes": 5720,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/clock/alarm_off.ogg",
+        "duration": 1.19,
+        "lufs": -16.3,
+        "true_peak_dbtp": -1.3,
+        "bytes": 4937,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   }
+  },
+  "gallery": {
+   "deleted": {
+    "phrases": [
+     {
+      "text": "File deleted.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/gallery/deleted.ogg",
+        "duration": 1.03,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.89,
+        "bytes": 4346,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/gallery/deleted.ogg",
+        "duration": 1.09,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.47,
+        "bytes": 4627,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/gallery/deleted.ogg",
+        "duration": 1.01,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.88,
+        "bytes": 4267,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "wallpaper_set": {
+    "phrases": [
+     {
+      "text": "Wallpaper updated.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/gallery/wallpaper_set.ogg",
+        "duration": 1.33,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.71,
+        "bytes": 6495,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/gallery/wallpaper_set.ogg",
+        "duration": 1.36,
+        "lufs": -16.0,
+        "true_peak_dbtp": -2.09,
+        "bytes": 5700,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/gallery/wallpaper_set.ogg",
+        "duration": 1.43,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.02,
+        "bytes": 6902,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   }
+  },
+  "fmradio": {
+   "song_found": {
+    "phrases": [
+     {
+      "text": "Song found!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/fmradio/song_found.ogg",
+        "duration": 0.88,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.14,
+        "bytes": 3653,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/fmradio/song_found.ogg",
+        "duration": 0.95,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.43,
+        "bytes": 3910,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/fmradio/song_found.ogg",
+        "duration": 0.96,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.16,
+        "bytes": 3919,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "no_match": {
+    "phrases": [
+     {
+      "text": "No match. Try again during a song.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/fmradio/no_match.ogg",
+        "duration": 2.1,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.73,
+        "bytes": 9885,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/fmradio/no_match.ogg",
+        "duration": 2.2,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.64,
+        "bytes": 9238,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/fmradio/no_match.ogg",
+        "duration": 2.24,
+        "lufs": -16.5,
+        "true_peak_dbtp": -1.54,
+        "bytes": 10388,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "station_saved": {
+    "phrases": [
+     {
+      "text": "Station saved.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/fmradio/station_saved.ogg",
+        "duration": 1.09,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.6,
+        "bytes": 4487,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/fmradio/station_saved.ogg",
+        "duration": 1.21,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.26,
+        "bytes": 4996,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/fmradio/station_saved.ogg",
+        "duration": 1.16,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.18,
+        "bytes": 4821,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   }
+  },
+  "bpm": {
+   "perfect": {
+    "phrases": [
+     {
+      "text": "Perfect!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/perfect.ogg",
+        "duration": 0.76,
+        "lufs": -16.5,
+        "true_peak_dbtp": -1.79,
+        "bytes": 3144,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/perfect.ogg",
+        "duration": 0.84,
+        "lufs": -16.9,
+        "true_peak_dbtp": -1.9,
+        "bytes": 3445,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/perfect.ogg",
+        "duration": 0.81,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.72,
+        "bytes": 3340,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "great": {
+    "phrases": [
+     {
+      "text": "Great!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/great.ogg",
+        "duration": 0.67,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.5,
+        "bytes": 2734,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/great.ogg",
+        "duration": 0.74,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.73,
+        "bytes": 3045,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/great.ogg",
+        "duration": 0.74,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.63,
+        "bytes": 3062,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "good": {
+    "phrases": [
+     {
+      "text": "Good.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/good.ogg",
+        "duration": 0.6,
+        "lufs": -16.2,
+        "true_peak_dbtp": -3.99,
+        "bytes": 2489,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/good.ogg",
+        "duration": 0.63,
+        "lufs": -16.1,
+        "true_peak_dbtp": -5.03,
+        "bytes": 2598,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/good.ogg",
+        "duration": 0.64,
+        "lufs": -16.2,
+        "true_peak_dbtp": -3.45,
+        "bytes": 2657,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "miss": {
+    "phrases": [
+     {
+      "text": "Miss.",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/miss.ogg",
+        "duration": 0.63,
+        "lufs": -16.2,
+        "true_peak_dbtp": -3.41,
+        "bytes": 2907,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/miss.ogg",
+        "duration": 0.67,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.47,
+        "bytes": 2657,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/miss.ogg",
+        "duration": 0.66,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.78,
+        "bytes": 2979,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "full_combo": {
+    "phrases": [
+     {
+      "text": "Full combo!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/full_combo.ogg",
+        "duration": 0.89,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.25,
+        "bytes": 3717,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/full_combo.ogg",
+        "duration": 1.02,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.69,
+        "bytes": 4243,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/full_combo.ogg",
+        "duration": 1.0,
+        "lufs": -16.3,
+        "true_peak_dbtp": -1.88,
+        "bytes": 4178,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "fever_time": {
+    "phrases": [
+     {
+      "text": "Fever time!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/fever_time.ogg",
+        "duration": 0.9,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.19,
+        "bytes": 3731,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/fever_time.ogg",
+        "duration": 0.99,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.34,
+        "bytes": 4124,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/fever_time.ogg",
+        "duration": 0.99,
+        "lufs": -16.4,
+        "true_peak_dbtp": -2.57,
+        "bytes": 4107,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "new_record": {
+    "phrases": [
+     {
+      "text": "New record!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/new_record.ogg",
+        "duration": 0.86,
+        "lufs": -16.2,
+        "true_peak_dbtp": -1.06,
+        "bytes": 4389,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/new_record.ogg",
+        "duration": 0.98,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.57,
+        "bytes": 4076,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/new_record.ogg",
+        "duration": 0.97,
+        "lufs": -16.1,
+        "true_peak_dbtp": -1.93,
+        "bytes": 4926,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "level_up": {
+    "phrases": [
+     {
+      "text": "Level up!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/level_up.ogg",
+        "duration": 0.81,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.74,
+        "bytes": 3741,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/level_up.ogg",
+        "duration": 0.88,
+        "lufs": -16.1,
+        "true_peak_dbtp": -3.68,
+        "bytes": 3607,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/level_up.ogg",
+        "duration": 0.83,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.37,
+        "bytes": 3613,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "secret_unlocked": {
+    "phrases": [
+     {
+      "text": "Secret unlocked!",
+      "files": {
+       "mirai": {
+        "path": "mirai/app/bpm/secret_unlocked.ogg",
+        "duration": 1.17,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.57,
+        "bytes": 4837,
+        "asr_wer": 0.0
+       },
+       "hoshi": {
+        "path": "hoshi/app/bpm/secret_unlocked.ogg",
+        "duration": 1.25,
+        "lufs": -16.1,
+        "true_peak_dbtp": -2.95,
+        "bytes": 5174,
+        "asr_wer": 0.0
+       },
+       "cyber": {
+        "path": "cyber/app/bpm/secret_unlocked.ogg",
+        "duration": 1.27,
+        "lufs": -16.2,
+        "true_peak_dbtp": -2.42,
+        "bytes": 5243,
+        "asr_wer": 0.0
+       }
+      }
+     }
+    ]
+   }
+  }
+ }
+}

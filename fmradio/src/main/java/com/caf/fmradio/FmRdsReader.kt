@@ -126,7 +126,9 @@ object FmRdsReader {
      */
     fun arm(fd: FileDescriptor) {
         try {
-            Os.poll(arrayOf(StructPollfd().apply { this.fd = fd; events = OsConstants.POLLIN.toShort() }), 0)
+            synchronized(FmV4L2.chipLock) {
+                Os.poll(arrayOf(StructPollfd().apply { this.fd = fd; events = OsConstants.POLLIN.toShort() }), 0)
+            }
         } catch (e: ErrnoException) {
             Log.w(TAG, "RDS arm (poll) failed: ${OsConstants.errnoName(e.errno)}")
         }
@@ -140,7 +142,7 @@ object FmRdsReader {
         buf[0] = 0; buf[1] = 0                     // PI 0 is not a valid code, so 0 = untouched
         for (i in 4 until GROUP_BYTES) buf[i] = CD_FILL
         try {
-            Os.read(fd, buf, 0, GROUP_BYTES)
+            synchronized(FmV4L2.chipLock) { Os.read(fd, buf, 0, GROUP_BYTES) }
         } catch (e: ErrnoException) {
             if (e.errno == OsConstants.EAGAIN || e.errno == OsConstants.EINTR) return false
             throw e

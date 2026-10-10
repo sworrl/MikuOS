@@ -230,6 +230,8 @@ object MikuWeatherService {
         restoreLastWeather(ctx)
         startLocationTracking(ctx)
         startLocationRefreshLoop(ctx)
+        // NWS alerts + nearest NOAA Weather Radio (own 10 min cadence, publishes miku_weather_* keys).
+        runCatching { MikuNwsAlerts.start(ctx) }
 
         if (weatherJob == null) {
             weatherJob = scope.launch {
@@ -1469,10 +1471,10 @@ object MikuWeatherService {
 
     private fun checkSevereAlerts(code: Int, windSpeed: Float, precipIn: Float): String? {
         return when {
-            code in listOf(95, 96, 99) -> "⚠️ SEVERE THUNDERSTORM & LIGHTNING DETECTED"
-            windSpeed >= 40f -> "⚠️ HIGH WIND WARNING (>40 MPH GUSTS)"
-            precipIn >= 0.75f -> "⚠️ FLASH FLOOD RISK - EXCESSIVE RAINFALL"
-            code in listOf(85, 86) -> "⚠️ HEAVY WINTER BLIZZARD WARNING"
+            code in listOf(95, 96, 99) -> "THUNDERSTORM WITH LIGHTNING"
+            windSpeed >= 40f -> "WIND OVER 40 MPH"
+            precipIn >= 0.75f -> "HEAVY RAIN, FLOODING POSSIBLE"
+            code in listOf(85, 86) -> "HEAVY SNOW"
             else -> null
         }
     }

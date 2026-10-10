@@ -55,15 +55,25 @@ class LibraryScanService : Service() {
         android.os.Environment.getExternalStorageDirectory()?.absolutePath?.let { roots.add(it) }
         externalCacheDirs.forEach { d -> d?.absolutePath?.substringBefore("/Android")?.let { roots.add(it) } }
         File("/storage").listFiles()?.forEach { if (it.isDirectory && it.name != "self" && it.name != "emulated") roots.add(it.absolutePath) }
-        File("/mnt/media_rw").listFiles()?.forEach { if (it.isDirectory) roots.add(it.absolutePath) }
+        // No /mnt/media_rw roots. That is the same card again under its raw mount, and MediaStore
+        // keys rows by the /storage path, so every file there misses the `known` check below and
+        // goes to MediaScanner (or the jaudiotagger fallback insert) a second time under a path
+        // nothing else uses.
         ScanProgress.reset()
 
         Thread {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND + android.os.Process.THREAD_PRIORITY_LESS_FAVORABLE)
             val before = LibraryCounts.countTracks(app)
 
-            // 1. Load known tracks from MediaStore and crash checkpoint
-            val known = HashSet<String>()
+            // 1. Load known tracks from MediaStore and crash checkpoint.
+            // Compared lowercased. The card is exFAT and its music folder is MUSIC on disk, while
+            // every MediaStore row on the device spells it /Music/. With all-files access the walk
+            // below reads the card and sees MUSIC, so a case-sensitive check calls all ~18k card
+            // files "new" on every scan and sends each one back through MediaScanner.
+            val known = object : HashSet<String>() {
+                override fun add(element: String) = super.add(element.lowercase())
+                override fun contains(element: String) = super.contains(element.lowercase())
+            }
             try {
                 app.contentResolver.safeQuery(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -106,8 +116,8 @@ class LibraryScanService : Service() {
                     ScanProgress.phase = "Finalizing library…"
                     val after = runCatching { LibraryCounts.countTracks(app) }.getOrDefault(before)
                     val delta = after - before
-                    val msg = if (delta > 0) "✓ Found $delta new track${if (delta == 1) "" else "s"} · Total $after"
-                              else "✓ Library up to date · $after tracks"
+                    val msg = if (delta > 0) "Found $delta new track${if (delta == 1) "" else "s"} · Total $after"
+                              else "Library up to date · $after tracks"
                     val albums = runCatching { LibraryCounts.countDistinct(app, MediaStore.Audio.Media.ALBUM) }.getOrDefault(0)
                     val artists = runCatching { LibraryCounts.countDistinct(app, MediaStore.Audio.Media.ARTIST) }.getOrDefault(0)
                     val formats = runCatching {
@@ -138,14 +148,14 @@ class LibraryScanService : Service() {
                 }
             }
 
-            ScanProgress.phase = "Discovering audio & video files…"
+            ScanProgress.phase = "Looking for audio and video files…"
             val newFiles = mutableListOf<DiscoveredItem>()
             val jobDirs = mutableListOf<File>()
             try {
                 roots.forEach { r ->
                     val rootFile = File(r)
                     rootFile.listFiles()?.forEach { entry ->
-                        if (entry.isDirectory) jobDirs.add(entry)
+                        if (entry.isDirectory) { if (!entry.name.startsWith(".")) jobDirs.add(entry) }
                         else if (entry.isFile) {
                             val ext = entry.extension.lowercase()
                             if (ext in mediaExts) {
@@ -172,7 +182,10 @@ class LibraryScanService : Service() {
                     walkPool.submit {
                         try {
                             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND + android.os.Process.THREAD_PRIORITY_LESS_FAVORABLE)
-                            for (f in dir.walkTopDown().maxDepth(12)) {
+                            // Hidden folders are skipped: .m500staging holds albums m500d has not
+                            // committed yet, and indexing them leaves a row behind for a path that
+                            // is deleted seconds later, next to the row for the committed copy.
+                            for (f in dir.walkTopDown().maxDepth(12).onEnter { it == dir || !it.name.startsWith(".") }) {
                                 if (f.isFile) {
                                     val ext = f.extension.lowercase()
                                     // ONLY count and process genuine Audio & Video files (ignore all images/artwork)
@@ -267,7 +280,7 @@ class LibraryScanService : Service() {
                 try { Thread.sleep(200) } catch (_: InterruptedException) { break }
             }
 
-            MikuBrain.heartbeat(MikuBrain.BoneType.LIBRARY_SCANNER, MikuBrain.BoneState.IDLE, "Scan Complete")
+            MikuBrain.heartbeat(MikuBrain.BoneType.LIBRARY_SCANNER, MikuBrain.BoneState.IDLE, "Scan finished")
             reportFinish(completed = true)
             main.postDelayed({ reportFinish(completed = false) }, 30 * 60_000L)
         }.start()
@@ -278,13 +291,13 @@ class LibraryScanService : Service() {
         if (nm.getNotificationChannel(CHANNEL_ID) == null) {
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Library Scan", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Miku Music is indexing your library"
+                    description = "Shows while Miku Music scans your library"
                 }
             )
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .setContentTitle("Miku Music — Scanning library")
+            .setContentTitle("Miku Music: scanning library")
             .setContentText(status)
             .setOngoing(true)
             .setSilent(true)

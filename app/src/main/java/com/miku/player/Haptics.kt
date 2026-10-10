@@ -2,7 +2,10 @@ package com.miku.player
 
 import android.content.Context
 import android.os.Build
+import android.os.SystemClock
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
+import android.provider.Settings
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.animation.AnimatedContent
@@ -68,9 +71,33 @@ fun TapeIcon(tint: Color, modifier: Modifier = Modifier) {
     }
 }
 
-/** App-wide crisp haptic tick — used for physical media keys and programmatic feedback. */
+/**
+ * Miku Music haptics. The M500 motor is a plain on/off GPIO motor (timed_gpio): no amplitude
+ * control, no predefined effects, no primitives. Compose/View haptic constants fall back to
+ * HiBy's flat 50 ms buzz (and CLOCK_TICK / TEXT_HANDLE_MOVE play nothing), so every pulse here is
+ * a timed one-shot. Durations and the tick gap come from m500/mikuos/docs/m500-haptics.md.
+ *
+ * Every pulse honours Settings.System.HAPTIC_FEEDBACK_ENABLED and Settings.Global "miku_haptics"
+ * (default on).
+ *   tick   22 ms  scroll detent, list letter, seek detent, step. Rate limited.
+ *   click  32 ms  buttons: play/pause, skip, shuffle/repeat
+ *   heavy  45 ms  confirm, long press, like
+ *   error  35 + 80 gap + 35  refused action
+ */
 object Haptics {
+    const val TICK_MS = 22L   // 10 ms reaches the HAL but cannot be felt
+    const val CLICK_MS = 32L
+    const val HEAVY_MS = 45L
+    /** A tick is dropped while the motor is still busy, and never fires closer than this. */
+    const val TICK_GAP_MS = 45L
+    const val GLOBAL_KEY = "miku_haptics"
+    /** Two pulses: the gap has to outlast the motor's coast-down to read as two. */
+    private val ERROR_PATTERN = longArrayOf(0, 35, 80, 35)
+
     @Volatile private var vib: Vibrator? = null
+    @Volatile private var busyUntil = 0L
+    @Volatile private var seekBucket = Long.MIN_VALUE
+
     private fun vib(ctx: Context): Vibrator? {
         if (vib == null) {
             // Use applicationContext: the returned Vibrator retains the Context, and this object
@@ -85,13 +112,44 @@ object Haptics {
         return vib
     }
 
-    fun tick(ctx: Context, ms: Long = 16) {
+    fun enabled(ctx: Context): Boolean = try {
+        val cr = ctx.contentResolver
+        Settings.System.getInt(cr, Settings.System.HAPTIC_FEEDBACK_ENABLED, 1) != 0 &&
+            Settings.Global.getInt(cr, GLOBAL_KEY, 1) != 0
+    } catch (_: Throwable) { true }
+
+    /** Detent tick. Skipped while the motor is still busy from the previous pulse. */
+    fun tick(ctx: Context, ms: Long = TICK_MS) {
+        if (SystemClock.uptimeMillis() < busyUntil) return
+        play(ctx, VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE), ms)
+    }
+
+    fun click(ctx: Context) = play(ctx, VibrationEffect.createOneShot(CLICK_MS, VibrationEffect.DEFAULT_AMPLITUDE), CLICK_MS)
+
+    fun heavy(ctx: Context) = play(ctx, VibrationEffect.createOneShot(HEAVY_MS, VibrationEffect.DEFAULT_AMPLITUDE), HEAVY_MS)
+
+    fun error(ctx: Context) = play(ctx, VibrationEffect.createWaveform(ERROR_PATTERN, -1), ERROR_PATTERN.sum())
+
+    /**
+     * Seek-bar scrubbing: one tick per 10 s of track. On long tracks the detent grows to
+     * duration / 60 so a full sweep is never more than about 60 ticks. Call with [start] = true
+     * when the drag begins (no tick, just remembers where it started).
+     */
+    fun seekDetent(ctx: Context, posMs: Long, durMs: Long, start: Boolean = false) {
+        val step = maxOf(10_000L, durMs / 60)
+        val b = posMs / step
+        if (start) { seekBucket = b; return }
+        if (b != seekBucket) { seekBucket = b; tick(ctx) }
+    }
+
+    private fun play(ctx: Context, effect: VibrationEffect, lengthMs: Long) {
+        if (!enabled(ctx)) return
         try {
             val v = vib(ctx) ?: return
             if (!v.hasVibrator()) return
-            if (Build.VERSION.SDK_INT >= 26)
-                v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
-            else @Suppress("DEPRECATION") v.vibrate(ms)
+            busyUntil = SystemClock.uptimeMillis() + maxOf(lengthMs, TICK_GAP_MS)
+            if (Build.VERSION.SDK_INT >= 33) v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
+            else v.vibrate(effect)
         } catch (_: Throwable) {}
     }
 }
@@ -120,7 +178,7 @@ fun PlayPauseGlyph(isPlaying: Boolean, tint: Color, size: Dp) {
 
 /**
  * IconButton replacement with three channels of feedback on every press:
- *  - haptic: a Compose long-press cue plus a hardware vibrator tick
+ *  - haptic: one [Haptics.click] (32 ms). The Compose LongPress cue it used to add was a 50 ms buzz on the M500
  *  - visual: a springy scale-down while held
  *  - physical: a 3D-embossed key face — raised (lit top, drop shadow below) at rest, and
  *    inverted to a pressed-in well while held, like a real hardware button
@@ -153,8 +211,7 @@ fun HapticIconButton(
     val faceBot = if (face != null) lerp(face, Color.Black, 0.30f) else Color(0xFF082022)
     IconButton(
         onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            Haptics.tick(ctx)
+            Haptics.click(ctx)
             onClick()
         },
         modifier = modifier
@@ -235,10 +292,7 @@ fun Modifier.mikuTactile(
                     interactionSource = interaction,
                     indication = null
                 ) {
-                    if (hapticTick) {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        Haptics.tick(ctx)
-                    }
+                    if (hapticTick) Haptics.click(ctx)
                     onClick()
                 }
             } else Modifier

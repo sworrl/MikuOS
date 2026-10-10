@@ -13,6 +13,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PhonelinkLock
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -148,8 +153,8 @@ fun CyberPocketHudScreen(mode: String, allowVolumeWheel: Boolean) {
 
     val subtitle = when {
         isBoth -> "Touchscreen & side buttons locked"
-        isTouch -> "Touch digitizer inhibited • Side keys active"
-        else -> "Side buttons locked • Touchscreen active"
+        isTouch -> "Touchscreen locked • Side buttons work"
+        else -> "Side buttons locked • Touchscreen works"
     }
 
     Box(
@@ -181,9 +186,11 @@ fun CyberPocketHudScreen(mode: String, allowVolumeWheel: Boolean) {
                     .border(2.dp, primaryColor, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = if (isBoth) "🔒" else if (isTouch) "📱" else "🔘",
-                    fontSize = 32.sp
+                Icon(
+                    imageVector = if (isBoth) Icons.Default.Lock else if (isTouch) Icons.Default.TouchApp else Icons.Default.PhonelinkLock,
+                    contentDescription = null,
+                    tint = primaryColor,
+                    modifier = Modifier.size(36.dp)
                 )
             }
 
@@ -220,7 +227,7 @@ fun CyberPocketHudScreen(mode: String, allowVolumeWheel: Boolean) {
                         .padding(vertical = 6.dp, horizontal = 10.dp)
                 ) {
                     Text(
-                        text = "🎛️ Rotary Volume Wheel RETAINED",
+                        text = "Volume wheel still works",
                         color = Color(0xFF00E5FF),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,

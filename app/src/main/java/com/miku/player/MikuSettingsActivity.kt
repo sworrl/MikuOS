@@ -127,7 +127,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val activity = ctx as? ComponentActivity
     var searchQuery by remember { mutableStateOf("") }
-    var chibiReaction by remember { mutableStateOf("💙 Cyber OS Ready") }
+    var chibiReaction by remember { mutableStateOf("Hi there") }
 
     var isBrainModalOpen by remember { mutableStateOf(false) }
     var isMonitorModalOpen by remember { mutableStateOf(false) }
@@ -143,14 +143,14 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
     var isLicenseModalOpen by remember { mutableStateOf(false) }
 
     val chibiReactions = listOf(
-        "🎵 Hi Master!",
-        "💙 Dual CS43198 Active",
-        "⚡ 384kHz DSD256 Mode",
-        "✨ Soundstage Max",
-        "🎧 Lossless Engine Online",
-        "🌸 Pocket Lock Ready",
-        "🛡️ Data SIM Shield Active",
-        "🛠️ Developer Mode Ready"
+        "Hi there",
+        "Dual CS43198 DAC",
+        "Plays up to DSD256",
+        "Search is at the top",
+        "Lossless playback",
+        "Pocket lock ready",
+        "Data SIM ready",
+        "Developer options ready"
     )
 
     val categories = remember {
@@ -176,25 +176,25 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             SettingsCategoryItem(
                 id = "usb",
                 title = "USB Preferences",
-                subtitle = "USB DAC UAC2 direct bypass, OTG & file transport",
+                subtitle = "USB DAC mode, in the Hardware app",
                 icon = Icons.Default.Usb,
                 badge = "UAC2",
                 accentColor = Color(0xFF00E5FF),
-                onClick = { ctx.startActivity(Intent(ctx, HardwareSettingsActivity::class.java)) }
+                onClick = { DacSettingsLink.open(ctx) }
             ),
             SettingsCategoryItem(
                 id = "audio",
-                title = "Audio settings",
-                subtitle = "Digital Filter (NOS/Fast), CS43198 Gain (+6dB), DRE Mode & Direct ALSA",
+                title = "DAC settings",
+                subtitle = "Filter, gain, DRE and high power, in the Hardware app",
                 icon = Icons.Default.Headphones,
                 badge = "CS43198",
                 accentColor = Color(0xFF7C4DFF),
-                onClick = { ctx.startActivity(Intent(ctx, HardwareSettingsActivity::class.java)) }
+                onClick = { DacSettingsLink.open(ctx) }
             ),
             SettingsCategoryItem(
                 id = "fn_lock",
                 title = "Hardware Keys & Wheel",
-                subtitle = "Physical Fn Switch, Rotary Volume Knob & Key Routing",
+                subtitle = "Fn switch, volume wheel and key mapping",
                 icon = Icons.Default.Tune,
                 badge = "Hardware",
                 accentColor = Color(0xFF00E676),
@@ -203,15 +203,15 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             SettingsCategoryItem(
                 id = "apps",
                 title = "Apps & Permissions",
-                subtitle = "Installed applications, default app roles & storage",
+                subtitle = "Installed apps, default apps and storage",
                 icon = Icons.Default.Apps,
                 accentColor = Color(0xFFFF9100),
                 onClick = { isAppsModalOpen = true }
             ),
             SettingsCategoryItem(
                 id = "battery",
-                title = "Battery & Power Core",
-                subtitle = "CellWise CW2015 Fuel Gauge & MP2731 PMIC Telemetry",
+                title = "Battery & power",
+                subtitle = "Battery gauge (CW2015) and charger (MP2731) readings",
                 icon = Icons.Default.BatteryChargingFull,
                 badge = "CW2015",
                 accentColor = Color(0xFF00E676),
@@ -226,7 +226,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             SettingsCategoryItem(
                 id = "storage",
                 title = "Storage",
-                subtitle = "MicroSD & Internal Flash Management",
+                subtitle = "MicroSD and internal storage",
                 icon = Icons.Default.SdCard,
                 accentColor = Color(0xFF00E5FF),
                 onClick = { isStorageModalOpen = true }
@@ -234,7 +234,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             SettingsCategoryItem(
                 id = "sound",
                 title = "Sound & Volume",
-                subtitle = "Hardware volume HUD, output routing & sound profiles",
+                subtitle = "Volume HUD, output routing and sound profiles",
                 icon = Icons.Default.VolumeUp,
                 accentColor = MikuCyan,
                 onClick = { com.miku.player.volume.MikuVolumeManager.triggerHud(ctx) }
@@ -250,7 +250,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             SettingsCategoryItem(
                 id = "security",
                 title = "Security & Screen Lock",
-                subtitle = "Lockscreen particle physics, device credentials & keys",
+                subtitle = "Lock screen effects, credentials and keys",
                 icon = Icons.Default.Lock,
                 accentColor = Color(0xFFE040FB),
                 onClick = { isSecurityModalOpen = true }
@@ -258,7 +258,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             SettingsCategoryItem(
                 id = "gms_manager",
                 title = "Google Services (GMS)",
-                subtitle = "Granular switches for Play Services, Store, Chrome & Pixel Apps",
+                subtitle = "Turn Play Services, Play Store, Chrome and Pixel apps on or off",
                 icon = Icons.Default.CloudSync,
                 badge = "GMS Controls",
                 accentColor = Color(0xFF4285F4),
@@ -276,7 +276,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             SettingsCategoryItem(
                 id = "dev_options",
                 title = "Developer Options & ADB",
-                subtitle = "Wireless ADB Port 5555, USB Debugging, Root & Scales",
+                subtitle = "Wireless ADB on port 5555, USB debugging, root and animation scales",
                 icon = Icons.Default.DeveloperMode,
                 badge = "ADB 5555",
                 accentColor = Color(0xFF00E676),
@@ -284,8 +284,8 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             ),
             SettingsCategoryItem(
                 id = "brain",
-                title = "Sentinel Watchdog & Brain",
-                subtitle = "Real-time process health, daemon monitors & memory integrity",
+                title = "Watchdog",
+                subtitle = "Process health, daemon monitors and memory checks",
                 icon = Icons.Default.Shield,
                 badge = "Bones: 8",
                 accentColor = Color(0xFF00E676),
@@ -293,8 +293,8 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
             ),
             SettingsCategoryItem(
                 id = "ingress",
-                title = "Ingress Staging Telemetry",
-                subtitle = "Multi-Transport Rsync streaming, worker queues & card sync",
+                title = "Network sync",
+                subtitle = "Rsync transfers, worker queues and card sync",
                 icon = Icons.Default.Sync,
                 badge = "Port 8787",
                 accentColor = MikuNeonPink,
@@ -306,7 +306,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
                 // FAKE-DATA FIX: was "Snapdragon 665 · Dual CS43131 · Android 13 Core · Kernel",
                 // a spec claim on the menu row with the wrong DAC part and the wrong Android
                 // version. Describe the screen instead; the screen itself reads the real values.
-                subtitle = "SoC, RAM, panel, firmware, kernel & identity — read from the OS",
+                subtitle = "SoC, RAM, panel, firmware, kernel and IDs, read from the OS",
                 icon = Icons.Default.Info,
                 badge = "M500 DAP",
                 accentColor = MikuCyan,
@@ -477,7 +477,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
                             val legacyIntent = ctx.packageManager.getLaunchIntentForPackage("com.android.settings")
                                 ?: Intent(Settings.ACTION_SETTINGS).setPackage("com.android.settings")
                             try { ctx.startActivity(legacyIntent) } catch (_: Throwable) {
-                                Toast.makeText(ctx, "Legacy Settings not found", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(ctx, "Android Settings not found", Toast.LENGTH_SHORT).show()
                             }
                         },
                         modifier = Modifier.fillMaxWidth().height(44.dp),
@@ -485,7 +485,7 @@ fun MikuSettingsScreen(onBack: () -> Unit) {
                         border = BorderStroke(1.dp, CyberGlassBorder),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Open Stock Android Settings (com.android.settings)", color = MikuTextSecondary, fontSize = 11.sp)
+                        Text("Open stock Android Settings", color = MikuTextSecondary, fontSize = 11.sp)
                     }
                     Spacer(Modifier.height(16.dp))
                     // Bottom spacing padding for OS-wide Miku gesture overlay
@@ -762,7 +762,7 @@ fun MikuDisplaySettingsModal(onDismissRequest: () -> Unit) {
                         ) {
                             CyberSwitchRow(
                                 title = "Adaptive Brightness",
-                                subtitle = "Adjust screen brightness dynamically via ambient light sensor",
+                                subtitle = "Adjusts brightness from the light sensor",
                                 checked = autoBrightness,
                                 onCheckedChange = {
                                     val hasCamera = ctx.checkSelfPermission(android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -881,7 +881,7 @@ fun MikuDisplaySettingsModal(onDismissRequest: () -> Unit) {
                                 "Pixel Density",
                                 "${dm.densityDpi} dpi" + (refreshHz?.let { " / ${"%.0f".format(it)} Hz" } ?: " / — Hz")
                             )
-                            CyberInfoRow("Theme Mode", "Cyber Hatsune Miku Dark Mode")
+                            CyberInfoRow("Theme Mode", "Dark (Miku)")
                             CyberInfoRow(
                                 "Graphics Support",
                                 (glEsVersion?.let { "OpenGL ES $it" } ?: "OpenGL ES —") +
@@ -946,8 +946,8 @@ fun MikuBluetoothSettingsModal(onDismissRequest: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("Bluetooth Master Power", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                                    Text(if (isBtEnabled) "🔵 Transceiver Online · Hi-Res Ready" else "⚪ Radio Powered Down", color = if (isBtEnabled) Color(0xFF2979FF) else MikuTextSecondary, fontSize = 10.5.sp)
+                                    Text("Bluetooth", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                    Text(if (isBtEnabled) "On" else "Off", color = if (isBtEnabled) Color(0xFF2979FF) else MikuTextSecondary, fontSize = 10.5.sp)
                                 }
                                 Switch(
                                     checked = isBtEnabled,
@@ -991,14 +991,14 @@ fun MikuBluetoothSettingsModal(onDismissRequest: () -> Unit) {
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.height(26.dp)
                                     ) {
-                                        Text(if (isScanning) "Stop Scan" else "+ Scan Nearby", color = if (isScanning) Color(0xFFFF80AB) else Color(0xFF2979FF), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                        Text(if (isScanning) "Stop Scan" else "Scan", color = if (isScanning) Color(0xFFFF80AB) else Color(0xFF2979FF), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
                                 Spacer(Modifier.height(8.dp))
 
                                 if (pairedDevices.isEmpty()) {
-                                    Text("No paired wireless gear found.", color = MikuTextSecondary, fontSize = 11.sp)
+                                    Text("No paired devices.", color = MikuTextSecondary, fontSize = 11.sp)
                                 } else {
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         pairedDevices.forEach { devItem ->
@@ -1033,8 +1033,8 @@ fun MikuBluetoothSettingsModal(onDismissRequest: () -> Unit) {
                                                     Text(devItem.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                     Text(
                                                         text = when {
-                                                            devItem.isConnected -> "🟢 Active Audio Connection"
-                                                            devItem.isConnecting -> "🟡 Connecting..."
+                                                            devItem.isConnected -> "Connected for audio"
+                                                            devItem.isConnecting -> "Connecting…"
                                                             else -> devItem.address
                                                         },
                                                         color = if (devItem.isConnected) Color(0xFF00E5FF) else if (devItem.isConnecting) Color(0xFFFFD54F) else MikuTextSecondary,
@@ -1103,7 +1103,7 @@ fun MikuBluetoothSettingsModal(onDismissRequest: () -> Unit) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("AVAILABLE NEARBY GEAR", color = Color(0xFF2979FF), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                                        Text("NEARBY DEVICES", color = Color(0xFF2979FF), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                                         if (isScanning) {
                                             Spacer(Modifier.width(6.dp))
                                             CircularProgressIndicator(color = Color(0xFF2979FF), modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
@@ -1130,7 +1130,7 @@ fun MikuBluetoothSettingsModal(onDismissRequest: () -> Unit) {
                                 Spacer(Modifier.height(8.dp))
 
                                 if (discoveredDevices.isEmpty()) {
-                                    Text(if (isScanning) "Scanning for headphones, IEMs & wireless DACs..." else "Tap 'Scan' to discover nearby devices.", color = MikuTextSecondary, fontSize = 11.sp)
+                                    Text(if (isScanning) "Looking for headphones, IEMs and wireless DACs…" else "Tap Scan to find nearby devices.", color = MikuTextSecondary, fontSize = 11.sp)
                                 } else {
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         discoveredDevices.forEach { devItem ->
@@ -1193,7 +1193,7 @@ fun MikuBluetoothSettingsModal(onDismissRequest: () -> Unit) {
                                     .padding(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text("Hi-Res Codec Pipeline", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Codecs", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 listOf(
                                     "LDAC (990 / 660 / 330 kbps 96kHz/24-Bit)" to Color(0xFF00E676),
                                     "Qualcomm aptX HD (576 kbps 48kHz/24-Bit)" to Color(0xFF00E5FF),
@@ -1289,7 +1289,7 @@ fun MikuStorageSettingsModal(onDismissRequest: () -> Unit) {
                                 trackColor = Color(0xFF102830)
                             )
                             Spacer(Modifier.height(4.dp))
-                            Text("${internalStats.third} GB Free Space available", color = MikuTextSecondary, fontSize = 10.sp)
+                            Text("${internalStats.third} GB free", color = MikuTextSecondary, fontSize = 10.sp)
                         }
                     }
 
@@ -1305,7 +1305,7 @@ fun MikuStorageSettingsModal(onDismissRequest: () -> Unit) {
                         ) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(if (sdRoot != null) "MicroSD Card (${sdRoot.absolutePath})" else "MicroSD Card (not inserted)", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                                Text(if (sdStats.second > 0) "${sdStats.first} GB / ${sdStats.second} GB" else "Not Mounted", color = MikuNeonPink, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Text(if (sdStats.second > 0) "${sdStats.first} GB / ${sdStats.second} GB" else "Not mounted", color = MikuNeonPink, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                             }
                             Spacer(Modifier.height(6.dp))
                             if (sdStats.second > 0) {
@@ -1316,9 +1316,9 @@ fun MikuStorageSettingsModal(onDismissRequest: () -> Unit) {
                                     trackColor = Color(0xFF301020)
                                 )
                                 Spacer(Modifier.height(4.dp))
-                                Text("${sdStats.third} GB Free for Lossless FLAC / DSD Music", color = MikuTextSecondary, fontSize = 10.sp)
+                                Text("${sdStats.third} GB free", color = MikuTextSecondary, fontSize = 10.sp)
                             } else {
-                                Text("Insert FAT32 / exFAT MicroSD Card for expanded music library storage", color = MikuTextSecondary, fontSize = 10.sp)
+                                Text("Insert a FAT32 or exFAT microSD card for more music storage", color = MikuTextSecondary, fontSize = 10.sp)
                             }
                         }
                     }
@@ -1336,7 +1336,7 @@ fun MikuStorageSettingsModal(onDismissRequest: () -> Unit) {
                                     kotlinx.coroutines.delay(2000)
                                     isRescanning = false
                                 }
-                                Toast.makeText(ctx, "⚡ Deep SD Ingress Library Scan Triggered", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(ctx, "Library scan started", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.fillMaxWidth().height(44.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MikuCyan.copy(alpha = 0.2f)),
@@ -1345,7 +1345,7 @@ fun MikuStorageSettingsModal(onDismissRequest: () -> Unit) {
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null, tint = MikuCyan, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(if (isRescanning) "Scanning Library..." else "Trigger Fast Audio Library Rescan", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                            Text(if (isRescanning) "Scanning library…" else "Rescan library", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                         }
                     }
                 }
@@ -1471,8 +1471,8 @@ fun MikuSecuritySettingsModal(onDismissRequest: () -> Unit) {
                                 .padding(12.dp)
                         ) {
                             CyberSwitchRow(
-                                title = "Double-Press Power For Camera",
-                                subtitle = "Quickly press the power button twice to launch Camera",
+                                title = "Double-press power for camera",
+                                subtitle = "Press the power button twice to open the camera",
                                 checked = doubleTapPowerCamera,
                                 onCheckedChange = {
                                     doubleTapPowerCamera = it
@@ -1607,7 +1607,7 @@ fun MikuAboutDeviceModal(
                 ?.joinToString(":") { b -> "%02X".format(b) }
         }.getOrNull()
             ?.takeIf { it.isNotBlank() && !it.equals(hidden, ignoreCase = true) }
-            ?: "— (not exposed to apps)"
+            ?: "Not exposed to apps"
     }
 
     @Suppress("DEPRECATION", "MissingPermission", "HardwareIds")
@@ -1623,7 +1623,7 @@ fun MikuAboutDeviceModal(
         listOfNotNull(fromSettings, fromAdapter)
             .firstOrNull { it.isNotBlank() && !it.equals(hidden, ignoreCase = true) }
             ?.uppercase(Locale.US)
-            ?: "— (not exposed to apps)"
+            ?: "Not exposed to apps"
     }
 
     @Suppress("DEPRECATION", "MissingPermission", "HardwareIds")
@@ -1818,7 +1818,7 @@ fun MikuAboutDeviceModal(
                                 }
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    "Custom Audiophile Operating System · Hatsune Miku Cyber Edition",
+                                    "MikuOS · Hatsune Miku edition",
                                     color = MikuTextSecondary,
                                     fontSize = 10.5.sp
                                 )
@@ -1829,7 +1829,7 @@ fun MikuAboutDeviceModal(
                     // Hardware Specs Section
                     item {
                         Text(
-                            "HARDWARE ARCHITECTURE",
+                            "HARDWARE",
                             color = MikuCyan,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -1863,7 +1863,7 @@ fun MikuAboutDeviceModal(
                     item {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "SOFTWARE & FIRMWARE CORE",
+                            "SOFTWARE & FIRMWARE",
                             color = MikuNeonPink,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -1896,12 +1896,12 @@ fun MikuAboutDeviceModal(
                                     .background(MikuCyan.copy(alpha = 0.08f))
                                     .clickable {
                                         devTapCount++
-                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        Haptics.tick(ctx)
                                         if (devTapCount >= 7) {
-                                            Toast.makeText(ctx, "🎉 Developer Options Unlocked!", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(ctx, "Developer options are on", Toast.LENGTH_LONG).show()
                                             onOpenDevOptions()
                                         } else if (devTapCount >= 3) {
-                                            Toast.makeText(ctx, "🛠️ Tap ${7 - devTapCount} more times for Developer Mode", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(ctx, "Tap ${7 - devTapCount} more times for developer options", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                     .padding(horizontal = 8.dp, vertical = 6.dp)
@@ -1912,7 +1912,7 @@ fun MikuAboutDeviceModal(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        Text("Build Number (Tap 7x for Dev)", color = MikuCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("Build number", color = MikuCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                         Text("M500_MIKU_AUDIOPHILE_V2.0_20260818", color = Color.White, fontSize = 10.sp)
                                     }
                                     Text(
@@ -1930,7 +1930,7 @@ fun MikuAboutDeviceModal(
                     item {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "NETWORK & TELEMETRY",
+                            "NETWORK",
                             color = Color(0xFF00E676),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -1960,7 +1960,7 @@ fun MikuAboutDeviceModal(
                             CyberInfoRow("Bluetooth MAC", btMac)
                             CyberInfoRow("System Uptime", uptimeFormatted)
                             CyberInfoRow("Serial Number", serialNumber)
-                            CyberInfoRow("SIM Carrier Link", simCarrier)
+                            CyberInfoRow("SIM carrier", simCarrier)
                         }
                     }
                 }
@@ -2084,7 +2084,7 @@ fun MikuDeveloperOptionsModal(
                                             fontFamily = AudiowideFont
                                         )
                                         Text(
-                                            if (isAdbEnabled) "🟢 Active on $wifiIp:5555" else "🔴 Disabled (TCP/IP Port Closed)",
+                                            if (isAdbEnabled) "On at $wifiIp:5555" else "Off",
                                             color = if (isAdbEnabled) Color(0xFF00E676) else MikuNeonPink,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.SemiBold
@@ -2122,9 +2122,9 @@ fun MikuDeveloperOptionsModal(
                                                     Toast.makeText(
                                                         ctx,
                                                         when {
-                                                            applied && next -> "⚡ Wireless ADB listening on $wifiIp:5555\nRun: adb connect $wifiIp:5555"
+                                                            applied && next -> "Wireless ADB listening on $wifiIp:5555\nRun: adb connect $wifiIp:5555"
                                                             !applied && !next -> "Wireless ADB stopped"
-                                                            else -> "Couldn't change the ADB TCP port — service.adb.tcp.port is still " +
+                                                            else -> "Couldn't change the ADB TCP port. service.adb.tcp.port is still " +
                                                                 (livePort ?: "unset")
                                                         },
                                                         Toast.LENGTH_LONG
@@ -2184,7 +2184,7 @@ fun MikuDeveloperOptionsModal(
                         ) {
                             CyberSwitchRow(
                                 title = "USB Debugging",
-                                subtitle = "Enable Android Debug Bridge over USB Type-C",
+                                subtitle = "ADB over USB-C",
                                 checked = usbDebugging,
                                 onCheckedChange = {
                                     usbDebugging = it
@@ -2196,7 +2196,7 @@ fun MikuDeveloperOptionsModal(
 
                             CyberSwitchRow(
                                 title = "Stay Awake While Charging",
-                                subtitle = "Screen will never sleep while connected to power",
+                                subtitle = "The screen stays on while charging",
                                 checked = stayAwake,
                                 onCheckedChange = {
                                     stayAwake = it

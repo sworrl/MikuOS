@@ -223,7 +223,11 @@ fun thermalColor(c: Float): Color = when {
 fun MikuStatusBar(
     state: MikuStatusBarState,
     modifier: Modifier = Modifier,
-    onClockClick: (() -> Unit)? = null
+    onClockClick: (() -> Unit)? = null,
+    /** Apps with notifications, drawn after the clock. Empty = nothing drawn. */
+    notificationApps: List<MikuNotificationTray.App> = emptyList(),
+    /** Tap on the bar (anywhere not taken by the clock or power glyph): open the Miku shade. */
+    onOpenShade: (() -> Unit)? = null
 ) {
     val glyph = 13.dp
     val ctxBar = androidx.compose.ui.platform.LocalContext.current
@@ -246,6 +250,7 @@ fun MikuStatusBar(
         modifier
             .fillMaxWidth()
             .height(MikuDimens.statusBarHeight)
+            .then(if (onOpenShade != null) Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpenShade) else Modifier)
             .drawBehind {
                 drawRect(Brush.verticalGradient(listOf(Color(0x66040D12), Color(0x22040D12))))
                 val stitch = PathEffect.dashPathEffect(floatArrayOf(6f, 5f), 0f)
@@ -261,8 +266,11 @@ fun MikuStatusBar(
         var showDbm = state.wifiConnected && state.wifiDbm > -100
         var showQuality = state.quality.isNotEmpty()
         var showBpm = state.bpm > 0 && state.isPlaying
+        var trayMax = 5
         fun estimate(): Float {
             var w = state.clock.length * 7.2f + 6f
+            val trayN = minOf(notificationApps.size, trayMax)
+            if (trayN > 0) w += trayN * 16f + 6f + (if (notificationApps.size > trayMax) 18f else 0f)
             if (showBpm) w += ("${state.bpm}♥".length) * 6.2f + 6f
             if (showQuality) w += state.quality.length * 6.2f + 10f
             var r = 0f
@@ -279,6 +287,23 @@ fun MikuStatusBar(
         if (estimate() > avail) showDbm = false
         if (estimate() > avail) showQuality = false
         if (estimate() > avail) showBpm = false
+        // MikuSystemUI draws the DAC badge in the middle of the status bar, over this row. Keep the
+        // clock and notification icons in the left part so they never run under it.
+        fun leftEstimate(): Float {
+            var w = state.clock.length * 7.2f + 6f
+            val trayN = minOf(notificationApps.size, trayMax)
+            if (trayN > 0) w += trayN * 16f + 6f + (if (notificationApps.size > trayMax) 18f else 0f)
+            if (showBpm) w += ("${state.bpm}♥".length) * 6.2f + 6f
+            if (showQuality) w += state.quality.length * 6.2f + 10f
+            return w
+        }
+        val dacBadgeOn = remember {
+            runCatching { android.provider.Settings.Global.getInt(ctxBar.contentResolver, "miku_dac_badge", 1) != 0 }.getOrDefault(true)
+        }
+        val leftBudget = if (dacBadgeOn) avail / 2f - 64f else avail
+        if (leftEstimate() > leftBudget) showQuality = false
+        if (leftEstimate() > leftBudget) showBpm = false
+        while ((estimate() > avail || leftEstimate() > leftBudget) && trayMax > 1) trayMax--
 
         Row(
             Modifier.fillMaxWidth().height(MikuDimens.statusBarHeight),
@@ -289,10 +314,15 @@ fun MikuStatusBar(
             val clockInteraction = remember { MutableInteractionSource() }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = if (onClockClick != null) Modifier.clickable(interactionSource = clockInteraction, indication = null, onClick = onClockClick) else Modifier
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(state.clock, color = textColor, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont, letterSpacing = 0.3.sp, maxLines = 1, softWrap = false)
+                // Only the clock opens the clock app. The notification icons beside it fall through
+                // to the bar's own click, which opens the shade.
+                Text(state.clock, color = textColor, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont, letterSpacing = 0.3.sp, maxLines = 1, softWrap = false,
+                    modifier = if (onClockClick != null) Modifier.clickable(interactionSource = clockInteraction, indication = null, onClick = onClockClick) else Modifier)
+                if (notificationApps.isNotEmpty()) {
+                    MikuNotificationTrayIcons(notificationApps, max = trayMax, size = glyph, textColor = textColor)
+                }
                 if (showBpm) {
                     Text("${bpmShown}♥", color = MikuNeonPink, fontSize = 10.5.sp, fontWeight = FontWeight.Black, maxLines = 1, softWrap = false)
                 }

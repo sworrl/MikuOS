@@ -241,7 +241,7 @@ object MikuVibeAlchemyEngine {
             audiophileBias = isAudiophile,
             eraMinYear = eraMin,
             eraMaxYear = eraMax,
-            titleFormat = "$prefixEmoji $cleanName Alchemy Session"
+            titleFormat = "$cleanName mix"
         )
     }
 
@@ -265,7 +265,7 @@ object MikuVibeAlchemyEngine {
         }
 
         val totalTracks = tracks.size
-        onProgress?.invoke(0, totalTracks, "Analyzing prompt and sonic taxonomy...")
+        onProgress?.invoke(0, totalTracks, "Reading your request…")
 
         val intent = parsePromptIntent(rawClean)
         val lowerPrompt = rawClean.lowercase(Locale.ROOT)
@@ -363,7 +363,7 @@ object MikuVibeAlchemyEngine {
             }
 
             processedCount += chunk.size
-            onProgress?.invoke(processedCount, totalTracks, "Scored $processedCount / $totalTracks tracks...")
+            onProgress?.invoke(processedCount, totalTracks, "Checked $processedCount of $totalTracks tracks…")
             yield() // Non-blocking yield for other tasks / UI updates
         }
 
@@ -393,15 +393,15 @@ object MikuVibeAlchemyEngine {
             }
         }
 
-        val primaryClusterName = intent.targetClusterNames.firstOrNull() ?: "Intelligent Vibe"
-        onProgress?.invoke(totalTracks, totalTracks, "Synthesized ${finalPlaylist.size} tracks!")
+        val primaryClusterName = intent.targetClusterNames.firstOrNull() ?: "Mixed"
+        onProgress?.invoke(totalTracks, totalTracks, "Picked ${finalPlaylist.size} tracks")
 
         return@withContext VibeResult(
             vibeTitle = intent.titleFormat,
             prompt = rawClean,
             playlist = finalPlaylist,
-            algorithmName = "Neural Ontology & Acoustic Vibe Alchemy",
-            matchDescription = "Synthesized ${finalPlaylist.size} tracks mapped to $primaryClusterName"
+            algorithmName = "Genre and tag match",
+            matchDescription = "${finalPlaylist.size} tracks matched to $primaryClusterName"
         )
     }
 
@@ -410,16 +410,16 @@ object MikuVibeAlchemyEngine {
     // =========================================================================
 
     private val RANDOM_PRESETS = listOf(
-        Pair("⚡ Cyberpunk Shibuya Midnight", "cyberpunk darksynth industrial electronic fast bass future tokyo"),
-        Pair("🤘 High-Voltage Metalhead Shred", "heavy metal thrash progressive metalcore guitar solo distortion brutal"),
-        Pair("🌸 Akihabara Vocaloid Euphoria", "hatsune miku vocaloid anime cute upbeat jpop idol"),
-        Pair("🌙 Lofi Midnight Rain & Focus", "lofi chill relax ambient calm night rain soft piano beats"),
-        Pair("🎸 90s Grunge & Alt-Rock Anthem", "grunge 90s alternative rock nirvana guitars heavy distortion raw"),
-        Pair("🎧 MasterHIFI Bit-Perfect Acoustic", "audiophile dsd flac acoustic vocal master reference lossless"),
-        Pair("🏃 Velocity Cardio Pulse (150+ BPM)", "fast running workout gym high energy bpm sprint rhythm pump"),
-        Pair("🎷 Smoky Shibuya Jazz & Soul", "jazz bebop smooth sax trumpet soul funk groove chill lounge"),
-        Pair("📻 80s Tokyo City Pop Nostalgia", "city pop 80s vintage synthwave disco funk retro japan summer"),
-        Pair("🎻 Cinematic Symphony & Game OSTs", "classical orchestral soundtrack film score hans zimmer strings epic")
+        Pair("Cyberpunk night", "cyberpunk darksynth industrial electronic fast bass future tokyo"),
+        Pair("Metal shred", "heavy metal thrash progressive metalcore guitar solo distortion brutal"),
+        Pair("Upbeat Vocaloid", "hatsune miku vocaloid anime cute upbeat jpop idol"),
+        Pair("Lo-fi for focus", "lofi chill relax ambient calm night rain soft piano beats"),
+        Pair("90s grunge and alt-rock", "grunge 90s alternative rock nirvana guitars heavy distortion raw"),
+        Pair("Hi-res acoustic", "audiophile dsd flac acoustic vocal master reference lossless"),
+        Pair("Workout (150+ BPM)", "fast running workout gym high energy bpm sprint rhythm pump"),
+        Pair("Jazz and soul", "jazz bebop smooth sax trumpet soul funk groove chill lounge"),
+        Pair("80s city pop", "city pop 80s vintage synthwave disco funk retro japan summer"),
+        Pair("Film and game scores", "classical orchestral soundtrack film score hans zimmer strings epic")
     )
 
     suspend fun generateRandomVibe(
@@ -436,7 +436,7 @@ object MikuVibeAlchemyEngine {
         return result.copy(
             vibeTitle = title,
             prompt = promptKeywords,
-            matchDescription = "Surprise Vibe Mix · ${result.playlist.size} tracks"
+            matchDescription = "Random mix · ${result.playlist.size} tracks"
         )
     }
 }

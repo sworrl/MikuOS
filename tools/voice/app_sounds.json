@@ -1,0 +1,395 @@
+{
+  "version": 1,
+  "notes": "Sounds for MikuOS apps. 'voice' lines render in every house voice to mikuos/data/voice/<voice>/app/<app>/<id>.ogg (alternates as <id>_alt1.ogg). 'sfx' render once to mikuos/data/sfx/<app>/<id>.ogg from the named recipe in sfx.py. lufs is the max momentary loudness target for one-shots and integrated loudness for loops. Phrase style matches events.json: plain US English, short, friendly, no emojis.",
+  "apps": {
+    "camera": {
+      "voice": {
+        "say_cheese": {
+          "phrases": [
+            "Say cheese!"
+          ]
+        },
+        "smile": {
+          "phrases": [
+            "Smile!"
+          ]
+        },
+        "got_it": {
+          "phrases": [
+            "Got it!"
+          ]
+        },
+        "photo_saved": {
+          "phrases": [
+            "Photo saved."
+          ]
+        },
+        "video_recording": {
+          "phrases": [
+            "Recording."
+          ]
+        },
+        "video_stopped": {
+          "phrases": [
+            "Video stopped."
+          ]
+        },
+        "video_saved": {
+          "phrases": [
+            "Video saved."
+          ]
+        },
+        "countdown": {
+          "phrases": [
+            "Three, two, one!"
+          ],
+          "note": "quick spoken countdown, about 1 s, for right before the shot"
+        },
+        "countdown_timed": {
+          "compose": [
+            "count_3",
+            "count_2",
+            "count_1"
+          ],
+          "spacing": 1.0,
+          "text": "Three. Two. One.",
+          "note": "one number per second, starting at 0.03 s; fire the shutter at 3.0 s. Built from count_3, count_2, count_1"
+        },
+        "count_3": {
+          "phrases": [
+            "Three."
+          ],
+          "note": "per-second countdown: play with timer_beep at t-3"
+        },
+        "count_2": {
+          "phrases": [
+            "Two."
+          ]
+        },
+        "count_1": {
+          "phrases": [
+            "One."
+          ]
+        },
+        "camera_switched": {
+          "phrases": [
+            "Camera switched."
+          ]
+        },
+        "flash_on": {
+          "phrases": [
+            "Flash on."
+          ]
+        },
+        "flash_off": {
+          "phrases": [
+            "Flash off."
+          ]
+        },
+        "flash_auto": {
+          "phrases": [
+            "Flash on auto."
+          ]
+        },
+        "hold_still": {
+          "phrases": [
+            "Hold still."
+          ],
+          "note": "night or long exposure capture"
+        },
+        "storage_almost_full": {
+          "phrases": [
+            "Storage is almost full."
+          ]
+        }
+      },
+      "sfx": {
+        "shutter": {
+          "recipe": "shutter_miku",
+          "lufs": -20,
+          "note": "single shot: two-blade shutter plus a short bell sparkle"
+        },
+        "shutter_burst": {
+          "recipe": "shutter_plain",
+          "lufs": -20,
+          "note": "burst mode, dry and about 120 ms so shots do not smear"
+        },
+        "video_start": {
+          "recipe": "video_start",
+          "lufs": -20
+        },
+        "video_stop": {
+          "recipe": "video_stop",
+          "lufs": -20
+        },
+        "focus_lock": {
+          "recipe": "focus_lock",
+          "lufs": -24,
+          "note": "two tiny pips"
+        },
+        "timer_beep": {
+          "recipe": "timer_beep",
+          "lufs": -20,
+          "note": "once per second during the self-timer"
+        },
+        "timer_beep_final": {
+          "recipe": "timer_beep_final",
+          "lufs": -20,
+          "note": "the last beep, right before the shutter"
+        }
+      }
+    },
+    "recorder": {
+      "voice": {
+        "recording_started": {
+          "phrases": [
+            "Recording started."
+          ]
+        },
+        "paused": {
+          "phrases": [
+            "Recording paused."
+          ]
+        },
+        "resumed": {
+          "phrases": [
+            "Recording resumed."
+          ]
+        },
+        "saved": {
+          "phrases": [
+            "Recording saved."
+          ]
+        }
+      },
+      "sfx": {
+        "start": {
+          "recipe": "rec_start",
+          "lufs": -20
+        },
+        "stop": {
+          "recipe": "rec_stop",
+          "lufs": -20
+        },
+        "pause": {
+          "recipe": "rec_pause",
+          "lufs": -20
+        }
+      }
+    },
+    "clock": {
+      "voice": {
+        "good_morning": {
+          "phrases": [
+            "Good morning! Time to wake up."
+          ]
+        },
+        "times_up": {
+          "phrases": [
+            "Time's up!"
+          ]
+        },
+        "snooze_5": {
+          "phrases": [
+            "Snoozing for five minutes."
+          ]
+        },
+        "snooze_10": {
+          "phrases": [
+            "Snoozing for ten minutes."
+          ]
+        },
+        "alarm_off": {
+          "phrases": [
+            "Alarm turned off."
+          ]
+        }
+      },
+      "sfx": {
+        "alarm": {
+          "recipe": "alarm_loop",
+          "lufs": -18,
+          "loop": true,
+          "note": "24 s original melody, builds over 12 bars, Ogg Vorbis with ANDROID_LOOP=true"
+        },
+        "timer_done": {
+          "recipe": "timer_done",
+          "lufs": -20
+        }
+      }
+    },
+    "gallery": {
+      "voice": {
+        "deleted": {
+          "phrases": [
+            "File deleted."
+          ]
+        },
+        "wallpaper_set": {
+          "phrases": [
+            "Wallpaper updated."
+          ]
+        }
+      },
+      "sfx": {
+        "delete": {
+          "recipe": "delete_swoosh",
+          "lufs": -20
+        }
+      }
+    },
+    "calculator": {
+      "sfx": {
+        "key": {
+          "recipe": "key_click",
+          "lufs": -28,
+          "note": "soft enough for every key press"
+        },
+        "equals": {
+          "recipe": "key_equals",
+          "lufs": -24
+        }
+      }
+    },
+    "fmradio": {
+      "voice": {
+        "song_found": {
+          "phrases": [
+            "Song found!"
+          ]
+        },
+        "no_match": {
+          "phrases": [
+            "No match. Try again during a song."
+          ]
+        },
+        "station_saved": {
+          "phrases": [
+            "Station saved."
+          ]
+        }
+      },
+      "sfx": {
+        "tune_click": {
+          "recipe": "tune_click",
+          "lufs": -28,
+          "note": "one per 0.1 MHz step"
+        },
+        "station_lock": {
+          "recipe": "station_lock",
+          "lufs": -22
+        }
+      }
+    },
+    "bpm": {
+      "voice": {
+        "perfect": {
+          "phrases": [
+            "Perfect!"
+          ]
+        },
+        "great": {
+          "phrases": [
+            "Great!"
+          ]
+        },
+        "good": {
+          "phrases": [
+            "Good."
+          ]
+        },
+        "miss": {
+          "phrases": [
+            "Miss."
+          ]
+        },
+        "full_combo": {
+          "phrases": [
+            "Full combo!"
+          ]
+        },
+        "fever_time": {
+          "phrases": [
+            "Fever time!"
+          ]
+        },
+        "new_record": {
+          "phrases": [
+            "New record!"
+          ]
+        },
+        "level_up": {
+          "phrases": [
+            "Level up!"
+          ]
+        },
+        "secret_unlocked": {
+          "phrases": [
+            "Secret unlocked!"
+          ]
+        }
+      },
+      "sfx": {
+        "hit": {
+          "recipe": "hit",
+          "lufs": -20
+        },
+        "hit_perfect": {
+          "recipe": "hit_perfect",
+          "lufs": -20
+        },
+        "miss": {
+          "recipe": "miss",
+          "lufs": -22
+        },
+        "combo_break": {
+          "recipe": "combo_break",
+          "lufs": -20
+        },
+        "full_combo": {
+          "recipe": "full_combo_jingle",
+          "lufs": -20
+        },
+        "level_up": {
+          "recipe": "level_up_jingle",
+          "lufs": -20
+        }
+      }
+    },
+    "system": {
+      "sfx": {
+        "notify_sparkle": {
+          "recipe": "notify_sparkle",
+          "lufs": -20,
+          "note": "default notification"
+        },
+        "notify_bubble": {
+          "recipe": "notify_bubble",
+          "lufs": -20
+        },
+        "notify_chirp": {
+          "recipe": "notify_chirp",
+          "lufs": -20
+        },
+        "ringtone": {
+          "recipe": "ringtone_loop",
+          "lufs": -18,
+          "loop": true,
+          "note": "16 s, Ogg Vorbis with ANDROID_LOOP=true"
+        },
+        "usb_connect": {
+          "recipe": "usb_connect",
+          "lufs": -22
+        },
+        "usb_disconnect": {
+          "recipe": "usb_disconnect",
+          "lufs": -22
+        },
+        "charge_connect": {
+          "recipe": "charge_connect",
+          "lufs": -22
+        }
+      }
+    }
+  }
+}

@@ -427,7 +427,7 @@ class AlarmRingService : Service() {
             Intent(this, AlarmRingService::class.java).setAction(ACTION_DISMISS).putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarm.id),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val text = nowPlaying?.let { "♪ $it" } ?: "Ringing — play/pause snoozes, next/prev dismisses"
+        val text = nowPlaying?.let { "$it" } ?: "Ringing. Play/pause snoozes, next/prev dismisses"
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(alarm.label.ifBlank { "Alarm" })

@@ -187,7 +187,7 @@ fun MikuFullscreenChargingModal(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "⚡ MIKU QUANTUM CHARGING CORE",
+                        "CHARGING",
                         color = MikuCyan,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Black,
@@ -445,7 +445,7 @@ fun MikuFullscreenChargingModal(
 
                 // Dismiss hint
                 Text(
-                    "▲ SWIPE UP OR TAP ANYWHERE TO DISMISS",
+                    "SWIPE UP OR TAP TO CLOSE",
                     color = MikuTextSecondary.copy(alpha = 0.7f),
                     fontSize = 8.sp,
                     fontFamily = AudiowideFont,

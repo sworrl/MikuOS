@@ -248,7 +248,7 @@ fun MikuGpsTacticalMapModal(
                             Spacer(Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "MIKU TACTICAL GPS OBSERVATORY",
+                                    text = "GPS",
                                     color = Color(0xFF00E5FF),
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Black,
@@ -294,13 +294,13 @@ fun MikuGpsTacticalMapModal(
                             .padding(2.dp)
                     ) {
                         TabButton(
-                            title = "🗺️ TOPO MAP",
+                            title = "MAP",
                             isSelected = selectedTab == 0,
                             modifier = Modifier.weight(1f)
                         ) { selectedTab = 0 }
 
                         TabButton(
-                            title = "🛰️ TELEMETRY HUD",
+                            title = "DETAILS",
                             isSelected = selectedTab == 1,
                             modifier = Modifier.weight(1f)
                         ) { selectedTab = 1 }
@@ -356,7 +356,7 @@ fun MikuGpsTacticalMapModal(
                         Text(
                             text = when {
                                 isSensorFix && gps.accuracyM > 0 -> "ACCURACY: ±${"%.1f".format(gps.accuracyM)}M"
-                                gps.isLocked -> "ACCURACY: — (${gps.provider.uppercase()})"
+                                gps.isLocked -> "ACCURACY: UNKNOWN (${gps.provider.uppercase()})"
                                 else -> "SEARCHING FIX"
                             },
                             color = if (isSensorFix && gps.accuracyM in 0.1f..15f) Color(0xFF00FFCC) else Color(0xFFFFB300),
@@ -596,7 +596,7 @@ private fun GpsTelemetryHudView(gps: MikuWeatherService.GpsTelemetry, isSensorFi
         // Row 2: Altitude & Ground Speed — sensor fixes only; 0 from a non-sensor source is "—".
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GpsMetricCard(
-                title = "ELEVATION / ALTITUDE",
+                title = "ALTITUDE",
                 value = if (isSensorFix && gps.hasAltitude && gps.altitudeM != 0.0) "${gps.altitudeM.toInt()} m (${(gps.altitudeM * 3.28084).toInt()} ft)" else "—",
                 color = Color(0xFF00FFCC),
                 modifier = Modifier.weight(1f)
@@ -614,7 +614,7 @@ private fun GpsTelemetryHudView(gps: MikuWeatherService.GpsTelemetry, isSensorFi
         // Row 3: Heading Compass & Accuracy
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GpsMetricCard(
-                title = "BEARING / HEADING",
+                title = "HEADING",
                 value = if (isSensorFix && gps.hasBearing && gps.hasSpeed && gps.speedMph > 0.5f) "${gps.bearing.toInt()}° (${degreesToCompassText(gps.bearing.toInt())})" else "—",
                 color = com.miku.launcher.ui.MikuIdentity.Gold,
                 modifier = Modifier.weight(1f)
@@ -638,7 +638,7 @@ private fun GpsTelemetryHudView(gps: MikuWeatherService.GpsTelemetry, isSensorFi
         ) {
             Column {
                 Text(
-                    text = "GEOGRAPHIC REGION & JURISDICTION",
+                    text = "PLACE",
                     color = Color(0xFF00E5FF),
                     fontSize = 7.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -650,7 +650,7 @@ private fun GpsTelemetryHudView(gps: MikuWeatherService.GpsTelemetry, isSensorFi
                         gps.city.isNotEmpty() -> listOf(gps.city, gps.county).filter { it.isNotBlank() }.joinToString(", ") +
                             listOf(gps.state, gps.country).filter { it.isNotBlank() }.joinToString(" ").let { if (it.isBlank()) "" else " · $it" }
                         gps.fuzzyLocation.isNotEmpty() -> gps.fuzzyLocation
-                        gps.isLocked -> "Fix acquired · place not resolved yet"
+                        gps.isLocked -> "Have a fix, no place name yet"
                         else -> "No location fix yet"
                     },
                     color = Color.White,

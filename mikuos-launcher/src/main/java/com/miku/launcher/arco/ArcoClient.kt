@@ -532,7 +532,7 @@ object ArcoClient {
 
     private suspend fun httpRequest(method: String, path: String, jsonBody: String? = null): Result<String> {
         val base = if (::secureStore.isInitialized) secureStore.serverUrl else null
-        if (base.isNullOrBlank()) return Result.failure(IllegalStateException("No arcobocconotto server configured — pair or set an endpoint first"))
+        if (base.isNullOrBlank()) return Result.failure(IllegalStateException("No arcobocconotto server set. Pair or set an endpoint first."))
         return httpRequestAbsolute(method, base.trimEnd('/') + path, jsonBody, authenticate = true, signedPath = path)
     }
 

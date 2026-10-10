@@ -106,7 +106,7 @@ fun MikuPowerMenuScreen(
     var pendingActionAccent by remember { mutableStateOf(MikuTealBright) }
     var countdownSeconds by remember { mutableIntStateOf(3) }
 
-    fun hapticTick() = MikuHaptics.buzz(ctx, 25L)
+    fun hapticTick() = MikuHaptics.confirm(ctx)
 
     fun executeAction(command: String) {
         hapticTick()
@@ -289,7 +289,7 @@ fun MikuPowerMenuScreen(
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "POWER  ♥",
+                                text = "POWER",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Black,
@@ -314,7 +314,7 @@ fun MikuPowerMenuScreen(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "⚡ ${batteryPct?.let { "$it%" } ?: "—"}",
+                            text = "${batteryPct?.let { "$it%" } ?: "--"}",
                             color = MikuTealBright,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -345,7 +345,7 @@ fun MikuPowerMenuScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "EXECUTING $pendingActionName",
+                            text = "$pendingActionName",
                             color = pendingActionAccent,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Black,
@@ -353,7 +353,7 @@ fun MikuPowerMenuScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "Action engages in $countdownSeconds seconds...",
+                            text = "Starting in $countdownSeconds s",
                             color = Color.White.copy(alpha = 0.8f),
                             fontSize = 12.sp
                         )
@@ -387,20 +387,20 @@ fun MikuPowerMenuScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        PowerPill(0, "LOCKDOWN", "Lock now · secure", Icons.Default.Shield, MikuTealBright) { executeAction("lockdown") }
-                        PowerPill(1, "REBOOT", "Fast OS restart", Icons.Default.RestartAlt, Color(0xFF00E5FF)) {
+                        PowerPill(0, "LOCKDOWN", "Lock the screen now", Icons.Default.Shield, MikuTealBright) { executeAction("lockdown") }
+                        PowerPill(1, "REBOOT", "Restart", Icons.Default.RestartAlt, Color(0xFF00E5FF)) {
                             pendingActionName = "REBOOT"; pendingActionCommand = "reboot"; pendingActionAccent = Color(0xFF00E5FF)
                         }
-                        PowerPill(2, "POWER OFF", "Full shutdown", Icons.Default.PowerSettingsNew, MikuPinkBright) {
+                        PowerPill(2, "POWER OFF", "Turn off", Icons.Default.PowerSettingsNew, MikuPinkBright) {
                             pendingActionName = "POWER OFF"; pendingActionCommand = "reboot -p"; pendingActionAccent = MikuPinkBright
                         }
-                        PowerPill(3, "RECOVERY", "Recovery partition", Icons.Default.SettingsBackupRestore, MikuPurple) {
+                        PowerPill(3, "RECOVERY", "Restart to recovery", Icons.Default.SettingsBackupRestore, MikuPurple) {
                             pendingActionName = "RECOVERY"; pendingActionCommand = "reboot recovery"; pendingActionAccent = MikuPurple
                         }
-                        PowerPill(4, "FASTBOOT", "Bootloader mode", Icons.Default.DeveloperMode, MikuGold) {
+                        PowerPill(4, "FASTBOOT", "Restart to the bootloader", Icons.Default.DeveloperMode, MikuGold) {
                             pendingActionName = "FASTBOOT"; pendingActionCommand = "reboot bootloader"; pendingActionAccent = MikuGold
                         }
-                        PowerPill(5, "RESTART SYSTEMUI", "Soft-restart the shell", Icons.Default.Refresh, Color(0xFF00E676)) { executeAction("systemui") }
+                        PowerPill(5, "RESTART SYSTEMUI", "Restart the shade and status bar", Icons.Default.Refresh, Color(0xFF00E676)) { executeAction("systemui") }
                     }
                 }
 
@@ -481,10 +481,7 @@ fun PowerActionTile(
                 RoundedCornerShape(14.dp)
             )
             .clickable {
-                try {
-                    val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-                    vib?.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
-                } catch (_: Throwable) {}
+                MikuHaptics.confirm(ctx)
                 onClick()
             }
             .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -637,7 +634,7 @@ private fun HoldToConfirm(accent: Color, modifier: Modifier = Modifier, onConfir
                 .align(Alignment.CenterStart)
         )
         Text(
-            if (holding) "HOLD…  ${(progress.value * 100).toInt()}%" else "HOLD TO CONFIRM",
+            if (holding) "Holding  ${(progress.value * 100).toInt()}%" else "HOLD TO CONFIRM",
             color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, maxLines = 1
         )
     }

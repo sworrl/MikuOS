@@ -6,7 +6,11 @@ import android.net.wifi.WifiManager
 import android.net.wifi.ScanResult
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.hardware.display.DisplayManager
 import android.provider.Settings
+import android.util.Log
+import android.view.Display
+import android.view.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -21,7 +25,17 @@ data class QsTile(
     val icon: ImageVector,
     val isActive: Boolean,
     val onClick: () -> Unit,
-    val onLongClick: (() -> Unit)? = null
+    val onLongClick: (() -> Unit)? = null,
+    /** False when the state cannot be read (radio missing, codec not answering). Drawn dimmed; a tap still tries. */
+    val isAvailable: Boolean = true,
+    /** Long-press opens another app's screen, so the shade should get out of the way. */
+    val longPressOpensUi: Boolean = true,
+    /** Tap opens another app's screen: the shade collapses first, then [onClick] runs. */
+    val clickOpensUi: Boolean = false,
+    /** Beat period in ms to pulse the icon at while music plays; 0 = no pulse. */
+    val beatMs: Int = 0,
+    /** ARGB accent for this tile, 0 = the shade's own. The DAC tiles use dacTheme's primary. */
+    val accent: Int = 0
 )
 
 object QuickSettingsModel {
@@ -98,6 +112,54 @@ object QuickSettingsModel {
         RootShell.execFast("svc bluetooth " + (if (enable) "enable" else "disable"))
     }
 
+    // ------------------------------------------------------------------ rotation
+
+    fun isAutoRotate(ctx: Context): Boolean =
+        runCatching { Settings.System.getInt(ctx.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1 }.getOrDefault(false)
+
+    /** Surface.ROTATION_* the default display is showing right now. */
+    fun displayRotation(ctx: Context): Int = runCatching {
+        // DisplayManager, not ctx.display: this runs from the accessibility service context too,
+        // which is not a visual context and throws on getDisplay().
+        (ctx.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager).getDisplay(Display.DEFAULT_DISPLAY).rotation
+    }.getOrDefault(Surface.ROTATION_0)
+
+    /** USER_ROTATION, i.e. the orientation a locked display is held in. */
+    fun lockedRotation(ctx: Context): Int =
+        runCatching { Settings.System.getInt(ctx.contentResolver, Settings.System.USER_ROTATION, Surface.ROTATION_0) }.getOrDefault(Surface.ROTATION_0)
+
+    /**
+     * Auto-rotate on/off, the way AOSP's RotationPolicy does it but through the settings provider:
+     * DisplayRotation observes both keys and applies them, so no IWindowManager call is needed.
+     * Locking first pins USER_ROTATION to the CURRENT rotation, otherwise turning auto-rotate off
+     * while sideways would snap the screen back to whatever USER_ROTATION held last time.
+     * Needs WRITE_SETTINGS (signature|appop, granted by the platform signature); root shell fallback.
+     */
+    fun setAutoRotate(ctx: Context, enable: Boolean) {
+        val cr = ctx.contentResolver
+        val rot = displayRotation(ctx)
+        val ok = runCatching {
+            if (!enable) Settings.System.putInt(cr, Settings.System.USER_ROTATION, rot)
+            Settings.System.putInt(cr, Settings.System.ACCELEROMETER_ROTATION, if (enable) 1 else 0)
+        }.getOrDefault(false)
+        if (!ok) {
+            Log.w("QuickSettingsModel", "Settings.System rotation write refused; root shell fallback")
+            RootShell.execFast(
+                (if (!enable) "settings put system user_rotation $rot; " else "") +
+                    "settings put system accelerometer_rotation " + (if (enable) 1 else 0)
+            )
+        }
+        // Saved so the choice survives a reboot (see MikuRotationKeeper).
+        MikuRotationKeeper.record(ctx, enable, if (enable) lockedRotation(ctx) else rot)
+    }
+
+    private fun rotationName(rot: Int) = when (rot) {
+        Surface.ROTATION_90 -> "Landscape"
+        Surface.ROTATION_180 -> "Portrait (flipped)"
+        Surface.ROTATION_270 -> "Landscape (flipped)"
+        else -> "Portrait"
+    }
+
     fun getTiles(ctx: Context, scope: CoroutineScope, onRefresh: () -> Unit): List<QsTile> {
         val list = mutableListOf<QsTile>()
 
@@ -115,6 +177,7 @@ object QuickSettingsModel {
                 },
                 icon = if (isWifiOn) Icons.Default.Wifi else Icons.Default.WifiOff,
                 isActive = isWifiOn,
+                isAvailable = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) != null,
                 onClick = {
                     val next = !isWifiOn
                     toggleWifi(ctx, next)
@@ -130,9 +193,10 @@ object QuickSettingsModel {
             QsTile(
                 id = "bluetooth",
                 label = if (isBtOn) btLabel else "Bluetooth",
-                subtitle = if (isBtOn) "Active" else "Off",
+                subtitle = if (isBtOn) "On" else "Off",
                 icon = if (isBtOn) Icons.Default.Bluetooth else Icons.Default.BluetoothDisabled,
                 isActive = isBtOn,
+                isAvailable = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter != null,
                 onClick = {
                     val next = !isBtOn
                     toggleBluetooth(ctx, next)
@@ -142,33 +206,47 @@ object QuickSettingsModel {
             )
         )
 
-        // 3. Cirrus CS43198 Filter — state comes from sysfs / Settings.Global; "unknown" when neither
-        //    answers (the tile used to be hard-wired isActive = true and defaulted to Fast Linear).
+        // 3-6. DAC tiles. State is what the DAC was last told (persist.vendor.audio.miku.*, the same
+        //    values Miku Music and the Hardware app show). Writes go through com.miku.sysbridge.
+        //    A tile is dimmed when the bridge is missing, and a failed set says so in a toast.
+        val dacBridgeOk = DacBridge.available(ctx)
+        // All four DAC tiles take their accent from the applied combo (dacTheme), the same colors
+        // as the status bar badge and the Hardware app.
+        val dacAccent = dacTheme(MikuDacBadge.readState(ctx)).primary
+        fun dacResult(r: DacBridge.Result) {
+            if (r == DacBridge.Result.CONFIRMED) return
+            val msg = DacBridge.lastProblem ?: return
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(ctx.applicationContext, msg, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
         val currentFilter = CirrusLogicManager.getDigitalFilter(ctx)
         list.add(
             QsTile(
                 id = "cs43198_filter",
+                accent = dacAccent,
                 label = "DAC Filter",
                 subtitle = when (currentFilter) {
                     CirrusLogicManager.DigitalFilter.FAST_LINEAR -> "Fast Linear"
                     CirrusLogicManager.DigitalFilter.FAST_MINIMUM -> "Fast Min"
                     CirrusLogicManager.DigitalFilter.SLOW_LINEAR -> "Slow Linear"
                     CirrusLogicManager.DigitalFilter.SLOW_MINIMUM -> "Slow Min"
-                    CirrusLogicManager.DigitalFilter.NOS -> "NOS (Raw)"
-                    null -> "Unknown — tap to set"
+                    CirrusLogicManager.DigitalFilter.NOS -> "NOS"
+                    null -> "Not set, tap to set"
                 },
                 icon = Icons.Default.GraphicEq,
                 isActive = currentFilter != null,
+                isAvailable = dacBridgeOk,
                 onClick = {
                     val all = CirrusLogicManager.DigitalFilter.values()
                     val nextIdx = if (currentFilter == null) 0 else (currentFilter.ordinal + 1) % all.size
                     val nextFilter = all[nextIdx]
                     scope.launch {
-                        CirrusLogicManager.setDigitalFilter(ctx, nextFilter)
+                        dacResult(CirrusLogicManager.setDigitalFilter(ctx, nextFilter))
                         onRefresh()
                     }
                 },
-                onLongClick = { openMikuSettings(ctx, "audio_dac") }
+                onLongClick = { DacSettingsLink.open(ctx) }
             )
         )
 
@@ -178,22 +256,24 @@ object QuickSettingsModel {
         list.add(
             QsTile(
                 id = "cs43198_gain",
+                accent = dacAccent,
                 label = "PO Gain",
                 subtitle = when (currentGain) {
-                    CirrusLogicManager.GainMode.HIGH -> "High (+6 dB)"
-                    CirrusLogicManager.GainMode.LOW -> "Low (0 dB)"
-                    null -> "Unknown — tap to set"
+                    CirrusLogicManager.GainMode.HIGH -> "High (0 dB)"
+                    CirrusLogicManager.GainMode.LOW -> "Low (-12 dB)"
+                    null -> "Not set, tap to set"
                 },
                 icon = Icons.Default.VolumeUp,
                 isActive = isHighGain,
+                isAvailable = dacBridgeOk,
                 onClick = {
                     val next = if (isHighGain) CirrusLogicManager.GainMode.LOW else CirrusLogicManager.GainMode.HIGH
                     scope.launch {
-                        CirrusLogicManager.setGainMode(ctx, next)
+                        dacResult(CirrusLogicManager.setGainMode(ctx, next))
                         onRefresh()
                     }
                 },
-                onLongClick = { openMikuSettings(ctx, "audio_dac") }
+                onLongClick = { DacSettingsLink.open(ctx) }
             )
         )
 
@@ -202,17 +282,19 @@ object QuickSettingsModel {
         list.add(
             QsTile(
                 id = "audio_turbo",
-                label = "Audio Turbo",
-                subtitle = if (isTurbo) "High Rails" else "Standard",
+                accent = dacAccent,
+                label = "High power",
+                subtitle = if (isTurbo) "On" else "Off",
                 icon = Icons.Default.FlashOn,
                 isActive = isTurbo,
+                isAvailable = dacBridgeOk,
                 onClick = {
                     scope.launch {
-                        CirrusLogicManager.setHighPowerEnabled(ctx, !isTurbo)
+                        dacResult(CirrusLogicManager.setHighPowerEnabled(ctx, !isTurbo))
                         onRefresh()
                     }
                 },
-                onLongClick = { openMikuSettings(ctx, "audio_dac") }
+                onLongClick = { DacSettingsLink.open(ctx) }
             )
         )
 
@@ -221,17 +303,19 @@ object QuickSettingsModel {
         list.add(
             QsTile(
                 id = "dre_mode",
-                label = "DRE 130dB+",
-                subtitle = if (isDre) "Active" else "Off",
+                accent = dacAccent,
+                label = "DRE",
+                subtitle = if (isDre) "On" else "Off",
                 icon = Icons.Default.Tune,
                 isActive = isDre,
+                isAvailable = dacBridgeOk,
                 onClick = {
                     scope.launch {
-                        CirrusLogicManager.setDreEnabled(ctx, !isDre)
+                        dacResult(CirrusLogicManager.setDreEnabled(ctx, !isDre))
                         onRefresh()
                     }
                 },
-                onLongClick = { openMikuSettings(ctx, "audio_dac") }
+                onLongClick = { DacSettingsLink.open(ctx) }
             )
         )
 
@@ -253,6 +337,29 @@ object QuickSettingsModel {
                     }
                 },
                 onLongClick = { openMikuSettings(ctx, "system_about") }
+            )
+        )
+
+        // Rotation lock. Active = auto-rotate on (AOSP semantics); off shows the held orientation.
+        val autoRotate = isAutoRotate(ctx)
+        val held = lockedRotation(ctx)
+        val heldLandscape = held == Surface.ROTATION_90 || held == Surface.ROTATION_270
+        list.add(
+            QsTile(
+                id = "rotation",
+                label = if (autoRotate) "Auto-rotate" else "Rotation lock",
+                subtitle = if (autoRotate) "On" else "Locked · " + rotationName(held),
+                icon = when {
+                    autoRotate -> Icons.Default.ScreenRotation
+                    heldLandscape -> Icons.Default.ScreenLockLandscape
+                    else -> Icons.Default.ScreenLockPortrait
+                },
+                isActive = autoRotate,
+                onClick = {
+                    setAutoRotate(ctx, !autoRotate)
+                    onRefresh()
+                },
+                onLongClick = { openMikuSettings(ctx, "display") }
             )
         )
 

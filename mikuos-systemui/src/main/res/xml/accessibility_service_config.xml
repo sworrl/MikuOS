@@ -13,6 +13,11 @@
   player, the launcher and every third-party app, for content nobody ever asked for.
 
   Now: no content retrieval, and only the four event types the service actually handles.
+
+  isAccessibilityTool="true": on Android 14 a window an app marks accessibilityDataSensitive
+  (password fields, payment sheets) only accepts injected input from services that declare
+  themselves accessibility tools. Without it, a tap the top strip or the pill replays into such
+  a window is dropped. This service is navigation, which is what the flag is for.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeViewClicked|typeViewLongClicked|typeGestureDetectionStart"
@@ -20,6 +25,7 @@
     android:accessibilityFlags="flagDefault|flagRequestFilterKeyEvents"
     android:canRetrieveWindowContent="false"
     android:canPerformGestures="true"
+    android:isAccessibilityTool="true"
     android:canRequestFilterKeyEvents="true"
     android:description="@string/app_name"
     android:notificationTimeout="100" />

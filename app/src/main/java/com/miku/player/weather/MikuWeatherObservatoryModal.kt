@@ -131,7 +131,7 @@ fun MikuWeatherObservatoryModal(
                 // Full Modal-Sized Transparent Miku Inlay Background
                 Image(
                     painter = painterResource(R.drawable.miku_pose_dance),
-                    contentDescription = "Miku Weather Idol",
+                    contentDescription = "Miku artwork",
                     modifier = Modifier
                         .fillMaxSize()
                         .align(Alignment.Center),
@@ -166,7 +166,7 @@ fun MikuWeatherObservatoryModal(
                             Spacer(Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "MIKU METEROLOGICAL OBSERVATORY",
+                                    text = "WEATHER",
                                     color = Color.White,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Black,
@@ -204,7 +204,7 @@ fun MikuWeatherObservatoryModal(
                         com.miku.player.network.Cyber3dIconButton(
                             onClick = onDismissRequest,
                             icon = Icons.Default.Close,
-                            contentDescription = "Close Modal",
+                            contentDescription = "Close",
                             accentColor = MikuNeonPink
                         )
                     }
@@ -217,19 +217,19 @@ fun MikuWeatherObservatoryModal(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         TabButton(
-                            title = "📊 OVERVIEW",
+                            title = "OVERVIEW",
                             isSelected = selectedTab == 0,
                             modifier = Modifier.weight(1f)
                         ) { selectedTab = 0 }
 
                         TabButton(
-                            title = "📈 FORECAST",
+                            title = "FORECAST",
                             isSelected = selectedTab == 1,
                             modifier = Modifier.weight(1f)
                         ) { selectedTab = 1 }
 
                         TabButton(
-                            title = "🛰️ RADAR",
+                            title = "RADAR",
                             isSelected = selectedTab == 2,
                             modifier = Modifier.weight(1f)
                         ) { selectedTab = 2 }
@@ -255,7 +255,7 @@ fun MikuWeatherObservatoryModal(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "⚡ DATA FEEDS: ${weather.sourcesUsed.uppercase()}",
+                                        text = "SOURCES: ${weather.sourcesUsed.uppercase()}",
                                         color = MikuCyan,
                                         fontSize = 7.sp,
                                         fontWeight = FontWeight.Bold,
@@ -263,7 +263,7 @@ fun MikuWeatherObservatoryModal(
                                     )
                                     if (weather.nextPrecipLabel.isNotEmpty()) {
                                         Text(
-                                            text = "⏱️ ${weather.nextPrecipLabel}",
+                                            text = "${weather.nextPrecipLabel}",
                                             color = Color(0xFFFFD600),
                                             fontSize = 7.sp,
                                             fontWeight = FontWeight.Black,
@@ -350,7 +350,7 @@ fun MikuWeatherObservatoryModal(
                                             }
                                             Spacer(Modifier.height(2.dp))
                                             Text(
-                                                text = "${weather.moonPhase.phaseIcon} ${weather.moonPhase.phaseName}",
+                                                text = "${weather.moonPhase.phaseName}",
                                                 color = Color(0xFF80DEEA),
                                                 fontSize = 7.5.sp,
                                                 fontWeight = FontWeight.Bold,
@@ -389,21 +389,21 @@ fun MikuWeatherObservatoryModal(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = "🌅 SUNRISE ${weather.sunrise}",
+                                                text = "SUNRISE ${weather.sunrise}",
                                                 color = Color(0xFFFFD600),
                                                 fontSize = 7.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 fontFamily = AudiowideFont
                                             )
                                             Text(
-                                                text = if (weather.isDay) "☀️ DAYLIGHT PHASE" else "🌙 LUNAR NIGHT PHASE",
+                                                text = if (weather.isDay) "DAYTIME" else "NIGHT",
                                                 color = if (weather.isDay) Color(0xFFFFD600) else Color(0xFF80DEEA),
                                                 fontSize = 7.5.sp,
                                                 fontWeight = FontWeight.Black,
                                                 fontFamily = AudiowideFont
                                             )
                                             Text(
-                                                text = "🌇 SUNSET ${weather.sunset}",
+                                                text = "SUNSET ${weather.sunset}",
                                                 color = Color(0xFFFF9100),
                                                 fontSize = 7.5.sp,
                                                 fontWeight = FontWeight.Bold,
@@ -491,7 +491,7 @@ fun MikuWeatherObservatoryModal(
 
                                 // Historical Weather Timeline
                                 Text(
-                                    text = "24-HOUR HISTORICAL TEMPERATURE LOG",
+                                    text = "LAST 24 HOURS",
                                     color = MikuCyan,
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
@@ -510,7 +510,7 @@ fun MikuWeatherObservatoryModal(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            text = "Metric telemetry accumulating in local datastore...",
+                                            text = "Collecting readings. Check back in a bit.",
                                             color = MikuTextSecondary,
                                             fontSize = 8.5.sp
                                         )
@@ -548,7 +548,7 @@ fun MikuWeatherObservatoryModal(
                                                         fontFamily = AudiowideFont
                                                     )
                                                     Text(
-                                                        text = "💧 ${rec.humidityPct}%",
+                                                        text = "RH ${rec.humidityPct}%",
                                                         color = MikuTextSecondary,
                                                         fontSize = 7.sp
                                                     )
@@ -642,7 +642,7 @@ fun MikuTemperatureSparkline(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "📈 8-HOUR TEMPERATURE TREND",
+                    text = "8-HOUR TEMPERATURE TREND",
                     color = MikuCyan,
                     fontSize = 7.5.sp,
                     fontWeight = FontWeight.Black,
@@ -902,7 +902,7 @@ fun MikuLiveDopplerRadarTab(
         ) {
             Column {
                 Text(
-                    text = "RADAR: MIKU DOPPLER COMPOSITE",
+                    text = "RADAR",
                     color = MikuCyan,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Black,
@@ -1046,7 +1046,7 @@ fun MikuLiveDopplerRadarTab(
                     .offset(y = (-32).dp)
             )
             Text(
-                "TARGET: ${if (gps.city.isNotEmpty()) gps.city else "STATION"}",
+                "LOCATION: ${if (gps.city.isNotEmpty()) gps.city else "STATION"}",
                 color = Color.White,
                 fontSize = 7.5.sp,
                 fontWeight = FontWeight.Bold,
@@ -1073,7 +1073,7 @@ fun MikuLiveDopplerRadarTab(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 modifier = Modifier.height(32.dp)
             ) {
-                Text(if (isPlaying) "⏸ PAUSE" else "▶ PLAY", color = Color.White, fontSize = 8.sp, fontFamily = AudiowideFont)
+                Text(if (isPlaying) "PAUSE" else "PLAY", color = Color.White, fontSize = 8.sp, fontFamily = AudiowideFont)
             }
 
             if (pastFrames.isNotEmpty()) {

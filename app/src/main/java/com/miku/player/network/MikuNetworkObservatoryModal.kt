@@ -227,7 +227,7 @@ fun MikuNetworkObservatoryModal(
                 // Frosted Watermark of Task-Specific Telecom & RF Announcer Miku Art
                 Image(
                     painter = painterResource(R.drawable.miku_dj_megaphone),
-                    contentDescription = "Miku Telecom Announcer",
+                    contentDescription = "Miku artwork",
                     modifier = Modifier
                         .fillMaxSize()
                         .align(Alignment.Center)
@@ -376,7 +376,7 @@ private fun MikuNetObsHeaderBar(
             Spacer(Modifier.width(8.dp))
             Column {
                 Text(
-                    text = "ELECTRIC ANGEL TRANSCEIVER",
+                    text = "NETWORK",
                     color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Black,
@@ -426,7 +426,7 @@ private fun MikuNetObsHeaderBar(
             Cyber3dIconButton(
                 onClick = onDismissRequest,
                 icon = Icons.Default.Close,
-                contentDescription = "Close Modal",
+                contentDescription = "Close",
                 accentColor = MikuNeonPink
             )
         }
@@ -515,7 +515,7 @@ private fun MikuNetObsConnectedWifiHero(
                                     )
                                     Spacer(Modifier.width(4.dp))
                                     Text(
-                                        text = "CONNECTED // ${wifi.bssid}",
+                                        text = "CONNECTED · ${wifi.bssid}",
                                         color = Color(0xFF00E676),
                                         fontSize = 7.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -729,7 +729,7 @@ private fun MikuNetObsAvailableApList(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (wifi.isEnabled) "No other Wi-Fi networks in range · Scanning..." else "Wi-Fi is turned off.",
+                text = if (wifi.isEnabled) "No other Wi-Fi networks in range. Scanning…" else "Wi-Fi is turned off.",
                 color = MikuTextSecondary,
                 fontSize = 8.5.sp
             )
@@ -876,7 +876,7 @@ private fun MikuNetObsChannelSpectrogram(
     channelOccupancies: List<MikuNetworkService.ChannelOccupancy>
 ) {
     Text(
-        text = "RF SPECTRUM CHANNEL CONGESTION",
+        text = "CHANNEL USE",
         color = MikuCyan,
         fontSize = 9.sp,
         fontWeight = FontWeight.Bold,
@@ -1033,7 +1033,7 @@ private fun MikuNetObsHardwareControls(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text("Operating Band", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-                        Text("From WifiInfo — band steering belongs to the OS, not to this screen", color = MikuTextSecondary, fontSize = 7.sp)
+                        Text("From WifiInfo. The OS picks the band, not this screen.", color = MikuTextSecondary, fontSize = 7.sp)
                     }
                     Text(
                         if (wifi.bandLabel.isNotBlank()) wifi.bandLabel else "—",
@@ -1073,7 +1073,7 @@ private fun MikuNetObsHardwareControls(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text("802.11 Standard", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
-                        Text("Radio sleep is managed by the Wi-Fi framework — there is no root path here to override it", color = MikuTextSecondary, fontSize = 7.sp)
+                        Text("The Wi-Fi framework manages radio sleep. This screen can't change it.", color = MikuTextSecondary, fontSize = 7.sp)
                     }
                     Text(
                         if (wifi.standard.isNotBlank()) wifi.standard else "—",
@@ -1108,7 +1108,7 @@ private fun MikuNetObsWireGuardCard(
     val ctx = LocalContext.current
 
     Text(
-        text = "UDR WIREGUARD SPLIT-TUNNEL (WAN BRIDGE)",
+        text = "WIREGUARD SPLIT TUNNEL",
         color = Color(0xFF00E676),
         fontSize = 9.sp,
         fontWeight = FontWeight.Bold,
@@ -1204,14 +1204,14 @@ private fun MikuNetObsWireGuardCard(
                 ) {
                     Column {
                         Text(
-                            "TUNNEL POLICY & CONDITIONAL ROUTING:",
+                            "WHEN THE TUNNEL IS USED:",
                             color = MikuCyan,
                             fontSize = 7.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = AudiowideFont
                         )
                         Text(
-                            "• On Home Wi-Fi: WireGuard is bypassed to prevent double-NAT loops.\n• On 4G LTE or External Wi-Fi: Automatically routes the configured LAN subnets back to the WAN endpoint${MikuIngestConfig.vpnEndpoint(ctx).let { if (it.isNotBlank()) " at $it" else "" }}.",
+                            "• On home Wi-Fi: WireGuard is skipped to avoid double NAT.\n• On 4G LTE or other Wi-Fi: routes the configured LAN subnets back to the WAN endpoint${MikuIngestConfig.vpnEndpoint(ctx).let { if (it.isNotBlank()) " at $it" else "" }}.",
                             color = Color.White.copy(alpha = 0.85f),
                             fontSize = 7.sp,
                             lineHeight = 10.sp
@@ -1324,7 +1324,7 @@ private fun MikuNetObsConnectDialog(
                                 modifier = Modifier.fillMaxWidth()
                             )
                         } else {
-                            Text("This is an unencrypted Open network. No password is required.", color = Color(0xFF00E676), fontSize = 8.5.sp)
+                            Text("This is an open network. No password needed.", color = Color(0xFF00E676), fontSize = 8.5.sp)
                         }
 
                         Spacer(Modifier.height(14.dp))
@@ -1443,7 +1443,7 @@ private fun MikuNetObsAddHiddenDialog(
                         OutlinedTextField(
                             value = hiddenSsidInput,
                             onValueChange = { onHiddenSsidInputChange(it) },
-                            label = { Text("Network SSID Name", fontSize = 9.5.sp) },
+                            label = { Text("Network name (SSID)", fontSize = 9.5.sp) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MikuCyan,
                                 unfocusedBorderColor = CyberGlassBorder,
@@ -1460,7 +1460,7 @@ private fun MikuNetObsAddHiddenDialog(
                         OutlinedTextField(
                             value = hiddenPasswordInput,
                             onValueChange = { onHiddenPasswordInputChange(it) },
-                            label = { Text("Password (Leave blank if open)", fontSize = 9.5.sp) },
+                            label = { Text("Password (leave blank if open)", fontSize = 9.5.sp) },
                             visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                             trailingIcon = {
                                 IconButton(onClick = { onShowPasswordChange(!showPassword) }) {
@@ -1642,7 +1642,7 @@ private fun MikuNetObsWireGuardQrModal(
                                     )
                                     Spacer(Modifier.height(6.dp))
                                     Text(
-                                        text = "PrivateKey is never bundled — import it from your own WireGuard config.",
+                                        text = "The private key is never bundled. Import it from your own WireGuard config.",
                                         color = MikuTextSecondary,
                                         fontSize = 7.5.sp
                                     )

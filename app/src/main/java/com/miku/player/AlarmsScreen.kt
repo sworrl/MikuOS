@@ -169,7 +169,7 @@ fun AlarmsSettingsContent(ctx: Context, tracks: List<Track>) {
 
         if (!exactOk) {
             Spacer(Modifier.height(10.dp))
-            AlarmBanner("Exact alarms aren't permitted — alarms can't be armed. Tap to fix in system Settings.") {
+            AlarmBanner("Exact alarms aren't allowed, so alarms can't be set. Tap to fix in system Settings.") {
                 runCatching {
                     ctx.startActivity(
                         Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
@@ -181,7 +181,7 @@ fun AlarmsSettingsContent(ctx: Context, tracks: List<Track>) {
         }
         if (!fsiOk) {
             Spacer(Modifier.height(10.dp))
-            AlarmBanner("Full-screen alarm permission is off — a ringing alarm would only show as a small notification on a locked screen. Tap to fix.") {
+            AlarmBanner("Full-screen alarm permission is off, so a ringing alarm only shows as a small notification on a locked screen. Tap to fix.") {
                 runCatching {
                     val action = if (Build.VERSION.SDK_INT >= 34) android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT else android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
                     ctx.startActivity(Intent(action).setData(android.net.Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -197,7 +197,7 @@ fun AlarmsSettingsContent(ctx: Context, tracks: List<Track>) {
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surface1).padding(16.dp)
     ) {
         if (alarms.isEmpty()) {
-            Text("No alarms yet. Wake up to any track, album, playlist, your Liked Songs, a Daily Mix, or the built-in Miku Chime — with fade-in, snooze, and sunrise/sunset triggers.", color = Muted, fontSize = 12.sp, lineHeight = 16.sp)
+            Text("No alarms yet. Wake up to any track, album, playlist, your Liked Songs, a Daily Mix, or the built-in Miku Chime. Alarms can fade in, snooze, and follow sunrise or sunset.", color = Muted, fontSize = 12.sp, lineHeight = 16.sp)
             Spacer(Modifier.height(12.dp))
         } else {
             alarms.sortedWith(compareBy({ it.mode != AlarmTriggerMode.CLOCK_TIME }, { it.hour * 60 + it.minute })).forEachIndexed { idx, a ->
@@ -528,7 +528,7 @@ private fun AlarmEditorDialog(
     val artistNames = remember(tracks) { tracks.map { it.artist }.filter { it.isNotBlank() }.distinct().sorted() }
     val albumNames = remember(tracks) { tracks.map { it.album }.filter { it.isNotBlank() }.distinct().sorted() }
     val playlistNames = remember { runCatching { PlayerPreferences.loadPlaylists(ctx).keys.toList() }.getOrDefault(emptyList()) }
-    val trackOptions = remember(tracks) { tracks.sortedBy { it.title.lowercase() }.map { it.id.toString() to "${it.title} — ${it.artist}" } }
+    val trackOptions = remember(tracks) { tracks.sortedBy { it.title.lowercase() }.map { it.id.toString() to "${it.title} · ${it.artist}" } }
     val needsRef = source == AlarmSource.ARTIST || source == AlarmSource.ALBUM || source == AlarmSource.PLAYLIST || source == AlarmSource.TRACK
 
     fun build(): Alarm? {
@@ -631,7 +631,7 @@ private fun AlarmEditorDialog(
             when (source) {
                 AlarmSource.MIKU_CHIME -> {
                     Spacer(Modifier.height(6.dp))
-                    Text("Built-in bell arpeggio, 48 kHz — always available, even before the library is scanned.", color = Muted, fontSize = 10.5.sp, lineHeight = 14.sp)
+                    Text("Built-in bell arpeggio, 48 kHz. Always available, even before the library is scanned.", color = Muted, fontSize = 10.5.sp, lineHeight = 14.sp)
                 }
                 AlarmSource.ARTIST, AlarmSource.ALBUM, AlarmSource.PLAYLIST, AlarmSource.TRACK -> {
                     Spacer(Modifier.height(8.dp))

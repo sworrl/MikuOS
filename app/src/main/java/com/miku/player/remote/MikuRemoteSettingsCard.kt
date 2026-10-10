@@ -80,7 +80,7 @@ fun MikuRemoteSettingsCard(ctx: Context) {
         } else {
             enabled = false
             MikuRemotePreferences.setEnabled(ctx, false)
-            MikuRemoteStatus.update { it.copy(lastError = "Bluetooth permission denied — the remote can't advertise without it.") }
+            MikuRemoteStatus.update { it.copy(lastError = "Bluetooth permission denied. The remote can't advertise without it.") }
         }
     }
 
@@ -118,7 +118,7 @@ fun MikuRemoteSettingsCard(ctx: Context) {
                     Text("Phone Remote · Bluetooth LE", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                 }
                 Text(
-                    "Control playback from any phone's browser — no app to install. Off by default; nothing is advertised until you turn it on.",
+                    "Control playback from any phone's browser, no app to install. Off by default. Nothing is advertised until you turn it on.",
                     color = Muted, fontSize = 10.5.sp
                 )
             }
@@ -134,9 +134,9 @@ fun MikuRemoteSettingsCard(ctx: Context) {
         Spacer(Modifier.height(10.dp))
         val (pillText, pillColor) = when {
             !enabled && !status.running -> "OFF" to Muted
-            status.lastError != null && !status.advertising -> "⚠ ${status.lastError}" to MikuPink
-            status.connected.any { it.authorized } -> "🟢 CONNECTED" to MikuTealBright
-            status.advertising -> "📡 ADVERTISING AS \"${status.advertisedName.ifBlank { MikuRemoteProtocol.LOCAL_NAME }}\"" to MikuTealBright
+            status.lastError != null && !status.advertising -> "Error: ${status.lastError}" to MikuPink
+            status.connected.any { it.authorized } -> "CONNECTED" to MikuTealBright
+            status.advertising -> "ADVERTISING AS \"${status.advertisedName.ifBlank { MikuRemoteProtocol.LOCAL_NAME }}\"" to MikuTealBright
             status.running -> "STARTING…" to Muted
             else -> "STARTING…" to Muted
         }
@@ -178,8 +178,8 @@ fun MikuRemoteSettingsCard(ctx: Context) {
                 SmallButton("New code") { Haptics.tick(ctx); MikuRemoteGattService.requestNewCode(ctx) }
             }
             Text(
-                if (locked) "Too many wrong codes — pairing pauses for a minute and the code has been replaced."
-                else "Single-use. Type it into the remote page on your phone when it asks; a fresh code appears after each pairing.",
+                if (locked) "Too many wrong codes. Pairing pauses for a minute and the code has been replaced."
+                else "Single-use. Type it into the remote page on your phone when it asks. A new code appears after each pairing.",
                 color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp)
             )
 

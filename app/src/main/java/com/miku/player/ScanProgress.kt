@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object ScanProgress {
     @Volatile var active: Boolean = false
-    @Volatile var phase: String = ""          // "Discovering audio files…" / "Indexing tags…" / ""
+    @Volatile var phase: String = ""          // "Looking for audio files…" / "Indexing tags…" / ""
     val visited = AtomicInteger(0)            // files looked at during the directory walk
     val newFound = AtomicInteger(0)           // of those, ones not already in the library
     val tagsScanned = AtomicInteger(0)        // new files the system tag-reader has finished
@@ -31,7 +31,7 @@ object ScanProgress {
 
     fun reset() {
         active = true
-        phase = "Discovering audio files…"
+        phase = "Looking for audio files…"
         visited.set(0)
         newFound.set(0)
         tagsScanned.set(0)

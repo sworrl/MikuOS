@@ -249,7 +249,7 @@ fun FmTunerUnavailableScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                "Miku Music can't open the FM hardware itself (the tuner is reserved for the Miku FM app, com.caf.fmradio). Install the Miku FM app from the MikuOS system image to listen to radio — nothing here is simulated.",
+                "Miku Music can't open the FM hardware itself (the tuner is reserved for the Miku FM app, com.caf.fmradio). Install the Miku FM app from the MikuOS system image to listen to radio.",
                 color = Color(0xFFD4ECE9), fontSize = 13.sp, lineHeight = 18.sp, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(24.dp))
@@ -280,7 +280,7 @@ fun MikuFMRadioScreen(onBack: () -> Unit) {
     ) {
         Image(
             painter = painterResource(id = R.drawable.miku_bg_fm),
-            contentDescription = "Miku FM Tuner Artwork",
+            contentDescription = "Miku artwork",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
@@ -315,7 +315,7 @@ fun MikuFMRadioScreen(onBack: () -> Unit) {
                 com.miku.player.ui.MikuBackButton(onClick = onBack)
 
                 Text(
-                    "MIKU CYBER FM TUNER",
+                    "MIKU FM",
                     color = MikuCyan,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold,

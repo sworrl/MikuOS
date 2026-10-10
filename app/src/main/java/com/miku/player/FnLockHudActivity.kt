@@ -242,7 +242,7 @@ fun FnLockBespokeMikuModal(
                     painter = painterResource(
                         if (isLocked) R.drawable.miku_pose_headphones else R.drawable.miku_pose_peace
                     ),
-                    contentDescription = "Miku Lock Guardian",
+                    contentDescription = "Miku artwork",
                     modifier = Modifier
                         .size(130.dp)
                         .align(Alignment.BottomEnd)
@@ -281,7 +281,7 @@ fun FnLockBespokeMikuModal(
                             Spacer(Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = if (isLocked) "MIKU POCKET GUARD" else "HARDWARE RELEASED",
+                                    text = if (isLocked) "POCKET LOCK ON" else "POCKET LOCK OFF",
                                     color = Color.White,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Black,
@@ -289,7 +289,7 @@ fun FnLockBespokeMikuModal(
                                     letterSpacing = 0.8.sp
                                 )
                                 Text(
-                                    text = if (isLocked) "Hardware Fn Switch Engaged" else "Digitizer & Controls Restored",
+                                    text = if (isLocked) "Fn switch is on" else "Touch and buttons work again",
                                     color = primaryColor,
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
@@ -339,9 +339,9 @@ fun FnLockBespokeMikuModal(
 
                     Text(
                         text = if (isLocked)
-                            "TOUCHSCREEN DIGITIZER & BUTTONS SHIELDED"
+                            "TOUCHSCREEN AND BUTTONS LOCKED"
                         else
-                            "TOUCH & HARDWARE CONTROLS ENGAGED",
+                            "TOUCH AND BUTTONS UNLOCKED",
                         color = Color.White,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -353,9 +353,9 @@ fun FnLockBespokeMikuModal(
 
                     Text(
                         text = if (isLocked)
-                            "Accidental touches & power presses blocked. Audio playback continues uninterrupted.\nFlip Fn switch UP to unlock."
+                            "Touches and power presses are blocked. Music keeps playing.\nFlip the Fn switch up to unlock."
                         else
-                            "Digitizer active. All physical buttons and gestures responsive.",
+                            "Touchscreen, buttons and gestures all work.",
                         color = MikuTextSecondary,
                         fontSize = 9.sp,
                         lineHeight = 13.sp,

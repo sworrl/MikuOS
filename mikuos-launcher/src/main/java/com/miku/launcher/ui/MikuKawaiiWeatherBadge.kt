@@ -229,7 +229,7 @@ fun MikuKawaiiWeatherBadge(
             Spacer(Modifier.width(10.dp))
             Column {
                 Text("Weather", color = Color(0xFF39C5BB), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("No data yet — tap to fetch", color = Color(0xB3FFFFFF), fontSize = 11.sp)
+                Text("No data yet. Tap to fetch.", color = Color(0xB3FFFFFF), fontSize = 11.sp)
             }
         }
         return

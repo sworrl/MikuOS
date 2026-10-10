@@ -58,35 +58,27 @@ object UsbDacManager {
     /** Effective bit depth used when programming the gadget. See [getSampleRate]. */
     fun getBitDepth(ctx: Context): Int = getBitDepthOrNull(ctx) ?: DEFAULT_BIT_DEPTH
 
+    /**
+     * Switch the M500 into (or out of) USB DAC mode: plugged into a computer or phone, it shows up
+     * as a USB sound card and plays what it is sent.
+     *
+     * The sequence is HiBy's, and it needs property writes only the system_app domain is allowed
+     * (vendor.usb.*, sys.usb.config). This used to send it through `su`, which MikuOS does not
+     * have, so the toggle never did anything. It now asks com.miku.sysbridge, the one MikuOS
+     * package running as the system UID, to do the writes. The real state is still read back from
+     * sys.usb.state by [isActive], never from the preference.
+     */
     suspend fun setUsbDacMode(ctx: Context, enable: Boolean) = withContext(Dispatchers.IO) {
         val sp = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         sp.edit().putBoolean(KEY_DAC_MODE, enable).apply()
-
-        if (enable) {
-            val rate = getSampleRate(ctx)
-            val bits = getBitDepth(ctx)
-            val script = """
-                setprop vendor.usb.uac2.function.init 1
-                setprop sys.usb.config none
-                sleep 0.1
-                setprop vendor.usb.uac2.function.start 1
-                setprop sys.audio.uac.sample_rate $rate
-                setprop sys.audio.uac.sample_bit $bits
-                setprop sys.audio.uac.channels 2
-                setprop sys.usb.config diag,uac2,adb
-            """.trimIndent()
-            RootShell.exec(script)
-            Log.i(TAG, "USB DAC Mode Enabled ($rate Hz, $bits bit)")
-        } else {
-            val script = """
-                setprop vendor.usb.uac2.function.start 0
-                setprop sys.usb.config none
-                sleep 0.1
-                setprop sys.usb.config mtp,adb
-            """.trimIndent()
-            RootShell.exec(script)
-            Log.i(TAG, "USB DAC Mode Disabled (MTP/ADB restored)")
-        }
+        val i = android.content.Intent("com.miku.sysbridge.USB_DAC")
+            .setPackage("com.miku.sysbridge")
+            .putExtra("enable", enable)
+            .putExtra("rate", getSampleRate(ctx))
+            .putExtra("bits", getBitDepth(ctx))
+        runCatching { ctx.sendBroadcast(i, "com.miku.permission.SYSTEM_BRIDGE") }
+            .onFailure { Log.e(TAG, "system bridge not reachable", it) }
+        Log.i(TAG, "USB DAC mode ${if (enable) "requested on" else "requested off"} via com.miku.sysbridge")
     }
 
     suspend fun configureParams(ctx: Context, sampleRate: Int, bitDepth: Int) = withContext(Dispatchers.IO) {

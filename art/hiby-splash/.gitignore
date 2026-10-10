@@ -1,0 +1,3 @@
+# HiBy's own frames and anything that contains them stay out of the repo (see the top-level .gitignore, rule 2).
+stock/
+contact_sheet*.png

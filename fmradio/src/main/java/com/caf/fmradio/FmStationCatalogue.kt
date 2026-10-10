@@ -55,7 +55,48 @@ object FmStationCatalogue {
          * Comparable between stations, meaningless as an absolute, and blind to terrain.
          */
         val score: Double,
+        /** The station's programming as its Wikipedia infobox states it ("Classic rock"). */
+        val format: String? = null,
+        /** [format] folded into one of a few dozen buckets, for chips and filtering. */
+        val genre: String? = null,
+        /** Whether it should come in here; see [FmReach]. Filled in by the engine. */
+        val reach: FmReach.Verdict = FmReach.Verdict.UNKNOWN,
+        /** Predicted level at the tuner input, dBµV, after calibration. Null without ERP. */
+        val predictedDbuv: Double? = null,
+        /** RSSI the last band sweep read on this frequency, if one ran here recently. */
+        val measuredDbuv: Int? = null,
+        /**
+         * Worst first-Fresnel-zone clearance on the path from here, as a fraction (1 = clear,
+         * 0.6 = the conventional limit, below 0 = the ground cuts the line of sight). Null
+         * until a terrain profile for this station has been obtained.
+         */
+        val fresnelFraction: Double? = null,
+        /** FmFresnel's words for the path: "clear path", "grazing the ridge", ... */
+        val terrainVerdict: String? = null,
+        /** Diffraction loss over the terrain, dB (one equivalent edge); already in [predictedDbuv]. */
+        val terrainLossDb: Double? = null,
+        /** Antenna height above mean sea level from the licence (RCAMSL), for the terrain path. */
+        val rcamslM: Double? = null,
+        /** Where [measuredDbuv] came from: [MEASURED_TUNED] or [MEASURED_SWEEP]. */
+        val measuredSource: String? = null,
     ) {
+        /** Words for [measuredSource], for the UI. */
+        val measuredWhere: String get() = when (measuredSource) {
+            MEASURED_TUNED -> "read while tuned here"
+            MEASURED_SWEEP -> "last band sweep here"
+            else -> "not measured here yet"
+        }
+        /**
+         * 0..1 odds-style score for a gauge: where [predictedDbuv] (or the measurement, which
+         * wins) sits between nothing (THRESHOLD - 10) and comfortable (LISTENABLE + 15).
+         * A presentation number, not a probability.
+         */
+        val receptionScore: Float? get() {
+            val v = measuredDbuv?.toDouble() ?: predictedDbuv ?: return null
+            val lo = FmReach.THRESHOLD_DBUV - 10
+            val hi = FmReach.LISTENABLE_DBUV + 15
+            return ((v - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f)
+        }
         val mhz: Double get() = khz / 1000.0
         /** How the UI should describe the kind of station, in words rather than FCC codes. */
         val kind: String get() = when (service) {
@@ -65,6 +106,9 @@ object FmStationCatalogue {
             else -> "full power"
         }
     }
+
+    const val MEASURED_TUNED = "tuned"
+    const val MEASURED_SWEEP = "sweep"
 
     @Volatile private var db: SQLiteDatabase? = null
     @Volatile private var missingReported = false
@@ -151,6 +195,84 @@ object FmStationCatalogue {
 
     fun available(): Boolean = open() != null
 
+    /**
+     * Whether this catalogue has the format columns (tools/radiodb/add_formats.py). Older
+     * images ship without them, and the queries below must work on both.
+     */
+    @Volatile private var columns: Set<String>? = null
+
+    private fun columnsOf(d: SQLiteDatabase): Set<String> = columns ?: runCatching {
+        d.rawQuery("PRAGMA table_info(station)", null).use { c ->
+            val out = HashSet<String>()
+            while (c.moveToNext()) out += c.getString(1)
+            out as Set<String>
+        }
+    }.getOrDefault(emptySet()).also { columns = it }
+
+    private fun formatsPresent(d: SQLiteDatabase): Boolean = "genre" in columnsOf(d)
+
+    private fun selectColumns(d: SQLiteDatabase): String =
+        "call,service,khz,city,state,licensee,lat,lon,erp_kw,haat_m,callsign_since," +
+            (if (formatsPresent(d)) "format,genre" else "NULL,NULL") +
+            (if ("rcamsl_m" in columnsOf(d)) ",rcamsl_m" else ",NULL")
+
+    private fun stationFrom(c: android.database.Cursor, lat: Double, lon: Double): Station {
+        val sLat = c.getDouble(6); val sLon = c.getDouble(7)
+        val km = haversineKm(lat, lon, sLat, sLon)
+        val erp = if (c.isNull(8)) null else c.getDouble(8)
+        val haat = if (c.isNull(9)) null else c.getDouble(9)
+        return Station(
+            call = c.getString(0), service = c.getString(1), khz = c.getInt(2),
+            city = c.getString(3), state = c.getString(4), licensee = c.getString(5),
+            lat = sLat, lon = sLon, erpKw = erp, haatM = haat,
+            callsignSince = c.getString(10), distanceKm = km,
+            score = 10 * log10((erp ?: 0.01).coerceAtLeast(0.001)) +
+                10 * log10((haat ?: 30.0).coerceAtLeast(1.0)) -
+                20 * log10(km.coerceAtLeast(1.0)),
+            format = c.getString(11), genre = c.getString(12),
+            rcamslM = if (c.isNull(13)) null else c.getDouble(13),
+        )
+    }
+
+    /**
+     * Search the whole catalogue, not just what is near: call sign, city, format, genre,
+     * licensee, or a frequency ("94.5", "945", "94.5 FM"). Nearest first.
+     *
+     * The nearby list answers "what is around me"; this answers "where is WDVE" and "what
+     * plays country", which is what a search box is for.
+     */
+    fun search(query: String, lat: Double?, lon: Double?, limit: Int = 60): List<Station> {
+        val d = open() ?: return emptyList()
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        val freq = q.removeSuffix("FM").removeSuffix("fm").trim().toDoubleOrNull()?.let {
+            when {
+                it in 87.0..108.0 -> (it * 1000).toInt()
+                it in 870.0..1080.0 -> (it * 100).toInt()     // "945" for 94.5
+                else -> null
+            }
+        }
+        val like = "%${q.replace("%", "").replace("_", "")}%"
+        val where = StringBuilder("service IN ('FM','FX','FL') AND lat IS NOT NULL AND (")
+        val args = ArrayList<String>()
+        if (freq != null) { where.append("khz BETWEEN ? AND ? OR "); args += (freq - 50).toString(); args += (freq + 50).toString() }
+        where.append("call LIKE ? OR city LIKE ? OR licensee LIKE ?")
+        repeat(3) { args += like }
+        if (formatsPresent(d)) { where.append(" OR format LIKE ? OR genre LIKE ?"); repeat(2) { args += like } }
+        where.append(")")
+        val out = ArrayList<Station>()
+        runCatching {
+            d.rawQuery("SELECT ${selectColumns(d)} FROM station WHERE $where LIMIT 2000", args.toTypedArray()).use { c ->
+                while (c.moveToNext()) out += stationFrom(c, lat ?: c.getDouble(6), lon ?: c.getDouble(7))
+            }
+        }.onFailure { Log.w(TAG, "search() failed: $it") }
+        val exactCall = q.uppercase()
+        return out.sortedWith(compareBy<Station>(
+            { !(it.call == exactCall || it.call.substringBefore('-') == exactCall) },
+            { if (lat == null) 0.0 else it.distanceKm },
+        )).take(limit)
+    }
+
     /** Where MikuLocationFusion last put us, or null if nothing has placed the device yet. */
     fun listenerPosition(ctx: Context): Pair<Double, Double>? = runCatching {
         val cr = ctx.contentResolver
@@ -191,25 +313,13 @@ object FmStationCatalogue {
         val out = ArrayList<Station>()
         runCatching {
             d.rawQuery(
-                "SELECT call,service,khz,city,state,licensee,lat,lon,erp_kw,haat_m,callsign_since " +
+                "SELECT ${selectColumns(d)} " +
                     "FROM station WHERE service IN ($placeholders) AND lat IS NOT NULL " +
                     "AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?", args
             ).use { c ->
                 while (c.moveToNext()) {
-                    val sLat = c.getDouble(6); val sLon = c.getDouble(7)
-                    val km = haversineKm(lat, lon, sLat, sLon)
-                    if (km > radiusKm) continue
-                    val erp = if (c.isNull(8)) null else c.getDouble(8)
-                    val haat = if (c.isNull(9)) null else c.getDouble(9)
-                    out += Station(
-                        call = c.getString(0), service = c.getString(1), khz = c.getInt(2),
-                        city = c.getString(3), state = c.getString(4), licensee = c.getString(5),
-                        lat = sLat, lon = sLon, erpKw = erp, haatM = haat,
-                        callsignSince = c.getString(10), distanceKm = km,
-                        score = 10 * log10((erp ?: 0.01).coerceAtLeast(0.001)) +
-                            10 * log10((haat ?: 30.0).coerceAtLeast(1.0)) -
-                            20 * log10(km.coerceAtLeast(1.0)),
-                    )
+                    val st = stationFrom(c, lat, lon)
+                    if (st.distanceKm <= radiusKm) out += st
                 }
             }
         }.onFailure { Log.w(TAG, "near() failed: $it") }

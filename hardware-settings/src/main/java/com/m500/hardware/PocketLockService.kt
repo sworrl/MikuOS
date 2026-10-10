@@ -103,12 +103,11 @@ class PocketLockService : Service() {
             }
 
             // Lock Icon
-            val iconView = TextView(this).apply {
-                text = "🔒"
-                textSize = 34f
-                gravity = Gravity.CENTER
+            val iconView = android.widget.ImageView(this).apply {
+                setImageResource(android.R.drawable.ic_lock_lock)
+                setColorFilter(Color.parseColor("#FFB300"))
             }
-            card.addView(iconView)
+            card.addView(iconView, LinearLayout.LayoutParams(dp(40f).toInt(), dp(40f).toInt()))
 
             // Title
             val titleView = TextView(this).apply {
@@ -138,7 +137,7 @@ class PocketLockService : Service() {
                     setStroke(dp(1f).toInt(), Color.parseColor("#4D00E5FF"))
                 }
                 val volView = TextView(this).apply {
-                    text = "🎛️ Volume Wheel Enabled"
+                    text = "Volume wheel still works"
                     setTextColor(Color.parseColor("#00E5FF"))
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
                     paint.isFakeBoldText = true
@@ -190,8 +189,8 @@ class PocketLockService : Service() {
             nm.createNotificationChannel(chan)
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Pocket Lock Active")
-            .setContentText("Touch & side keys locked")
+            .setContentTitle("Pocket lock is on")
+            .setContentText("Touchscreen and side buttons locked")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
             .setSilent(true)

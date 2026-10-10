@@ -109,7 +109,6 @@ fun Modifier.mikuAppIconClickable(
         label = "mikuAppIconScale"
     )
 
-    LaunchedEffect(isPressed) { if (isPressed) MikuHaptics.tick(ctx) }
 
     // Return-home settle: the icon we launched from bounces once when the launcher resumes.
     val returnTick by MikuLaunchSource.homeReturnTick.collectAsState()
@@ -131,6 +130,9 @@ fun Modifier.mikuAppIconClickable(
             interactionSource = interactionSource,
             indication = null,
             onClick = {
+                // Haptic on the click itself: a LaunchedEffect on the pressed state misses quick
+                // taps that press and release inside one frame.
+                MikuHaptics.confirm(ctx)
                 MikuLaunchSource.set(bounds, launchPackage)
                 onClick()
             },

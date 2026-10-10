@@ -174,6 +174,41 @@ object MikuRhythmTiming {
         return signed.toInt()
     }
 
+    /**
+     * How far a GREAT missed PERFECT by, when it was close enough to be worth saying ("SO CLOSE ·
+     * 4ms off PERFECT"). Null otherwise. Near-miss feedback turns a disappointment into a
+     * near-win, which is what makes the next attempt feel winnable.
+     */
+    fun nearPerfectMissMs(signedOffsetMs: Int, w: Windows): Int? {
+        val over = abs(signedOffsetMs) - w.perfectMs
+        return if (over in 1..NEAR_PERFECT_MS) over else null
+    }
+
+    /** "Close" for [nearPerfectMissMs]: well inside one frame of the PERFECT edge. */
+    const val NEAR_PERFECT_MS = 7
+
+    /**
+     * Lucky (golden) notes: roughly one beat in [LUCKY_ONE_IN] is golden, decided by the beat's
+     * own absolute index so the note the highway draws as golden and the beat the judge scores
+     * are provably the same one. Both sides call this with the same beat time: the highway with
+     * `lastPulse + n·period`, the judge with `tap − calibration − deviation`, which is that exact
+     * value by construction of [signedOffsetToBeat].
+     *
+     * A hash rather than a counter, so the pattern is irregular (a lucky note every 19th beat on
+     * the dot would be a metronome, not a surprise) but still deterministic for the drawn note.
+     */
+    const val LUCKY_ONE_IN = 19
+
+    fun isLuckyBeat(beatAtEpochMs: Long, beatPeriodMs: Long): Boolean {
+        if (beatPeriodMs <= 0L || beatAtEpochMs <= 0L) return false
+        val k = Math.floorDiv(beatAtEpochMs + beatPeriodMs / 2, beatPeriodMs)
+        var h = k * -7046029254386353131L
+        h = h xor (h ushr 31)
+        h *= -4658895280553007687L
+        h = h xor (h ushr 29)
+        return (h and 0x7fffffffL) % LUCKY_ONE_IN == 0L
+    }
+
     // =====================================================================================
     // BPM COMPARISON — the detector is an estimator, not ground truth
     // =====================================================================================
@@ -387,6 +422,6 @@ object MikuRhythmCalibration {
                 return "≥${oneBuffer}ms buffer (lower bound only)"
             }
         } catch (_: Throwable) {}
-        return "output latency unknown — calibrate by tapping"
+        return "output latency unknown, calibrate by tapping"
     }
 }

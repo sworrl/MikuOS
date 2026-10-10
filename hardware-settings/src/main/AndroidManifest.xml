@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- USB DAC mode is switched by com.miku.sysbridge (system UID); see UsbDacManager. -->
+    <uses-permission android:name="com.miku.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
@@ -57,6 +59,13 @@
             android:theme="@style/Theme.M500Hardware">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+            <!-- The one DAC settings page on MikuOS. Miku Music, MikuSettings, the launcher and
+                 the SystemUI DAC tiles (long-press) all open this. -->
+            <intent-filter>
+                <action android:name="com.miku.action.DAC_SETTINGS" />
+                <action android:name="com.m500.hardware.action.DAC_SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.settings.SOUND_SETTINGS" />

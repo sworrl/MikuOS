@@ -64,7 +64,10 @@ class MikuTrackHud(
         val title: String, val artist: String, val album: String,
         val durationMs: Long, val positionMs: Long, val artUri: String?,
         val quality: String?, val liked: Boolean, val isPlaying: Boolean,
-        val accent: Int = 0
+        val accent: Int = 0,
+        /** The app a tap opens and whose own screen already shows this. Miku Music unless the
+         *  sender says otherwise; the FM tuner (com.caf.fmradio) sends its own for radio songs. */
+        val openPackage: String = "com.miku.player",
     ) {
         companion object {
             fun from(i: Intent) = Payload(
@@ -77,7 +80,8 @@ class MikuTrackHud(
                 quality = i.getStringExtra("quality"),
                 liked = i.getBooleanExtra("liked", false),
                 isPlaying = i.getBooleanExtra("isPlaying", true),
-                accent = i.getIntExtra("accent", 0)
+                accent = i.getIntExtra("accent", 0),
+                openPackage = i.getStringExtra("openPackage")?.takeIf { it.isNotBlank() } ?: "com.miku.player",
             )
         }
     }
@@ -93,7 +97,7 @@ class MikuTrackHud(
         runCatching { Settings.Global.getInt(ctx.contentResolver, GLOBAL_ENABLED, 1) == 1 }.getOrDefault(true)
 
     /** Everything that should suppress a pop-over: screen off, keyguard, MikuOS lock/AOD, our own surfaces. */
-    private fun suppressed(): Boolean {
+    private fun suppressed(openPackage: String = "com.miku.player"): Boolean {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
         if (pm?.isInteractive == false) return true
         val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
@@ -101,14 +105,14 @@ class MikuTrackHud(
         val top = runCatching { MikuTaskStack.topTask(ctx)?.second }.getOrNull()
         val cls = top?.className ?: ""
         if (top?.packageName == ctx.packageName) return true            // shade / recents / power menu
-        if (top?.packageName == "com.miku.player") return true          // Miku Music itself is showing it already
+        if (top?.packageName == openPackage) return true                // the sending app is showing it already
         if (cls.contains("Lockscreen", true) || cls.contains("Aod", true)) return true
         return false
     }
 
     fun show(p: Payload) {
         if (!isEnabled()) { Log.i(TAG, "disabled — ignoring"); return }
-        if (suppressed()) { Log.i(TAG, "suppressed (screen/keyguard/own surface on top)"); return }
+        if (suppressed(p.openPackage)) { Log.i(TAG, "suppressed (screen/keyguard/own surface on top)"); return }
         main.post {
             val v = view ?: HudView(ctx).also { hv ->
                 val dm = ctx.resources.displayMetrics
@@ -165,7 +169,6 @@ class MikuTrackHud(
         private val glass = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f) }
         private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFF0FDFB.toInt(); textSize = dp(14f); isFakeBoldText = true }
         private val artistPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF80DEEA.toInt(); textSize = dp(12f) }
         private val chipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = dp(10f); isFakeBoldText = true }
@@ -176,6 +179,7 @@ class MikuTrackHud(
         private val rect = RectF()
         private val artDst = Rect()
         private val cardR = dp(20f)
+        private val glassFx = MikuGlass.CanvasGlass(density)
 
         init { isClickable = true }
 
@@ -251,7 +255,8 @@ class MikuTrackHud(
             // glass card
             glass.shader = LinearGradient(0f, 0f, w, h, intArrayOf(0xF60B222A.toInt(), 0xFA061319.toInt()), null, Shader.TileMode.CLAMP)
             rect.set(0f, 0f, w, h); canvas.drawRoundRect(rect, cardR, cardR, glass)
-            stroke.color = (accent and 0x00FFFFFF) or 0xAA000000.toInt(); canvas.drawRoundRect(rect, cardR, cardR, stroke)
+            // MikuGlass sheen, top-edge light and refraction rim (art accent -> Miku pink), under the content
+            glassFx.drawOver(canvas, rect, cardR, accent, 0xFFFF4081.toInt())
             // art
             val pad = dp(8f); val artSz = dp(56f)
             artDst.set(pad.toInt(), pad.toInt(), (pad + artSz).toInt(), (pad + artSz).toInt())
@@ -332,7 +337,7 @@ class MikuTrackHud(
                         if (e.x > width - dp(44f)) hide()
                         else {
                             runCatching {
-                                context.packageManager.getLaunchIntentForPackage("com.miku.player")
+                                context.packageManager.getLaunchIntentForPackage(p?.openPackage ?: "com.miku.player")
                                     ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }?.let { context.startActivity(it) }
                             }
                             hide()

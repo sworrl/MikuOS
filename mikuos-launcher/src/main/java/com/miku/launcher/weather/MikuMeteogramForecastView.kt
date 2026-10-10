@@ -89,7 +89,7 @@ fun MikuMeteogramForecastView(
                     Text("📊", fontSize = 11.sp)
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        "METEOGRAM FORECAST",
+                        "FORECAST",
                         color = palette.primary,
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.Black,
@@ -321,7 +321,7 @@ fun MikuSolarArcTrack(
     ) {
         // Blank sunrise/sunset = no fetched astronomy. Hoisted out of the Row so the Canvas below
         // shares the gate: it used to draw a gold "daytime sun" parked at sunrise (solarFraction
-        // defaults to 0f and isDay to true) right next to the label "NO SOLAR DATA". Note that
+        // defaults to 0f and isDay to true) right next to the label "NO SUN DATA". Note that
         // lastUpdatedTime > 0 is NOT enough here — restoreLastWeather() republishes a cached
         // condition with blank sunrise/sunset and solarFraction 0f.
         val hasAstro = sunrise.isNotBlank() && sunset.isNotBlank()
@@ -332,7 +332,7 @@ fun MikuSolarArcTrack(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "☀️ RISE: ${sunrise.ifBlank { "—" }}",
+                    text = "SUNRISE ${sunrise.ifBlank { "—" }}",
                     color = Color(0xFFFFB300),
                     fontSize = 7.sp,
                     fontWeight = FontWeight.Bold,
@@ -340,9 +340,9 @@ fun MikuSolarArcTrack(
                 )
                 Text(
                     text = when {
-                        !hasAstro -> "NO SOLAR DATA"
-                        isDay -> "SOLAR TRANSIT · ${(solarFraction * 100).roundToInt()}%"
-                        else -> "LUNAR TRANSIT"
+                        !hasAstro -> "NO SUN DATA"
+                        isDay -> "DAYLIGHT · ${(solarFraction * 100).roundToInt()}% GONE"
+                        else -> "NIGHT"
                     },
                     color = if (!hasAstro) Color.White.copy(alpha = 0.5f) else if (isDay) MikuCyan else Color(0xFFB388FF),
                     fontSize = 7.sp,
@@ -350,7 +350,7 @@ fun MikuSolarArcTrack(
                     fontFamily = AudiowideFont
                 )
                 Text(
-                    text = "🌙 SET: ${sunset.ifBlank { "—" }}",
+                    text = "SUNSET ${sunset.ifBlank { "—" }}",
                     color = Color(0xFFFF80AB),
                     fontSize = 7.sp,
                     fontWeight = FontWeight.Bold,

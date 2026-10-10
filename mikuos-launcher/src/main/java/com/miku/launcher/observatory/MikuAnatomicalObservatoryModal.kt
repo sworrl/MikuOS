@@ -2,6 +2,7 @@ package com.miku.launcher.observatory
 
 import android.content.Context
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -21,8 +22,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -34,14 +38,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
- * Skeuomorphic Hatsune Miku Vocaloid Android Anatomy & Brain Observatory.
- * Organizes hardware telemetry, sensors, and audio subsystems by body structure:
- * - Neural Cortex: System Watchdog, Thread Pools & ANR Sentinel
- * - Audio Ears: Cirrus Logic Dual CS43198 DACs, Gain & Digital Filters
- * - Optical Eyes: Light Sensor, Display Backlight & Vision Matrix
- * - Quantum Heart: Snapdragon Octa-Core CPU Governor, Thermals & Power
- * - Vocal Synthesizer: Direct ALSA Stream, Qualcomm FM & MSEB DSP
- * - Nervous System: Wi-Fi/LTE Transceiver & Sysfs I/O Bus
+ * Vocaloid anatomy: what's inside the player, laid out as a body.
+ *  - Brain: how the system is running, the MikuOS build, every Miku app's version, BPM game progress
+ *  - Ears: the DAC, the listening profile and EQ, play-to-every-output, what's playing
+ *  - Eyes: display and the motion/touch parts
+ *  - Heart: battery, charger and the CPU
+ *  - Voice: FM tuner, weather radio and NWS alerts, song ID
+ *  - Nerves: network link, USB DAC mode, Google services, Android Auto, the updater
+ *
+ * Every live value is read, never assumed: "—" when it can't be read. The few static part names
+ * are labeled "measured on this device" because that's what they are.
  */
 @Composable
 fun MikuAnatomicalObservatoryModal(
@@ -73,6 +79,20 @@ fun MikuAnatomicalObservatoryModal(
         }
     }
 
+    // Settings.Global readouts from Miku Music, the FM app, weather and the BPM game. A handful
+    // of string reads every 2 s, off the main thread, only while this sheet is open.
+    val live by produceState(initialValue = LiveAnatomy.EMPTY) {
+        while (true) {
+            value = withContext(Dispatchers.IO) { runCatching { readLiveAnatomy(ctx) }.getOrDefault(LiveAnatomy.EMPTY) }
+            delay(2000)
+        }
+    }
+
+    // Installed versions don't change while the sheet is open: read once.
+    val apps by produceState<AppVersions?>(initialValue = null) {
+        value = withContext(Dispatchers.IO) { runCatching { readAppVersions(ctx) }.getOrNull() }
+    }
+
     // Real, cheap one-shot reads for the identity/capability pills.
     val facts = remember { readAnatomyFacts(ctx) }
     val netState by com.miku.launcher.network.MikuNetworkService.state.collectAsState()
@@ -85,6 +105,11 @@ fun MikuAnatomicalObservatoryModal(
     }
 
     androidx.activity.compose.BackHandler(enabled = true) { onDismissRequest() }
+
+    val green = Color(0xFF00FF7F)
+    val violet = Color(0xFFB388FF)
+    val gold = com.miku.launcher.ui.MikuIdentity.Gold
+    val nerveBlue = Color(0xFF00E5FF)
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -104,7 +129,7 @@ fun MikuAnatomicalObservatoryModal(
                         Brush.verticalGradient(
                             listOf(
                                 MikuCyan.copy(alpha = 0.9f),
-                                Color(0xFFB388FF).copy(alpha = 0.4f),
+                                violet.copy(alpha = 0.4f),
                                 MikuNeonPink.copy(alpha = 0.8f)
                             )
                         )
@@ -132,41 +157,38 @@ fun MikuAnatomicalObservatoryModal(
                 // Modal Header (Clean, no X button)
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(Brush.radialGradient(listOf(Color(0xFF00FF7F), Color(0xFF003319)))),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("01", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = AudiowideFont)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                "VOCALOID ANATOMY // BRAIN",
-                                color = MikuCyan,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Black,
-                                fontFamily = AudiowideFont
-                            )
-                            Text(
-                                "Skeuomorphic System Observatory",
-                                color = MikuTextSecondary,
-                                fontSize = 8.5.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                    Box(
+                        Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Brush.radialGradient(listOf(green, Color(0xFF003319)))),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Psychology, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            "HARDWARE",
+                            color = MikuCyan,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = AudiowideFont
+                        )
+                        Text(
+                            "What's inside, read live",
+                            color = MikuTextSecondary,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
 
                 Spacer(Modifier.height(8.dp))
 
-                // Skeuomorphic Body Filter Selector Chips
+                // Body part filter chips
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -174,34 +196,42 @@ fun MikuAnatomicalObservatoryModal(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val organs = listOf(
-                        Triple("ALL", "✨ Full Body", MikuCyan),
-                        Triple("BRAIN", "🧠 Neural Cortex", Color(0xFF00FF7F)),
-                        Triple("EARS", "🎧 Audio Dual-DAC", Color(0xFFB388FF)),
-                        Triple("EYES", "👁️ Optic Vision", com.miku.launcher.ui.MikuIdentity.Gold),
-                        Triple("HEART", "💖 Quantum Core", MikuNeonPink),
-                        Triple("VOCAL", "🎤 Synthesizer", MikuCyan),
-                        Triple("NERVES", "⚡ Telemetry", Color(0xFF00E5FF))
+                        Organ("ALL", "Everything", Icons.Default.AccessibilityNew, MikuCyan),
+                        Organ("BRAIN", "Brain · system", Icons.Default.Psychology, green),
+                        Organ("EARS", "Ears · audio", Icons.Default.Headphones, violet),
+                        Organ("EYES", "Eyes · display", Icons.Default.Visibility, gold),
+                        Organ("HEART", "Heart · power", Icons.Default.Favorite, MikuNeonPink),
+                        Organ("VOICE", "Voice · radio", Icons.Default.Radio, MikuCyan),
+                        Organ("NERVES", "Nerves · connections", Icons.Default.Hub, nerveBlue)
                     )
-                    organs.forEach { (key, label, accent) ->
-                        val isSelected = activeOrgan == key
-                        Box(
+                    organs.forEach { organ ->
+                        val isSelected = activeOrgan == organ.key
+                        Row(
                             Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    if (isSelected) accent.copy(alpha = 0.25f)
+                                    if (isSelected) organ.accent.copy(alpha = 0.25f)
                                     else Color(0xFF071822)
                                 )
                                 .border(
                                     1.dp,
-                                    if (isSelected) accent else Color(0x30FFFFFF),
+                                    if (isSelected) organ.accent else Color(0x30FFFFFF),
                                     RoundedCornerShape(8.dp)
                                 )
-                                .clickable { activeOrgan = key }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .clickable { activeOrgan = organ.key }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Icon(
+                                organ.icon,
+                                contentDescription = null,
+                                tint = if (isSelected) organ.accent else Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
                             Text(
-                                text = label,
-                                color = if (isSelected) accent else Color.White,
+                                text = organ.label,
+                                color = if (isSelected) organ.accent else Color.White,
                                 fontSize = 8.5.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                             )
@@ -211,95 +241,197 @@ fun MikuAnatomicalObservatoryModal(
 
                 Spacer(Modifier.height(10.dp))
 
-                // Scrollable Anatomical Organ Cards
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // NEURAL CORTEX (Brain)
+                    // ---------------- BRAIN ----------------
                     if (activeOrgan in listOf("ALL", "BRAIN")) {
                         item {
                             AnatomicalOrganCard(
-                                title = "NEURAL CORTEX // WATCHDOG",
-                                organIcon = "🧠",
-                                // No ANR sentinel exists; the card shows threads/heap/RAM/uptime.
-                                subtitle = "Threads, JVM heap, system RAM & uptime",
-                                accentColor = Color(0xFF00FF7F)
+                                title = "BRAIN · HOW IT'S RUNNING",
+                                icon = Icons.Default.Psychology,
+                                subtitle = "Threads, app memory, system RAM and uptime",
+                                accentColor = green
                             ) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    // Real process facts (was "SENTINEL ONLINE" / "ANR IMMUNITY 100%": asserted, unmeasured).
-                                    MetricPill("THREADS", "${Thread.activeCount()}", Color(0xFF00FF7F))
+                                    MetricPill("THREADS", "${Thread.activeCount()}", green)
                                     val rt = Runtime.getRuntime()
-                                    MetricPill("JVM HEAP", "${(rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)}M / ${rt.maxMemory() / (1024 * 1024)}M", MikuCyan)
-                                    MetricPill("SYSTEM RAM", if (memoryState.second > 0) "${memoryState.first}M / ${memoryState.second}M" else "—", com.miku.launcher.ui.MikuIdentity.Gold)
+                                    MetricPill("APP MEMORY", "${(rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)}M / ${rt.maxMemory() / (1024 * 1024)}M", MikuCyan)
+                                    MetricPill("SYSTEM RAM", if (memoryState.second > 0) "${memoryState.first}M / ${memoryState.second}M" else "—", gold)
                                     val hrs = uptimeSec / 3600
                                     val mins = (uptimeSec % 3600) / 60
-                                    MetricPill("UPTIME", "${hrs}h ${mins}m", Color(0xFFB388FF))
+                                    MetricPill("UPTIME", "${hrs}h ${mins}m", violet)
+                                }
+                                HardwareFacts(
+                                    listOf(
+                                        "Chip" to "Snapdragon 680 (SM6225)",
+                                        "DSPs" to "ADSP (audio), CDSP with HVX (unused), modem"
+                                    )
+                                )
+                            }
+                        }
+                        item {
+                            AnatomicalOrganCard(
+                                title = "BRAIN · MIKUOS",
+                                icon = Icons.Default.Memory,
+                                subtitle = "The build and every Miku app's version",
+                                accentColor = green
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Readout("MikuOS", facts.mikuosVersion, green)
+                                    Readout("Build", facts.buildIncremental, green)
+                                    Readout("Android", facts.androidVersion, green)
+                                    Readout("Quick settings tiles", live.qsTiles, MikuCyan)
+                                    Spacer(Modifier.height(2.dp))
+                                    val list = apps
+                                    if (list == null) {
+                                        Readout("Apps", "—", Color.White)
+                                    } else {
+                                        list.miku.forEach { (label, version) ->
+                                            Readout(label, version, if (version == NOT_INSTALLED) MikuTextSecondary.copy(alpha = 0.6f) else Color.White)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        item {
+                            AnatomicalOrganCard(
+                                title = "BRAIN · BPM GAME",
+                                icon = Icons.Default.EmojiEvents,
+                                subtitle = "What you've earned by tapping along",
+                                accentColor = green
+                            ) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricPill("REWARDS", live.rewards, green)
+                                    MetricPill("SECRETS", live.secrets, gold)
                                 }
                             }
                         }
                     }
 
-                    // AUDIO EARS (DAC settings as actually readable from sysfs / vendor globals)
+                    // ---------------- EARS ----------------
                     if (activeOrgan in listOf("ALL", "EARS")) {
                         item {
                             AnatomicalOrganCard(
-                                title = "ACOUSTIC EARS // DAC",
-                                organIcon = "🎧",
+                                title = "EARS · DAC",
+                                icon = Icons.Default.GraphicEq,
                                 // CirrusLogicManager falls back to its own prefs mirror when the DAC
                                 // sysfs node is unreadable, so this is not always a hardware readback.
-                                subtitle = "Digital filter, analog gain & DRE — DAC node if readable, else the last value this app wrote",
-                                accentColor = Color(0xFFB388FF)
+                                subtitle = "Read from the DAC when it answers, else the last value set here",
+                                accentColor = violet
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        // Chip identity is a spec label, not a per-chip liveness probe — say so.
-                                        MetricPill("DAC (SPEC)", "CS43198 ×2", Color(0xFFB388FF))
-                                        MetricPill("OUTPUT ROUTE", facts.audioOutput, Color(0xFFB388FF))
-                                    }
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        MetricPill("OUTPUT GAIN", facts.dacGain, Color(0xFF00FF7F))
-                                        MetricPill("DIGITAL FILTER", facts.dacFilter, MikuCyan)
+                                        MetricPill("GAIN", facts.dacGain, green)
+                                        MetricPill("FILTER", facts.dacFilter, MikuCyan)
                                         MetricPill("DRE", facts.dacDre, Color(0xFFFF4081))
                                     }
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        MetricPill("MAIN OUTPUT", facts.audioOutput, violet)
+                                        MetricPill("MIXER", facts.mixerFormat, MikuCyan)
+                                    }
+                                    HardwareFacts(
+                                        listOf(
+                                            "DAC" to "Cirrus CS43198",
+                                            "Speaker amp" to "Awinic AW883xx"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        item {
+                            AnatomicalOrganCard(
+                                title = "EARS · LISTENING",
+                                icon = Icons.Default.Headphones,
+                                subtitle = "Profile, EQ and where the sound goes",
+                                accentColor = violet
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Readout("Profile", live.profile, violet)
+                                    Readout("Profile settings", live.profileSummary, Color.White)
+                                    Readout("EQ", live.eq, MikuCyan)
+                                    Readout("Play to every output", live.shareOn, green)
+                                    Readout("Outputs right now", live.outputs, Color.White)
+                                }
+                            }
+                        }
+                        item {
+                            AnatomicalOrganCard(
+                                title = "EARS · NOW PLAYING",
+                                icon = Icons.Default.MusicNote,
+                                subtitle = "What Miku Music says is on",
+                                accentColor = violet
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Readout("Song", live.song, Color.White)
+                                    Readout("Playing", live.playing, green)
+                                    Readout("Format", live.format, violet)
+                                    Readout("Song BPM", live.trackBpm, MikuCyan)
+                                    Readout("Live BPM", live.liveBpm, MikuCyan)
                                 }
                             }
                         }
                     }
 
-                    // OPTIC EYES (Light & Display Matrix — from SensorManager / Display, honest "none")
+                    // ---------------- EYES ----------------
                     if (activeOrgan in listOf("ALL", "EYES")) {
                         item {
                             AnatomicalOrganCard(
-                                title = "OPTIC EYES // VISION MATRIX",
-                                organIcon = "👁️",
-                                subtitle = "Ambient light sensor, panel refresh & colour gamut",
-                                accentColor = com.miku.launcher.ui.MikuIdentity.Gold
+                                title = "EYES · DISPLAY",
+                                icon = Icons.Default.Visibility,
+                                subtitle = "Light sensor, refresh rate and color range",
+                                accentColor = gold
                             ) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    MetricPill("LIGHT SENSOR", facts.lightSensor, com.miku.launcher.ui.MikuIdentity.Gold)
+                                    MetricPill("LIGHT SENSOR", facts.lightSensor, gold)
                                     MetricPill("REFRESH", facts.refreshHz, MikuCyan)
-                                    MetricPill("GAMUT", facts.gamut, Color(0xFF00FF7F))
+                                    MetricPill("COLOR", facts.gamut, green)
                                 }
+                                HardwareFacts(
+                                    listOf(
+                                        "Touch" to "Goodix",
+                                        "Accelerometer" to "QST qma6100",
+                                        "Compass" to "QST qmc6309h"
+                                    )
+                                )
                             }
                         }
                     }
 
-                    // QUANTUM HEART (Snapdragon CPU Governor & Battery Core)
+                    // ---------------- HEART ----------------
                     if (activeOrgan in listOf("ALL", "HEART")) {
                         item {
                             AnatomicalOrganCard(
-                                title = "QUANTUM HEART // POWER & GOVERNOR",
-                                organIcon = "💖",
-                                // SoC name from Build.SOC_*, not a hardcoded "Qualcomm Snapdragon
-                                // Kryo Octa-Core" assertion (the core count was hardcoded too).
-                                subtitle = realSocLabel()?.let { "$it · per-core cpufreq" }
-                                    ?: "SoC not reported by the build · per-core cpufreq",
+                                title = "HEART · POWER",
+                                icon = Icons.Default.Favorite,
+                                subtitle = "Battery and charging",
+                                accentColor = MikuNeonPink
+                            ) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricPill("BATTERY", live.battery, MikuNeonPink)
+                                    MetricPill("CHARGING", live.charging, green)
+                                }
+                                HardwareFacts(
+                                    listOf(
+                                        "Charger" to "MP2731",
+                                        "Fuel gauge" to "CW2015"
+                                    )
+                                )
+                            }
+                        }
+                        item {
+                            AnatomicalOrganCard(
+                                title = "HEART · CPU",
+                                icon = Icons.Default.Speed,
+                                // SoC name from Build.SOC_*, not a hardcoded assertion.
+                                subtitle = realSocLabel()?.let { "$it · speed of each core" }
+                                    ?: "Speed of each core",
                                 accentColor = MikuNeonPink
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(
-                                        "CPU CLUSTER SPECTRUM · ${cpuFreqs.size} CORES (MHz)",
+                                        "${cpuFreqs.size} CORES (GHz)",
                                         color = MikuTextSecondary,
                                         fontSize = 7.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -309,7 +441,7 @@ fun MikuAnatomicalObservatoryModal(
                                         Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        cpuFreqs.forEachIndexed { i, freqOrNull ->
+                                        cpuFreqs.forEachIndexed { _, freqOrNull ->
                                             Column(
                                                 Modifier.weight(1f),
                                                 horizontalAlignment = Alignment.CenterHorizontally
@@ -330,7 +462,7 @@ fun MikuAnatomicalObservatoryModal(
                                                 )
                                                 Spacer(Modifier.height(2.dp))
                                                 Text(
-                                                    if (freqOrNull == null) "—" else "${freq / 1000f}G",
+                                                    if (freqOrNull == null) "—" else "${freq / 1000f}",
                                                     color = Color.White,
                                                     fontSize = 6.sp,
                                                     fontWeight = FontWeight.Bold
@@ -343,48 +475,79 @@ fun MikuAnatomicalObservatoryModal(
                         }
                     }
 
-                    // VOCAL SYNTHESIZER (ALSA Stream, FM & MSEB)
-                    if (activeOrgan in listOf("ALL", "VOCAL")) {
+                    // ---------------- VOICE ----------------
+                    if (activeOrgan in listOf("ALL", "VOICE")) {
                         item {
                             AnatomicalOrganCard(
-                                title = "VOCAL SYNTHESIZER // ACOUSTIC DSP",
-                                organIcon = "🎤",
-                                // Only the three pills below are actually probed; "ALSA Direct PCM"
-                                // and "MSEB Engine" were never queried from anything.
-                                subtitle = "Native mixer rate, FM node visibility & published now-playing format",
+                                title = "VOICE · FM RADIO",
+                                icon = Icons.Default.Radio,
+                                subtitle = "What the FM app says it's tuned to",
                                 accentColor = MikuCyan
                             ) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    // Native mixer rate/buffer from AudioManager; FM node visibility probed, not asserted.
-                                    MetricPill("MIXER", facts.mixerFormat, MikuCyan)
-                                    MetricPill("FM /dev/radio0", facts.fmNode, Color(0xFF00FF7F))
-                                    MetricPill("NOW PLAYING FMT", facts.nowPlayingFormat, Color(0xFFB388FF))
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Readout("FM tuner", live.fm, MikuCyan)
+                                    Readout("Tuner device", facts.fmNode, Color.White)
+                                    Readout("Song ID", live.songId, Color.White)
+                                    HardwareFacts(listOf("FM tuner" to "Si4705, 64.0 to 108.0 MHz, RDS"))
+                                }
+                            }
+                        }
+                        item {
+                            AnatomicalOrganCard(
+                                title = "VOICE · WEATHER RADIO",
+                                icon = Icons.Default.Thunderstorm,
+                                subtitle = "Nearest NOAA station and NWS alerts here",
+                                accentColor = MikuCyan
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Readout("Nearest station", live.nwr, MikuCyan)
+                                    Readout("Alerts", live.alerts, if (live.alertActive) MikuNeonPink else green)
+                                    if (live.alertActive) {
+                                        Readout("Top alert", live.alertTop, MikuNeonPink)
+                                        Readout("Severity", live.alertSeverity, MikuNeonPink)
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // NERVOUS SYSTEM (Wi-Fi, LTE & Kernel Bus)
+                    // ---------------- NERVES ----------------
                     if (activeOrgan in listOf("ALL", "NERVES")) {
                         item {
                             AnatomicalOrganCard(
-                                title = "NERVOUS SYSTEM // I/O & BUS",
-                                organIcon = "⚡",
-                                subtitle = "High-Speed Transceiver & Sysfs Hardware Bus",
-                                accentColor = Color(0xFF00E5FF)
+                                title = "NERVES · CONNECTIONS",
+                                icon = Icons.Default.Hub,
+                                subtitle = "Network, USB and storage",
+                                accentColor = nerveBlue
                             ) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    // Live link from MikuNetworkService; LED/SD presence probed from the system.
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    // Live link from MikuNetworkService.
                                     val link = when {
                                         netState.wifi.isConnected -> "Wi-Fi ${netState.wifi.standard.ifBlank { netState.wifi.bandLabel }}".trim()
                                         netState.cellular.dataConnected -> "Cellular ${netState.cellular.networkType.ifBlank { "" }}".trim()
-                                        netState.cellular.hasSignal -> "Cell signal · no data"
+                                        netState.cellular.hasSignal -> "Cell signal, no data"
                                         netState.lastUpdated == 0L -> "—"
                                         else -> "Offline"
                                     }
-                                    MetricPill("RADIO LINK", link, Color(0xFF00E5FF))
-                                    MetricPill("LED DRIVER", facts.ledDriver, com.miku.launcher.ui.MikuIdentity.Gold)
-                                    MetricPill("SD CARD", facts.sdCard, Color(0xFF00FF7F))
+                                    Readout("Network", link, nerveBlue)
+                                    Readout("USB DAC mode", live.usbDac, green)
+                                    Readout("SD card", facts.sdCard, Color.White)
+                                    Readout("LED driver", facts.ledDriver, Color.White)
+                                    HardwareFacts(listOf("USB-C controller" to "AW35615"))
+                                }
+                            }
+                        }
+                        item {
+                            AnatomicalOrganCard(
+                                title = "NERVES · GOOGLE AND UPDATES",
+                                icon = Icons.Default.SystemUpdate,
+                                subtitle = "Play services, Android Auto and the MikuOS updater",
+                                accentColor = nerveBlue
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Readout("Play services", apps?.playServices ?: "—", nerveBlue)
+                                    Readout("Android Auto", apps?.androidAuto ?: "—", nerveBlue)
+                                    Readout("Updater", apps?.updater ?: "—", green)
                                 }
                             }
                         }
@@ -395,10 +558,12 @@ fun MikuAnatomicalObservatoryModal(
     }
 }
 
+private data class Organ(val key: String, val label: String, val icon: ImageVector, val accent: Color)
+
 @Composable
 private fun AnatomicalOrganCard(
     title: String,
-    organIcon: String,
+    icon: ImageVector,
     subtitle: String,
     accentColor: Color,
     content: @Composable () -> Unit
@@ -435,7 +600,16 @@ private fun AnatomicalOrganCard(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(organIcon, fontSize = 14.sp)
+                Box(
+                    Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(accentColor.copy(alpha = 0.15f))
+                        .border(0.6.dp, accentColor.copy(alpha = 0.6f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(12.dp))
+                }
                 Spacer(Modifier.width(6.dp))
                 Column {
                     Text(
@@ -488,6 +662,288 @@ private fun MetricPill(
         }
     }
 }
+
+/** One label/value line for readouts whose value can be long (song titles, profile settings). */
+@Composable
+private fun Readout(label: String, value: String, color: Color) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            color = MikuTextSecondary,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.width(104.dp)
+        )
+        Text(
+            value,
+            color = color,
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.End,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+/** Part names found on this unit. Static, so they're labeled as such rather than shown as live. */
+@Composable
+private fun HardwareFacts(rows: List<Pair<String, String>>) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0x14FFFFFF))
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp)
+    ) {
+        Text(
+            "MEASURED ON THIS DEVICE",
+            color = MikuTextSecondary.copy(alpha = 0.7f),
+            fontSize = 6.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = AudiowideFont
+        )
+        rows.forEach { (label, value) -> Readout(label, value, Color.White.copy(alpha = 0.85f)) }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Live readouts (Settings.Global, AudioManager, BatteryManager). Every field is "—" when the key
+// is unset or unreadable: nothing here is guessed.
+// ---------------------------------------------------------------------------------------------
+
+private const val NOT_INSTALLED = "not installed"
+
+private data class LiveAnatomy(
+    val profile: String,
+    val profileSummary: String,
+    val eq: String,
+    val shareOn: String,
+    val outputs: String,
+    val song: String,
+    val playing: String,
+    val format: String,
+    val trackBpm: String,
+    val liveBpm: String,
+    val fm: String,
+    val songId: String,
+    val nwr: String,
+    val alerts: String,
+    val alertActive: Boolean,
+    val alertTop: String,
+    val alertSeverity: String,
+    val rewards: String,
+    val secrets: String,
+    val qsTiles: String,
+    val usbDac: String,
+    val battery: String,
+    val charging: String
+) {
+    companion object {
+        val EMPTY = LiveAnatomy(
+            "—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—", false, "—", "—",
+            "—", "—", "—", "—", "—", "—"
+        )
+    }
+}
+
+private fun readLiveAnatomy(ctx: Context): LiveAnatomy {
+    val cr = ctx.contentResolver
+    fun g(key: String): String? = runCatching { Settings.Global.getString(cr, key) }.getOrNull()
+    fun gOrDash(key: String): String = g(key)?.trim()?.takeIf { it.isNotEmpty() } ?: "—"
+    fun bpm(key: String): String = g(key)?.trim()?.toFloatOrNull()?.takeIf { it > 0f }?.let { "%.0f".format(java.util.Locale.US, it) } ?: "—"
+
+    // Listening profile, written by Miku Music's ListeningProfileManager.
+    val summaryRaw = g("miku_listening_profile_summary")?.trim()?.takeIf { it.isNotEmpty() }
+    val eq = when {
+        summaryRaw == null -> "—"
+        else -> summaryRaw.split(",").map { it.trim() }.firstOrNull { it.startsWith("EQ") }
+            ?.removePrefix("EQ")?.trim()?.ifEmpty { null }
+            ?.replaceFirstChar { it.uppercase() }
+            ?: "Not part of this profile"
+    }
+
+    // Play to every output. Unset means the default, which is on (MikuMirrorOutput).
+    val shareRaw = g("miku_audio_share_enabled")?.trim()
+    val shareOn = when {
+        shareRaw.isNullOrEmpty() -> "On (default)"
+        shareRaw == "0" -> "Off"
+        shareRaw.toIntOrNull() != null -> "On"
+        else -> "—"
+    }
+
+    val outputs = runCatching {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val skip = setOf(
+            android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+            android.media.AudioDeviceInfo.TYPE_TELEPHONY,
+            android.media.AudioDeviceInfo.TYPE_REMOTE_SUBMIX,
+            android.media.AudioDeviceInfo.TYPE_FM,
+            android.media.AudioDeviceInfo.TYPE_BUS,
+            24, // TYPE_BUILTIN_SPEAKER_SAFE
+            28  // TYPE_ECHO_REFERENCE
+        )
+        val names = am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+            .filter { it.type !in skip }
+            .map { outputName(it.type) }
+            .distinct()
+        if (names.isEmpty()) "None plugged in (speaker only)" else "${names.size}: ${names.joinToString(", ")}"
+    }.getOrDefault("—")
+
+    val title = g("miku_now_playing_title")?.trim()?.takeIf { it.isNotEmpty() }
+    val artist = g("miku_now_playing_artist")?.trim()?.takeIf { it.isNotEmpty() }
+    val song = when {
+        title != null && artist != null -> "$title, $artist"
+        title != null -> title
+        else -> "—"
+    }
+    val playing = when (g("miku_is_playing")?.trim()) {
+        "1" -> "Yes"
+        "0" -> "No"
+        else -> "—"
+    }
+
+    // FM: "off" or "101.9 WVAQ", published by the FM app.
+    val fmRaw = g("miku_fm_status")?.trim()
+    val fm = when {
+        fmRaw.isNullOrEmpty() -> "—"
+        fmRaw.equals("off", true) -> "Off"
+        else -> "On, $fmRaw"
+    }
+    val fmInstalled = runCatching { ctx.packageManager.getPackageInfo("com.caf.fmradio", 0); true }.getOrDefault(false)
+    val songId = if (fmInstalled) "Ask in the FM app" else "Needs the FM app"
+
+    // Weather radio + NWS alerts, published by MikuNwsAlerts.
+    val nwrRaw = g("miku_weather_nwr")
+    val nwrKm = g("miku_weather_nwr_km")?.trim()?.toIntOrNull()
+    val nwr = when {
+        nwrRaw == null -> "—"
+        nwrRaw.isBlank() -> "None in reach"
+        nwrKm != null -> "${nwrRaw.trim()}, $nwrKm km away"
+        else -> nwrRaw.trim()
+    }
+    val alertCount = g("miku_weather_alert_count")?.trim()?.toIntOrNull()
+    val alerts = when {
+        alertCount == null -> "—"
+        alertCount == 0 -> "None right now"
+        alertCount == 1 -> "1 active"
+        else -> "$alertCount active"
+    }
+
+    // BPM game. Rewards are public; secrets show only a count, never names.
+    val have = runCatching { com.miku.launcher.bpm.MikuUnlocks.unlockedIds(ctx) }.getOrNull()
+    val rewards = have?.let { h ->
+        val all = com.miku.launcher.bpm.MikuUnlocks.ALL
+        "${all.count { it.id in h }} of ${all.size}"
+    } ?: "—"
+    val secrets = have?.let { h ->
+        val all = com.miku.launcher.bpm.MikuSecrets.ALL
+        "${all.count { it.id in h }} of ${all.size} found"
+    } ?: "—"
+
+    // Quick settings layout lives in Settings.Secure (QsTileOrder); unset = the stock set.
+    val qsRaw = runCatching { Settings.Secure.getString(cr, "miku_qs_tiles") }.getOrNull()
+        ?: g("miku_qs_tiles")
+    val qsTiles = when {
+        qsRaw == null -> "Default set"
+        else -> qsRaw.split(',').count { it.isNotBlank() }.toString()
+    }
+
+    val usbDac = when (g("work_mode")?.trim()) {
+        null, "" -> "—"
+        "dacin" -> "On"
+        else -> "Off"
+    }
+
+    val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+    val battery = runCatching {
+        bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            ?.takeIf { it in 0..100 }?.let { "$it%" }
+    }.getOrNull() ?: "—"
+    val charging = runCatching { bm?.isCharging?.let { if (it) "Yes" else "No" } }.getOrNull() ?: "—"
+
+    return LiveAnatomy(
+        profile = gOrDash("miku_listening_profile"),
+        profileSummary = summaryRaw ?: "—",
+        eq = eq,
+        shareOn = shareOn,
+        outputs = outputs,
+        song = song,
+        playing = playing,
+        format = gOrDash("miku_now_playing_format"),
+        trackBpm = bpm("miku_now_playing_bpm"),
+        liveBpm = bpm("miku_live_bpm"),
+        fm = fm,
+        songId = songId,
+        nwr = nwr,
+        alerts = alerts,
+        alertActive = (alertCount ?: 0) > 0,
+        alertTop = gOrDash("miku_weather_alert_top"),
+        alertSeverity = gOrDash("miku_weather_alert_severity"),
+        rewards = rewards,
+        secrets = secrets,
+        qsTiles = qsTiles,
+        usbDac = usbDac,
+        battery = battery,
+        charging = charging
+    )
+}
+
+private fun outputName(type: Int): String = when (type) {
+    android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES, android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired jack"
+    android.media.AudioDeviceInfo.TYPE_LINE_ANALOG -> "Line out"
+    android.media.AudioDeviceInfo.TYPE_LINE_DIGITAL -> "Digital out"
+    android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
+    android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth call"
+    android.media.AudioDeviceInfo.TYPE_USB_DEVICE, android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+    android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB audio"
+    android.media.AudioDeviceInfo.TYPE_HDMI -> "HDMI"
+    26 -> "Bluetooth LE" // TYPE_BLE_HEADSET
+    else -> "Type $type"
+}
+
+private data class AppVersions(
+    val miku: List<Pair<String, String>>,
+    val playServices: String,
+    val androidAuto: String,
+    val updater: String
+)
+
+private fun readAppVersions(ctx: Context): AppVersions {
+    val pm = ctx.packageManager
+    fun ver(pkg: String): String = runCatching {
+        @Suppress("DEPRECATION")
+        val info = pm.getPackageInfo(pkg, 0)
+        info.versionName?.takeIf { it.isNotBlank() } ?: "installed"
+    }.getOrDefault(NOT_INSTALLED)
+    val miku = listOf(
+        "Miku Music" to "com.miku.player",
+        "Launcher" to "com.miku.launcher",
+        "Settings" to "com.miku.settings",
+        "System UI" to "com.miku.systemui",
+        "FM radio" to "com.caf.fmradio",
+        "Clock and tools" to "com.miku.tools",
+        "Media" to "com.miku.media",
+        "Updater" to "com.miku.update",
+        "Sysbridge" to "com.miku.sysbridge",
+        "Hardware settings" to "com.m500.hardware"
+    ).map { (label, pkg) -> label to ver(pkg) }
+    return AppVersions(
+        miku = miku,
+        playServices = ver("com.google.android.gms"),
+        androidAuto = ver("com.google.android.projection.gearhead"),
+        updater = ver("com.miku.update")
+    )
+}
+
+/** System property via reflection (android.os.SystemProperties is hidden). Blank → null. */
+private fun sysProp(key: String): String? = runCatching {
+    val c = Class.forName("android.os.SystemProperties")
+    (c.getMethod("get", String::class.java).invoke(null, key) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+}.getOrNull()
 
 /**
  * Per-core MHz from cpufreq sysfs; null for a core whose node cannot be read (no presumed clock).
@@ -552,14 +1008,17 @@ private data class AnatomyFacts(
     val fmNode: String,
     val nowPlayingFormat: String,
     val ledDriver: String,
-    val sdCard: String
+    val sdCard: String,
+    val mikuosVersion: String,
+    val buildIncremental: String,
+    val androidVersion: String
 )
 
 private fun readAnatomyFacts(ctx: Context): AnatomyFacts {
     val dacGain = runCatching { com.miku.launcher.CirrusLogicManager.getGainModeOrNull(ctx)?.label }.getOrNull() ?: "—"
     val dacFilter = runCatching { com.miku.launcher.CirrusLogicManager.getDigitalFilterOrNull(ctx)?.label }.getOrNull() ?: "—"
     val dacDre = runCatching { com.miku.launcher.CirrusLogicManager.isDreEnabledOrNull(ctx) }.getOrNull()
-        ?.let { if (it) "ENABLED" else "OFF" } ?: "—"
+        ?.let { if (it) "On" else "Off" } ?: "—"
 
     val am = ctx.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
     val audioOutput = runCatching {
@@ -604,7 +1063,7 @@ private fun readAnatomyFacts(ctx: Context): AnatomyFacts {
     // the player is not holding an output. That is reported as such, never as "idle".
     val nowPlayingFormat = runCatching {
         android.provider.Settings.Global.getString(ctx.contentResolver, "miku_now_playing_format")?.takeIf { it.isNotBlank() }
-    }.getOrNull() ?: "— (not published)"
+    }.getOrNull() ?: "Not published"
 
     val ledDriver = runCatching {
         val nodes = listOf("/sys/class/leds/sgm31324-leds", "/sys/class/leds/red", "/sys/class/leds/blue")
@@ -624,6 +1083,10 @@ private fun readAnatomyFacts(ctx: Context): AnatomyFacts {
         dacGain = dacGain, dacFilter = dacFilter, dacDre = dacDre, audioOutput = audioOutput,
         lightSensor = lightSensor, refreshHz = refreshHz, gamut = gamut,
         mixerFormat = mixerFormat, fmNode = fmNode, nowPlayingFormat = nowPlayingFormat,
-        ledDriver = ledDriver, sdCard = sdCard
+        ledDriver = ledDriver, sdCard = sdCard,
+        mikuosVersion = sysProp("ro.mikuos.version") ?: "—",
+        buildIncremental = sysProp("ro.build.version.incremental")
+            ?: android.os.Build.VERSION.INCREMENTAL?.takeIf { it.isNotBlank() } ?: "—",
+        androidVersion = "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})"
     )
 }

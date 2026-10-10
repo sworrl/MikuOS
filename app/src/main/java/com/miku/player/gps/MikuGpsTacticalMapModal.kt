@@ -244,7 +244,7 @@ fun MikuGpsTacticalMapModal(
                             Spacer(Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "MIKU TACTICAL GPS OBSERVATORY",
+                                    text = "GPS",
                                     color = Color(0xFF00E5FF),
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Black,
@@ -301,13 +301,13 @@ fun MikuGpsTacticalMapModal(
                             .padding(2.dp)
                     ) {
                         TabButton(
-                            title = "🗺️ TOPO MAP",
+                            title = "TOPO MAP",
                             isSelected = selectedTab == 0,
                             modifier = Modifier.weight(1f)
                         ) { selectedTab = 0 }
 
                         TabButton(
-                            title = "🛰️ TELEMETRY HUD",
+                            title = "DETAILS",
                             isSelected = selectedTab == 1,
                             modifier = Modifier.weight(1f)
                         ) { selectedTab = 1 }
@@ -615,7 +615,7 @@ private fun GpsTelemetryHudView(gps: MikuWeatherService.GpsTelemetry) {
         ) {
             Column {
                 Text(
-                    text = "GEOGRAPHIC REGION & JURISDICTION",
+                    text = "LOCATION",
                     color = Color(0xFF00E5FF),
                     fontSize = 7.5.sp,
                     fontWeight = FontWeight.Bold,

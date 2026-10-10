@@ -309,7 +309,7 @@ fun MikuSolarArcTrack(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "☀️ RISE: $sunrise",
+                    text = "RISE: $sunrise",
                     color = Color(0xFFFFB300),
                     fontSize = 7.sp,
                     fontWeight = FontWeight.Bold,
@@ -323,7 +323,7 @@ fun MikuSolarArcTrack(
                     fontFamily = AudiowideFont
                 )
                 Text(
-                    text = "🌙 SET: $sunset",
+                    text = "SET: $sunset",
                     color = Color(0xFFFF80AB),
                     fontSize = 7.sp,
                     fontWeight = FontWeight.Bold,

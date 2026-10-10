@@ -44,10 +44,9 @@ private const val HIRES_PX = 800
 /**
  * Two-tier album-art cache built for INSTANT display and 100% ACCURATE album art matching:
  *  - Memory LruCache holding decoded thumbs + hi-res
- *  - Lossless WebP disk cache stored in `artcache_v3` (purges old buggy MediaStore cache)
- *  - Primary source: Embedded ID3 / FLAC APIC picture frames directly inside the audio file
- *  - Secondary source: Local folder art (cover.jpg, folder.jpg) in the track directory
- *  - Last fallback: MediaStore thumbnail API
+ *  - WebP disk cache in `artcache_v4` (older versions are deleted on first use)
+ *  - Sources and their order: see [resolveArt]. Pictures shared across many albums are
+ *    skipped (see SharedCoverGuard in AlbumArtGuard.kt).
  */
 object AlbumArtCache {
     private val cacheSize = (Runtime.getRuntime().maxMemory() / 1024 / 3).toInt()
@@ -88,9 +87,22 @@ object AlbumArtCache {
     @Volatile private var prewarmed = false
 
 
+    /**
+     * Bumped when art arrives in the background (an online cover after a miss). Every
+     * AlbumArtImage reads it, so rows that drew the placeholder load again.
+     */
+    var version by mutableIntStateOf(0)
+        private set
+
     fun get(id: Long): ImageBitmap? = mem.get("$id")
     fun getHi(id: Long): ImageBitmap? = mem.get("$id#hi") ?: mem.get("$id")
     internal fun put(key: String, b: ImageBitmap) { mem.put(key, b) }
+    internal fun forget(id: Long) { mem.remove("$id"); mem.remove("$id#hi"); misses.remove("$id"); misses.remove("$id#hi") }
+    /** Online art landed for these tracks: drop their misses and redraw. */
+    internal fun onArrived(ids: List<Long>) {
+        ids.forEach { misses.remove("$it"); misses.remove("$it#hi") }
+        android.os.Handler(android.os.Looper.getMainLooper()).post { version++ }
+    }
     internal fun isMiss(key: String): Boolean {
         val at = misses[key] ?: return false
         if (android.os.SystemClock.elapsedRealtime() - at > MISS_TTL_MS) { misses.remove(key); return false }
@@ -98,7 +110,7 @@ object AlbumArtCache {
     }
     internal fun markMiss(key: String) { misses[key] = android.os.SystemClock.elapsedRealtime() }
     /** Forget every recorded miss — after a rescan, after storage access is granted, etc. */
-    fun clearMisses() { misses.clear(); clearFolderArtIndex(); clearAlbumScope() }
+    fun clearMisses() { misses.clear(); clearFolderArtIndex(); clearAlbumScope(); SharedCoverGuard.clear() }
 
     fun prewarm(ctx: Context, tracks: List<Track>, memWarm: Int = 30) {
         if (prewarmed || tracks.isEmpty()) return
@@ -148,6 +160,7 @@ fun AlbumArtImage(
 ) {
     Box(modifier) {
         val artMod = Modifier.fillMaxSize()
+        val artVersion = AlbumArtCache.version
         val cached = AlbumArtCache.get(trackId)
         if (cached != null) {
             Image(bitmap = cached, contentDescription = "Album art", modifier = artMod, contentScale = contentScale)
@@ -156,7 +169,7 @@ fun AlbumArtImage(
             var art by remember(trackId) { mutableStateOf<ImageBitmap?>(null) }
 
             if (trackId > 0 && !AlbumArtCache.isMiss("$trackId")) {
-                LaunchedEffect(trackId, trackPath) {
+                LaunchedEffect(trackId, trackPath, artVersion) {
                     art = loadArtThumb(ctx, trackId, trackPath)
                 }
             }
@@ -192,18 +205,30 @@ private fun AlbumArtYearBadge(year: Int, modifier: Modifier = Modifier) {
 }
 
 private fun artDir(ctx: Context): File {
-    val dir = File(ctx.filesDir, "artcache_v3")
+    // v4 (2026-10-10): v3 thumbs were written before SharedCoverGuard existed, so every album
+    // tagged with another album's cover (the TRON: Ares cover on 14 NIN albums) has it baked in.
+    // Same for the HUD's exported copies in cacheDir/hud.
+    val dir = File(ctx.filesDir, "artcache_v4")
     if (!dir.exists()) {
         dir.mkdirs()
-        // Wipe old corrupted/mismatched MediaStore art cache folders
         runCatching { File(ctx.filesDir, "artcache").deleteRecursively() }
         runCatching { File(ctx.filesDir, "artcache_v2").deleteRecursively() }
+        runCatching { File(ctx.filesDir, "artcache_v3").deleteRecursively() }
+        runCatching { File(ctx.cacheDir, "hud").deleteRecursively() }
     }
     return dir
 }
 
 private fun thumbFile(ctx: Context, id: Long) = File(artDir(ctx), "$id.webp")
 private fun hiresFile(ctx: Context, id: Long) = File(artDir(ctx), "${id}_hi.webp")
+
+/** Forget everything cached for one track (memory, disk, HUD copy), so the next load re-resolves. */
+internal fun dropCachedArt(ctx: Context, id: Long) {
+    AlbumArtCache.forget(id)
+    runCatching { thumbFile(ctx, id).delete() }
+    runCatching { hiresFile(ctx, id).delete() }
+    runCatching { File(File(ctx.cacheDir, "hud"), "art_$id.jpg").delete() }
+}
 
 /**
  * Thumbs are LOSSY WebP now.
@@ -359,7 +384,7 @@ private fun siblingEmbeddedArt(ctx: Context, trackId: Long, target: Int): Bitmap
         try {
             if (path.isNotBlank() && File(path).exists()) mmr.setDataSource(path)
             else mmr.setDataSource(ctx, ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id))
-            mmr.embeddedPicture?.let { return decodeSampled(it, target) }
+            mmr.embeddedPicture?.let { if (!SharedCoverGuard.isSuspectBytes(it)) return decodeSampled(it, target) }
         } catch (_: Throwable) {
         } finally { try { mmr.release() } catch (_: Throwable) {} }
     }
@@ -370,7 +395,7 @@ private val folderArtIndex = java.util.concurrent.ConcurrentHashMap<String, Stri
 
 internal fun clearFolderArtIndex() = folderArtIndex.clear()
 
-private fun resolveFolderArtFile(trackPath: String): File? {
+internal fun resolveFolderArtFile(trackPath: String): File? {
     if (trackPath.isBlank()) return null
     val file = File(trackPath)
     val dir = file.parentFile ?: return null
@@ -415,7 +440,18 @@ private fun resolveFolderArtFile(trackPath: String): File? {
  */
 private fun findFolderArt(trackPath: String, target: Int = THUMB_PX): Bitmap? {
     val f = resolveFolderArtFile(trackPath) ?: return null
-    return decodeSampledFile(f, target)
+    if (!SharedCoverGuard.isSuspectFile(f)) return decodeSampledFile(f, target)
+    // The folder's usual cover is a picture shared across many albums (see SharedCoverGuard).
+    // Try the folder's other cover-named images ("cover (2).jpg", "front.png", ...), never
+    // booklet pages or back covers.
+    val dir = f.parentFile ?: return null
+    val others = try {
+        dir.listFiles { x -> x.isFile && x.path != f.path && FOLDER_ART_NAME_RE.containsMatchIn(x.name) }
+    } catch (_: Throwable) { null } ?: return null
+    for (o in others.sortedBy { it.name.lowercase() }) {
+        if (!SharedCoverGuard.isSuspectFile(o)) return decodeSampledFile(o, target)
+    }
+    return null
 }
 
 private fun decodeSampledFile(f: File, target: Int): Bitmap? {
@@ -473,7 +509,9 @@ private fun findFolderArtViaMediaStore(ctx: Context, trackPath: String, target: 
                     // PERF: was a full-size decodeStream — a 3000px folder cover became a 36 MB
                     // bitmap per track before the caller scaled it away. Same two-pass
                     // downsampling as decodeSampled (bytes, because a stream can't be re-read).
-                    return decodeSampled(ins.readBytes(), target)
+                    val bytes = ins.readBytes()
+                    if (SharedCoverGuard.isSuspectBytes(bytes)) return null
+                    return decodeSampled(bytes, target)
                 }
             }
         }
@@ -499,21 +537,80 @@ private fun loadMediaStoreAlbumArt(ctx: Context, trackId: Long, target: Int = TH
     return null
 }
 
-/** Thumb pipeline: memory -> WebP disk -> embedded picture -> folder art -> MediaStore. */
+
+private fun scaleTo(full: Bitmap, target: Int): Bitmap {
+    val s = maxOf(1, maxOf(full.width, full.height) / target)
+    return if (s > 1) Bitmap.createScaledBitmap(full, full.width / s, full.height / s, true) else full
+}
+
+/**
+ * The one source order for both thumb and hi-res art, every step album-scoped:
+ *  1. the track's embedded picture
+ *  2. an image in the track's own folder, only when that folder holds one album
+ *  3. MediaStore's thumbnail for the track (its fallback scans the parent folder for any .jpg,
+ *     so it gets the same one-album-folder rule)
+ *  4. MediaStore album art, only when that albumId is one album
+ *  5. another track on the same album's embedded picture
+ *  6. a cover downloaded by artist + album + year (OnlineAlbumArt), if one is on disk
+ * A picture that SharedCoverGuard has seen on many different albums is skipped at every step,
+ * and for an album whose own picture is that (tainted), steps 3 and 4 are skipped because
+ * MediaStore built them from the same picture. When a tainted album ends up with nothing, an
+ * online lookup starts in the background and the art redraws when it lands.
+ */
+private fun resolveArt(ctx: Context, trackId: Long, trackPath: String, target: Int): Bitmap? {
+    SharedCoverGuard.init(ctx)
+    var tainted = SharedCoverGuard.isTainted(ctx, trackId)
+    val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, trackId)
+    var bmp: Bitmap? = null
+
+    val mmr = MediaMetadataRetriever()
+    try {
+        if (trackPath.isNotBlank() && File(trackPath).exists()) mmr.setDataSource(trackPath)
+        else mmr.setDataSource(ctx, uri)
+        val pic = mmr.embeddedPicture
+        // A flagged picture in the track itself also marks the album, even before the library
+        // index is built.
+        if (pic != null) {
+            if (SharedCoverGuard.isSuspectBytes(pic)) tainted = true
+            else bmp = decodeSampled(pic, target)
+        }
+    } catch (_: Throwable) {
+    } finally { try { mmr.release() } catch (_: Throwable) {} }
+
+    val folderOk = trackPath.isNotBlank() && AlbumScope.dirIsOneAlbum(ctx, trackPath)
+    if (bmp == null && folderOk) bmp = findFolderArt(trackPath, target)?.let { scaleTo(it, target) }
+    if (bmp == null && folderOk) bmp = findFolderArtViaMediaStore(ctx, trackPath, target)?.let { scaleTo(it, target) }
+
+    if (bmp == null && !tainted && folderOk && Build.VERSION.SDK_INT >= 29) {
+        try { bmp = ctx.contentResolver.loadThumbnail(uri, Size(target, target), null) } catch (_: Throwable) {}
+    }
+    if (bmp == null && !tainted && AlbumScope.albumIdIsOneAlbum(ctx, trackId)) {
+        bmp = loadMediaStoreAlbumArt(ctx, trackId, target)?.let { scaleTo(it, target) }
+    }
+    if (bmp == null) bmp = siblingEmbeddedArt(ctx, trackId, target)
+
+    if (bmp == null && tainted) {
+        val info = SharedCoverGuard.albumFor(trackId)
+        if (info != null) {
+            bmp = OnlineAlbumArt.cached(ctx, info, target)?.let { scaleTo(it, target) }
+            if (bmp == null) OnlineAlbumArt.request(ctx, info) { ids -> AlbumArtCache.onArrived(ids) }
+        }
+    }
+    return bmp
+}
+
+/** Thumb pipeline: memory -> WebP disk -> [resolveArt]. */
 suspend fun loadArtThumb(ctx: Context, trackId: Long, trackPath: String = "", keepInMemory: Boolean = true): ImageBitmap? =
     withContext(AlbumArtCache.artDispatcher) {
         AlbumArtCache.get(trackId)?.let { return@withContext it }
         if (AlbumArtCache.isMiss("$trackId")) return@withContext null
         // PERF: everything below is the expensive part (MediaMetadataRetriever on an SD-card FLAC,
-        // full-size bitmap decode, rescale, lossless-WebP encode). It used to run with NO
-        // concurrency limit at all, so a freshly composed screen plus the prewarm batch could have
-        // dozens of these in flight at once. Bounded to AlbumArtCache.gate's four permits — the
-        // limiter that already existed for prewarm, now applied where the work actually is. Not
-        // applied to loadArtHiRes, which calls this function at the end and would self-deadlock.
+        // full-size bitmap decode, rescale, WebP encode). Bounded to AlbumArtCache.gate's four
+        // permits. Not applied to loadArtHiRes, which calls this function at the end and would
+        // self-deadlock.
         AlbumArtCache.gate.withPermit {
         // Re-check after waiting for a permit: another coroutine may have loaded the very same
-        // track meanwhile (the same id is commonly requested by a list row and the mini player at
-        // once), in which case this whole probe is redundant. Cheap, exact, no bookkeeping.
+        // track meanwhile (a list row and the mini player commonly ask at once).
         AlbumArtCache.get(trackId)?.let { return@withContext it }
         if (AlbumArtCache.isMiss("$trackId")) return@withContext null
         try {
@@ -526,65 +623,11 @@ suspend fun loadArtThumb(ctx: Context, trackId: Long, trackPath: String = "", ke
                     return@withContext img
                 }
             }
-
-            var bmp: Bitmap? = null
-            val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, trackId)
-
-            // 1. Primary Source: Embedded Picture directly inside the Audio File
-            val mmr = MediaMetadataRetriever()
-            try {
-                if (trackPath.isNotBlank() && File(trackPath).exists()) {
-                    mmr.setDataSource(trackPath)
-                } else {
-                    mmr.setDataSource(ctx, uri)
-                }
-                mmr.embeddedPicture?.let { bmp = decodeSampled(it, THUMB_PX) }
-            } catch (_: Throwable) {
-            } finally { try { mmr.release() } catch (_: Throwable) {} }
-
-            // 2. Secondary Source: Local Folder Cover Art.
-            // ONLY when the folder holds one album. An artist folder or a compilation dump has one
-            // cover.jpg and handing it to every track in it is exactly the "wrong / duplicated art"
-            // case. See AlbumScope.
-            val folderArtAllowed = trackPath.isNotBlank() && AlbumScope.dirIsOneAlbum(ctx, trackPath)
-            if (bmp == null && folderArtAllowed) {
-                bmp = findFolderArt(trackPath)?.let { full ->
-                    val s = maxOf(1, maxOf(full.width, full.height) / THUMB_PX)
-                    if (s > 1) Bitmap.createScaledBitmap(full, full.width / s, full.height / s, true) else full
-                }
-            }
-
-            // 2b. Folder art through MediaStore.Images (works without raw SD-card file access)
-            if (bmp == null && folderArtAllowed) {
-                bmp = findFolderArtViaMediaStore(ctx, trackPath)?.let { full ->
-                    val s = maxOf(1, maxOf(full.width, full.height) / THUMB_PX)
-                    if (s > 1) Bitmap.createScaledBitmap(full, full.width / s, full.height / s, true) else full
-                }
-            }
-
-            // 3. Fallback: MediaStore Thumbnail API (only if no embedded/folder art found)
-            if (bmp == null && Build.VERSION.SDK_INT >= 29) {
-                try { bmp = ctx.contentResolver.loadThumbnail(uri, Size(THUMB_PX, THUMB_PX), null) } catch (_: Throwable) {}
-            }
-            // 4. Platform album art for the whole album. MediaStore collapses albums that share a
-            // title+artist into ONE albumId, so this is only safe when the library agrees that the
-            // id really is one album; otherwise it is the other half of the duplicated-art problem.
-            if (bmp == null && AlbumScope.albumIdIsOneAlbum(ctx, trackId)) {
-                bmp = loadMediaStoreAlbumArt(ctx, trackId)?.let { full ->
-                    val s = maxOf(1, maxOf(full.width, full.height) / THUMB_PX)
-                    if (s > 1) Bitmap.createScaledBitmap(full, full.width / s, full.height / s, true) else full
-                }
-            }
-
-            // 5. LAST RESORT before giving up: borrow the embedded picture from another track on
-            // the SAME album. A rip where only track 01 carries the artwork is common, and showing
-            // a placeholder for the other eleven tracks of an album we demonstrably have art for is
-            // not acceptable. This is album-scoped, so it cannot leak art between albums.
-            if (bmp == null) bmp = siblingEmbeddedArt(ctx, trackId, THUMB_PX)
-
-            val b = bmp
+            val b = resolveArt(ctx, trackId, trackPath, THUMB_PX)
             if (b != null) {
-                writeWebp(b, thumbFile(ctx, trackId))
+                // Not to disk until the library index exists: before that the guard cannot tell
+                // whether this album's picture belongs to another album.
+                if (SharedCoverGuard.ready()) writeWebp(b, thumbFile(ctx, trackId))
                 val img = b.asImageBitmap()
                 if (keepInMemory) AlbumArtCache.put("$trackId", img)
                 img
@@ -593,7 +636,7 @@ suspend fun loadArtThumb(ctx: Context, trackId: Long, trackPath: String = "", ke
         }
     }
 
-/** Hi-res pipeline for full Now Playing stage — same 100% accurate embedded & folder art priority. */
+/** Hi-res pipeline for the full Now Playing stage: same sources and guards as the thumb. */
 suspend fun loadArtHiRes(ctx: Context, trackId: Long, trackPath: String = ""): ImageBitmap? = withContext(AlbumArtCache.artDispatcher) {
     AlbumArtCache.getHi(trackId)?.let { if (it.width >= THUMB_PX + 1) return@withContext it }
     if (AlbumArtCache.isMiss("$trackId#hi")) return@withContext AlbumArtCache.get(trackId)
@@ -603,36 +646,12 @@ suspend fun loadArtHiRes(ctx: Context, trackId: Long, trackPath: String = ""): I
                 val img = b.asImageBitmap(); AlbumArtCache.put("$trackId#hi", img); return@withContext img
             }
         }
-
-        var bmp: Bitmap? = null
-        val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, trackId)
-
-        // 1. Primary Source: Embedded Picture in Audio File
-        val mmr = MediaMetadataRetriever()
-        try {
-            if (trackPath.isNotBlank() && File(trackPath).exists()) {
-                mmr.setDataSource(trackPath)
-            } else {
-                mmr.setDataSource(ctx, uri)
-            }
-            mmr.embeddedPicture?.let { bmp = decodeSampled(it, HIRES_PX) }
-        } catch (_: Throwable) {
-        } finally { try { mmr.release() } catch (_: Throwable) {} }
-
-        // 2. Secondary Source: Local Folder Cover Art (raw file, then via MediaStore.Images)
-        if (bmp == null && trackPath.isNotBlank()) {
-            bmp = findFolderArt(trackPath, HIRES_PX) ?: findFolderArtViaMediaStore(ctx, trackPath, HIRES_PX)
-        }
-        // 3. Platform album art (any track of the album)
-        if (bmp == null) bmp = loadMediaStoreAlbumArt(ctx, trackId, HIRES_PX)
-
-        val b = bmp
+        val b = resolveArt(ctx, trackId, trackPath, HIRES_PX)
         if (b != null) {
-            writeWebp(b, hiresFile(ctx, trackId), lossless = true)
+            if (SharedCoverGuard.ready()) writeWebp(b, hiresFile(ctx, trackId), lossless = true)
             val img = b.asImageBitmap()
             AlbumArtCache.put("$trackId#hi", img)
             img
         } else { AlbumArtCache.markMiss("$trackId#hi"); loadArtThumb(ctx, trackId, trackPath) }
     } catch (_: Throwable) { AlbumArtCache.get(trackId) }
 }
-

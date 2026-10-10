@@ -238,7 +238,7 @@ private fun NotEnoughCard(s: RewindStory.NotEnough, period: RewindPeriod) {
             Text(s.have.toString(), color = RewindTealBright, fontSize = 54.sp, fontWeight = FontWeight.Black, lineHeight = 56.sp)
             Text("  of ${s.need}", color = RewindMuted, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
         }
-        Body("${s.unit} ${period.inWords}. This card only shows real numbers — keep listening and it fills in on its own.")
+        Body("${s.unit} ${period.inWords}. This card only shows real numbers. Keep listening and it fills in.")
         Spacer(Modifier.height(10.dp))
         Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.08f))) {
             Box(Modifier.fillMaxWidth((s.have.toFloat() / s.need).coerceIn(0f, 1f)).height(6.dp).background(Brush.horizontalGradient(listOf(RewindTeal, RewindPink))))
@@ -401,7 +401,7 @@ private fun DiscoveriesCard(s: RewindStory.Discoveries, period: RewindPeriod) {
                 }
             }
         } else {
-            Body("${s.count} of ${Threshold.DISCOVERIES} first-ever listens — not enough to list yet.", size = 12)
+            Body("${s.count} of ${Threshold.DISCOVERIES} first-ever listens. Not enough to list yet.", size = 12)
         }
         val o = s.obsession
         if (o != null) {
@@ -416,7 +416,7 @@ private fun DiscoveriesCard(s: RewindStory.Discoveries, period: RewindPeriod) {
                     Text(o.subtitle.orEmpty(), color = RewindMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         "${s.obsessionRecent} plays in the last ${s.obsessionWindowDays} day${if (s.obsessionWindowDays == 1) "" else "s"}" +
-                            (if (s.obsessionEarlier == 0) " — from nowhere" else " vs ${s.obsessionEarlier} before"),
+                            (if (s.obsessionEarlier == 0) ", up from nothing" else " vs ${s.obsessionEarlier} before"),
                         color = RewindPinkSoft, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -476,7 +476,7 @@ private fun FinishedCard(s: RewindStory.Finished, period: RewindPeriod) {
         Text(e.subtitle.orEmpty(), color = RewindMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
         Text("${e.qualifiedPlays} full plays", color = RewindPinkSoft, fontSize = 22.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        Body("of ${e.plays} starts — heard to at least 94% without scrubbing, ${fmtMinutes(e.playedMs)} in total.", size = 12)
+        Body("of ${e.plays} starts, heard to at least 94% without scrubbing, ${fmtMinutes(e.playedMs)} in total.", size = 12)
     }
 }
 
@@ -502,7 +502,7 @@ private fun HeartsCard(s: RewindStory.Hearts, period: RewindPeriod) {
                 Column(Modifier.weight(1f)) {
                     Text(t.title, color = RewindInk, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(t.subtitle.orEmpty(), color = RewindMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("♥ ×${s.topCount}", color = RewindPinkSoft, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                    Text("${s.topCount} hearts", color = RewindPinkSoft, fontSize = 13.sp, fontWeight = FontWeight.Black)
                 }
             }
         }
@@ -604,7 +604,7 @@ private fun GenresCard(s: RewindStory.Genres, period: RewindPeriod) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        Body("From the genre tags in your own files — ${s.taggedListens} tagged listens.", size = 10)
+        Body("From the genre tags in your own files (${s.taggedListens} tagged listens).", size = 10)
     }
 }
 

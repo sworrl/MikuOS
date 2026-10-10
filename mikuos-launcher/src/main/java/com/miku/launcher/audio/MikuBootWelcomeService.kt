@@ -63,6 +63,15 @@ object MikuBootWelcomeService {
 
         CoroutineScope(Dispatchers.IO).launch {
             delay(DELAY_MS)
+            // MI-KU BOOT CHIME (a BPM-game secret, MikuSecrets.BOOT_CHIME): her own synthesized
+            // greeting replaces the bundled jingle. Same switch, same once-per-boot rule — it is
+            // a different sound, not an extra one.
+            if (com.miku.launcher.bpm.MikuUnlocks.isEnabled(context, com.miku.launcher.bpm.MikuSecrets.BOOT_CHIME)) {
+                MikuSeasonalAudioEngine.playSecretBootChime()
+                prefs.edit().putLong(KEY_LAST_BOOT_UPTIME, SystemClock.elapsedRealtime()).apply()
+                Log.i(TAG, "Mi-Ku boot chime playing")
+                return@launch
+            }
             try {
                 // Try to resolve R.raw.miku_welcome_jingle — if it doesn't
                 // exist the resource lookup returns 0 / throws.

@@ -42,6 +42,18 @@ object MikuBpmEngine {
     @Volatile var dominantColor: Int = 0xFF39C5BB.toInt()
         private set
 
+    /**
+     * The beat grid the pulse broadcasts are fired on, for in-app beat visuals that must flash
+     * together with them: beat n fires at [beatAnchorElapsedNanos] + n * [beatGridIntervalNanos]
+     * (SystemClock.elapsedRealtimeNanos time base). [beatGridIntervalNanos] is 0 whenever no pulse
+     * is running (paused, unknown tempo, screen-off governor), and a consumer must then show no
+     * beat at all. Set when the pulse job starts, cleared when it stops.
+     */
+    @Volatile var beatAnchorElapsedNanos: Long = 0L
+        private set
+    @Volatile var beatGridIntervalNanos: Double = 0.0
+        private set
+
     @Volatile private var npTitle: String = ""
     @Volatile private var npArtist: String = ""
 
@@ -255,6 +267,24 @@ object MikuBpmEngine {
     private fun startBeatPulse(context: Context) {
         beatJob?.cancel()
         beatJob = scope.launch {
+            // Beats are scheduled against a fixed anchor, not chained with delay(interval) after
+            // each broadcast. The chained version added the broadcast + scheduling overhead to
+            // every beat, so the pulse slid a few ms per beat behind the music, and the launcher's
+            // rhythm game (which judges taps against these pulses) drifted off the song over a
+            // few minutes. Beat n is due at anchor + n * interval; lateness on one beat no longer
+            // carries into the next.
+            //
+            // The interval comes from the float BPM rather than the whole-ms beatIntervalMs (which
+            // is still what the broadcast carries): at 165 BPM the rounded 363 ms is 0.64 ms short
+            // per beat, which is its own slow drift. Every tempo change restarts this job, so a
+            // fresh anchor is taken whenever the interval changes.
+            val bpm = currentBpm
+            val intervalNs: Double = if (bpm > 0f) 60_000_000_000.0 / bpm else beatIntervalMs * 1_000_000.0
+            if (intervalNs <= 0.0) return@launch
+            val anchorNs = android.os.SystemClock.elapsedRealtimeNanos()
+            beatAnchorElapsedNanos = anchorNs
+            beatGridIntervalNanos = intervalNs
+            var beat = 0L
             while (isActive && isPlaying) {
                 val intent = Intent(ACTION_BPM_PULSE).apply {
                     putExtra(EXTRA_BPM, currentBpm)
@@ -263,14 +293,31 @@ object MikuBpmEngine {
                     putExtra(EXTRA_DOMINANT_COLOR, dominantColor)
                 }
                 context.sendBroadcast(intent)
-                delay(beatIntervalMs)
+                beat++
+                val now = android.os.SystemClock.elapsedRealtimeNanos()
+                var dueNs = anchorNs + (beat * intervalNs).toLong()
+                if (now - dueNs > intervalNs) {
+                    // More than a whole beat behind (the process was starved, or the device slept):
+                    // rejoin the grid at the next beat still in the future instead of firing the
+                    // missed ones back to back, which the game would read as a burst of notes.
+                    beat = ((now - anchorNs) / intervalNs).toLong() + 1
+                    dueNs = anchorNs + (beat * intervalNs).toLong()
+                }
+                val waitNs = dueNs - now
+                // Round up to whole ms so a pulse never lands before its grid point; the rounding
+                // is per beat and does not accumulate, because the next target is again absolute.
+                if (waitNs > 0) delay((waitNs + 999_999L) / 1_000_000L)
             }
+            // Ran out because playback stopped: retract the grid, unless a newer job already
+            // replaced it with its own anchor.
+            if (beatAnchorElapsedNanos == anchorNs) beatGridIntervalNanos = 0.0
         }
     }
 
     private fun stopBeatPulse(context: Context) {
         beatJob?.cancel()
         beatJob = null
+        beatGridIntervalNanos = 0.0
     }
 
     private fun publishState(context: Context, bpm: Float, playing: Boolean) {

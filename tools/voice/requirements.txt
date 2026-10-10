@@ -1,0 +1,10 @@
+# Offline voice pipeline for MikuOS status announcements (build-time only, nothing ships).
+kokoro-onnx==0.6.1
+onnxruntime==1.31.0
+phonemizer==3.4.0
+espeakng-loader==0.2.4
+numpy==2.5.3
+soundfile==0.14.0
+praat-parselmouth==0.4.7
+pyloudnorm==0.2.0
+scipy==1.18.1

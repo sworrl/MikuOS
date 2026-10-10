@@ -260,7 +260,7 @@ fun MikuThermalObservatoryModal(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "🔥 MELTDOWN REACTOR GUARD",
+                                "TEMPERATURES",
                                 color = thermoclineColor,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Black,
@@ -334,7 +334,7 @@ fun MikuThermalObservatoryModal(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("CHRONOLOGICAL THERMAL WAVEFORM", color = MikuCyan, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                            Text("HISTORY", color = MikuCyan, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFFF9100)))
@@ -473,7 +473,7 @@ fun MikuThermalObservatoryModal(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("HARDWARE THERMAL HISTOGRAM", color = MikuCyan, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                            Text("ALL SENSORS", color = MikuCyan, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                             Text(
                                 if (thermalZones.isEmpty()) "NO READABLE ZONES" else "${thermalZones.size} SENSORS READABLE",
                                 color = if (thermalZones.isEmpty()) MikuTextSecondary else Color(0xFF00FF7F),
@@ -550,7 +550,7 @@ fun MikuThermalObservatoryModal(
                         .padding(8.dp)
                 ) {
                     Column {
-                        Text("DVFS CPU CLUSTERS (${socLabel.uppercase()})", color = MikuCyan, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
+                        Text("CPU CLOCKS (${socLabel.uppercase()})", color = MikuCyan, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = AudiowideFont)
                         Spacer(Modifier.height(4.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             // cpufreq sysfs only; unreadable cores show "—" instead of a presumed clock.
@@ -604,9 +604,9 @@ fun MikuThermalObservatoryModal(
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
-                        Triple("save", "❄️ Battery Saver", Color(0xFF00E5FF)),
-                        Triple("auto", "⚡ Auto", com.miku.launcher.ui.MikuIdentity.Gold),
-                        Triple("perf", "🔥 Performance", com.miku.launcher.ui.MikuIdentity.Coral)
+                        Triple("save", "Battery Saver", Color(0xFF00E5FF)),
+                        Triple("auto", "Auto", com.miku.launcher.ui.MikuIdentity.Gold),
+                        Triple("perf", "Performance", com.miku.launcher.ui.MikuIdentity.Coral)
                     ).forEach { (mode, label, color) ->
                         val isSelected = powerMode == mode
                         Box(

@@ -108,7 +108,7 @@ fun MikuHomescreenLongpressMenu(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "DESKTOP OPTIONS",
+                            text = "HOME SCREEN",
                             color = MikuCyan,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Black,
@@ -132,7 +132,7 @@ fun MikuHomescreenLongpressMenu(
                     // 1. Wallpaper & Style (AOSP 1:1)
                     AospMenuItem(
                         title = "Wallpaper & style",
-                        subtitle = "Themes, live art & colors",
+                        subtitle = "Themes, live art and colors",
                         icon = Icons.Default.Palette,
                         iconTint = MikuCyan,
                         onClick = {
@@ -143,8 +143,8 @@ fun MikuHomescreenLongpressMenu(
 
                     // 2. Widgets (AOSP 1:1)
                     AospMenuItem(
-                        title = "Widgets & Panels",
-                        subtitle = "Audio visualizers & meters",
+                        title = "Widgets and panels",
+                        subtitle = "Visualizers and meters",
                         icon = Icons.Default.Widgets,
                         iconTint = com.miku.launcher.ui.MikuIdentity.Gold,
                         onClick = {
@@ -155,8 +155,8 @@ fun MikuHomescreenLongpressMenu(
 
                     // 3. Home Settings (AOSP 1:1)
                     AospMenuItem(
-                        title = "Quilt & badges",
-                        subtitle = "Rearrange, size, rows & backdrop",
+                        title = "Badges",
+                        subtitle = "Order, size, rows and background",
                         icon = Icons.Default.Dashboard,
                         iconTint = MikuCyan,
                         onClick = {
@@ -166,7 +166,7 @@ fun MikuHomescreenLongpressMenu(
                     )
                     AospMenuItem(
                         title = "Home settings",
-                        subtitle = "Diva dock, gestures & grid",
+                        subtitle = "Dock, gestures and grid",
                         icon = Icons.Default.Tune,
                         iconTint = MikuNeonPink,
                         onClick = {

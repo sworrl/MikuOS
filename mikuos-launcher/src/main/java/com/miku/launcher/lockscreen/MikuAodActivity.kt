@@ -133,7 +133,7 @@ class MikuAodActivity : ComponentActivity() {
                     if (showNp && bpmState.isPlaying && npTitle.isNotBlank()) {
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            text = "♪ $npTitle",
+                            text = "$npTitle",
                             color = MikuNeonPink,
                             fontSize = 17.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -154,7 +154,7 @@ class MikuAodActivity : ComponentActivity() {
                             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = if (bpmState.bpm in 40f..300f) "⚡ ${bpmState.bpm.toInt()} BPM" else "⚡ — BPM",
+                                text = if (bpmState.bpm in 40f..300f) "${bpmState.bpm.toInt()} BPM" else "— BPM",
                                 color = MikuCyan.copy(alpha = 0.85f),
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.Bold,

@@ -146,7 +146,19 @@ object MikuPowerProfile {
     // ---- Launcher visibility gate: pollers park while the launcher is not on screen ----
     private val _visible = MutableStateFlow(true)
     val visible: StateFlow<Boolean> = _visible.asStateFlow()
-    fun setLauncherVisible(v: Boolean) { _visible.value = v }
+    fun setLauncherVisible(v: Boolean) = setVisible("launcher", v)
+
+    // More than one activity in this process can be "the launcher's UI on screen": the home
+    // activity and the BPM game activity (which can run on top of another app's task). Each owns
+    // its own flag and visibility is their union. A single boolean broke on the hand-off: opening
+    // the game from home runs game.onStart BEFORE home.onStop, so home's "false" landed last and
+    // parked the live beat detector under the game that needs it.
+    private val visibleOwners = HashSet<String>().apply { add("launcher") }
+    @Synchronized
+    fun setVisible(owner: String, v: Boolean) {
+        if (v) visibleOwners.add(owner) else visibleOwners.remove(owner)
+        _visible.value = visibleOwners.isNotEmpty()
+    }
     /** Suspends until the launcher activity is STARTED (no polling / no work while another app is in front). */
     suspend fun awaitVisible() { if (!_visible.value) _visible.first { it } }
 }

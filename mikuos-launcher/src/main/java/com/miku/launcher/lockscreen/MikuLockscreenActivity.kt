@@ -101,6 +101,22 @@ class MikuLockscreenActivity : ComponentActivity() {
 
     private var isScreenOffTransitionState by mutableStateOf(false)
     private var wakeupTriggerState by mutableIntStateOf(0)
+    /** Bumped to spring the curtain back down after a PIN pad was closed without unlocking. */
+    private var curtainResetState by mutableIntStateOf(0)
+    /** True while the MikuOS PIN pad (MikuSettings) is up on top of this lockscreen. */
+    private var awaitingPad = false
+    private var vacated = false
+
+    /** The keyguard went away (PIN pad or trust): nothing left to cover. */
+    private val presentReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_USER_PRESENT && awaitingPad) {
+                awaitingPad = false
+                MikuLockscreenManager.setLocked(false)
+                vacate()
+            }
+        }
+    }
 
     private val screenReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -138,6 +154,7 @@ class MikuLockscreenActivity : ComponentActivity() {
 
         val filter = IntentFilter(Intent.ACTION_SCREEN_ON)
         registerReceiver(screenReceiver, filter)
+        runCatching { registerReceiver(presentReceiver, IntentFilter(Intent.ACTION_USER_PRESENT)) }
 
         isScreenOffTransitionState = intent.getBooleanExtra("is_screen_off_transition", false)
 
@@ -152,9 +169,9 @@ class MikuLockscreenActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         )
+        applyKeyguardFlags()
 
         // Full immersive sticky fullscreen
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -170,26 +187,92 @@ class MikuLockscreenActivity : ComponentActivity() {
             ) {
             MikuKawaiiLockscreenScreen(
                 wakeupTrigger = wakeupTriggerState,
-                onUnlock = {
-                    MikuLockscreenManager.setLocked(false)
-                    // Dismissal must not hinge on a KeyguardDismissCallback ever firing — on
-                    // this ROM there may be no stock keyguard showing at all, and while this
-                    // activity sits waiting it still owns the resumed slot. Fire the dismiss
-                    // request, then vacate unconditionally.
-                    try {
-                        getSystemService(KeyguardManager::class.java)
-                            ?.requestDismissKeyguard(this@MikuLockscreenActivity, null)
-                    } catch (_: Throwable) {}
-                    finishAndRemoveTask()
-                    @Suppress("DEPRECATION")
-                    overridePendingTransition(0, com.miku.launcher.R.anim.lockscreen_curtain_up)
-                }
+                curtainReset = curtainResetState,
+                onUnlock = { unlockFromSwipe() }
             )
                     }
 }
     }
 
+    /**
+     * FLAG_DISMISS_KEYGUARD is only for the no-screen-lock case. With a PIN or password set it
+     * would make the stock keyguard pop its own bouncer as soon as this window shows. With a
+     * screen lock this window just covers the keyguard, and the swipe dismisses it explicitly.
+     */
+    private fun applyKeyguardFlags() {
+        val secure = runCatching { getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true }.getOrDefault(false)
+        if (secure) window.clearFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+        else window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+    }
+
+    /**
+     * Swipe up. Three cases:
+     *  - No screen lock: as before, ask for a dismiss and leave.
+     *  - Screen lock set and the device is held open by the MikuOS trust agent: dismiss the
+     *    keyguard (it opens without a credential) and leave once it is gone.
+     *  - The PIN or password is needed: open the MikuOS PIN pad (MikuSettings) on top. The pad
+     *    verifies through the system and dismisses the keyguard. This lockscreen leaves when the
+     *    keyguard is gone, or springs back if the pad was closed.
+     */
+    private fun unlockFromSwipe() {
+        val km = getSystemService(KeyguardManager::class.java)
+        val needsCredential = runCatching { km?.isDeviceLocked == true }.getOrDefault(false)
+        if (needsCredential) {
+            try {
+                startActivity(
+                    Intent().setClassName("com.miku.settings", "com.miku.settings.lock.MikuUnlockActivity")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                awaitingPad = true
+                return
+            } catch (t: Throwable) {
+                android.util.Log.w("MikuLockscreen", "PIN pad not available, the stock keyguard takes over", t)
+            }
+        }
+        MikuLockscreenManager.setLocked(false)
+        if (km?.isKeyguardLocked == true) {
+            // Dismiss first, leave after, so the stock keyguard never shows in between. The
+            // timer covers a callback that never comes.
+            try {
+                km.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                    override fun onDismissSucceeded() { vacate() }
+                    override fun onDismissCancelled() { vacate() }
+                    override fun onDismissError() { vacate() }
+                })
+            } catch (_: Throwable) {}
+            window.decorView.postDelayed({ vacate() }, 1200)
+        } else {
+            // Dismissal must not hinge on a KeyguardDismissCallback ever firing: on this ROM
+            // there may be no stock keyguard showing at all, and while this activity sits
+            // waiting it still owns the resumed slot. Fire the request, then vacate.
+            try { km?.requestDismissKeyguard(this, null) } catch (_: Throwable) {}
+            vacate()
+        }
+    }
+
+    /**
+     * Tells com.miku.sysbridge (SecurityGuard) whether the lockscreen is up. See
+     * mikuos/docs/security-plan.md, "Requirements for the lockscreen work" item 4.
+     */
+    private fun sendLockState(locked: Boolean) {
+        try {
+            sendBroadcast(
+                Intent("com.miku.sysbridge.LOCK_STATE").setPackage("com.miku.sysbridge").putExtra("locked", locked)
+            )
+        } catch (_: Throwable) {}
+    }
+
+    private fun vacate() {
+        if (vacated || isFinishing) return
+        vacated = true
+        sendLockState(false)
+        finishAndRemoveTask()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, com.miku.launcher.R.anim.lockscreen_curtain_up)
+    }
+
     fun wakeUpBright() {
+        applyKeyguardFlags()
         isScreenOffTransitionState = false
         applyWakePolicy(turnScreenOn = true)
         ensureDecorVisible()
@@ -242,7 +325,20 @@ class MikuLockscreenActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (awaitingPad) {
+            awaitingPad = false
+            val km = getSystemService(KeyguardManager::class.java)
+            if (runCatching { km?.isKeyguardLocked == false }.getOrDefault(false)) {
+                // The pad unlocked the device. Leave without re-arming the lock.
+                MikuLockscreenManager.setLocked(false)
+                vacate()
+                return
+            }
+            // Pad closed without unlocking: bring the curtain back.
+            curtainResetState++
+        }
         MikuLockscreenManager.setLocked(true)
+        sendLockState(true)
         hideSystemBars()
         @Suppress("DEPRECATION")
         overridePendingTransition(com.miku.launcher.R.anim.lockscreen_curtain_down, 0)
@@ -257,6 +353,9 @@ class MikuLockscreenActivity : ComponentActivity() {
         restoreScreenOffTimeout()
         try {
             unregisterReceiver(screenReceiver)
+        } catch (_: Throwable) {}
+        try {
+            unregisterReceiver(presentReceiver)
         } catch (_: Throwable) {}
     }
 
@@ -462,6 +561,7 @@ private fun formatTimeMs(ms: Long): String {
 @Composable
 fun MikuKawaiiLockscreenScreen(
     wakeupTrigger: Int,
+    curtainReset: Int = 0,
     onUnlock: () -> Unit
 ) {
     BackHandler(enabled = true) {}
@@ -473,6 +573,10 @@ fun MikuKawaiiLockscreenScreen(
 
     // Drag offset for swipe-up-to-unlock gesture
     val dragOffsetY = remember { Animatable(0f) }
+    // The PIN pad was closed without unlocking: the curtain comes back down.
+    LaunchedEffect(curtainReset) {
+        if (curtainReset > 0) dragOffsetY.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 420f))
+    }
 
     // ================= USER-SPEC BRIGHTNESS LIFECYCLE STATE MACHINE =================
     // Full (1.0) for fullBrightMillis -> fade 1.0 -> halfBrightnessFraction over fadeToHalfMillis
@@ -925,7 +1029,16 @@ fun MikuKawaiiLockscreenScreen(
                 Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
+                // HOLO PLASMA CLOCK (a BPM-game secret, MikuSecrets.HOLO_LOCK_CLOCK): the full
+                // holographic face — spectrum digits, heartbeat colon, scanline — in place of the
+                // plain digits. MikuLockscreenMegaClock was written for this screen and never
+                // wired in; the secret is what finally puts it on the glass.
+                val holoClock = com.miku.launcher.rememberUnlockEnabled(com.miku.launcher.bpm.MikuSecrets.HOLO_LOCK_CLOCK)
+                if (holoClock) {
+                    Box(Modifier.graphicsLayer { alpha = settleClock.value.coerceIn(0f, 1f); translationY = (1f - settleClock.value) * 14.dp.toPx() }) {
+                        MikuLockscreenMegaClock(time = currentTime)
+                    }
+                } else Text(
                     modifier = Modifier.graphicsLayer { alpha = settleClock.value.coerceIn(0f, 1f); translationY = (1f - settleClock.value) * 14.dp.toPx() },
                     text = currentTime,
                     color = Color.White,
@@ -1697,7 +1810,7 @@ private fun LockscreenNowPlayingWidget(
                         ) {
                             Icon(
                                 imageVector = if (localLikedState) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
-                                contentDescription = "Like Song",
+                                contentDescription = "Like song",
                                 tint = if (localLikedState) Color(0xFFFF1774) else Color(0xFF00E5FF),
                                 modifier = Modifier.size(16.dp)
                             )
@@ -1863,12 +1976,12 @@ private fun LockscreenNowPlayingWidget(
                                     }
                                     miniJudgment = if (accuracy == null) {
                                         // No beat to judge against — the tap still counts as a tap.
-                                        "🎵 FREE TAP"
+                                        "FREE TAP"
                                     } else if (shownOffsetMs == 0) {
-                                        "${accuracy.emoji} ${accuracy.label}"
+                                        "${accuracy.label}"
                                     } else {
                                         // Teach the correction, not just the grade.
-                                        "${accuracy.emoji} ${accuracy.label} ${if ((shownOffsetMs ?: 0) < 0) "◀" else "▶"}"
+                                        "${accuracy.label} ${if ((shownOffsetMs ?: 0) < 0) "◀" else "▶"}"
                                     }
 
                                     coroutineScope.launch {
@@ -1909,8 +2022,8 @@ private fun LockscreenNowPlayingWidget(
                                     // fabricated deviationMs/accuracy into the table that backs the
                                     // displayed lifetime "ACCURACY %".
                                     coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                        val trackArt = nowPlaying.artist ?: "Unknown Artist"
-                                        val trackTit = nowPlaying.title ?: "Unknown Track"
+                                        val trackArt = nowPlaying.artist ?: "Unknown artist"
+                                        val trackTit = nowPlaying.title ?: "Unknown track"
                                         if (offsetMs != null && accuracy != null) {
                                             bpmDb.logTapTelemetry(
                                                 com.miku.launcher.bpm.MikuBpmDatabase.TapTelemetryRecord(
@@ -1977,7 +2090,7 @@ private fun LockscreenNowPlayingWidget(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    if (miniTapCount > 1) "🔥 x$miniTapCount $miniJudgment" else if (hasTempo) "⚡ ${nowPlaying.bpm.toInt()} BPM" else "⚡ — BPM",
+                                    if (miniTapCount > 1) "x$miniTapCount $miniJudgment" else if (hasTempo) "${nowPlaying.bpm.toInt()} BPM" else "— BPM",
                                     color = if (miniTapCount > 5) Color(0xFFFFD700) else MikuNeonPink,
                                     fontSize = 9.dampedSp(),
                                     fontWeight = FontWeight.Black,

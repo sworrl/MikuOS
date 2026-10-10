@@ -215,12 +215,12 @@ fun ArtistPhotoSettingsCard(ctx: Context) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Portrait, "Artist photos", tint = MikuTealBright, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Real Artist Photos", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text("Artist Photos", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            "Artist lists and headers show a real photo from Wikimedia Commons / Wikipedia when the name matches exactly; " +
-                "otherwise the album art stays. An artist.jpg (or folder.jpg in a folder named after the artist) next to " +
+            "Artist lists and headers show a real photo from Wikimedia Commons / Wikipedia when the name matches exactly. " +
+                "Otherwise the album art stays. An artist.jpg (or folder.jpg in a folder named after the artist) next to " +
                 "your music always wins and works offline.",
             color = Muted, fontSize = 12.sp
         )
@@ -229,7 +229,7 @@ fun ArtistPhotoSettingsCard(ctx: Context) {
         PhotoToggleRow(
             title = "Fetch artist photos online",
             subtitle = if (online) "Looks up unknown artists on Wikidata (max 2 at a time, misses remembered 30 days)"
-                       else "Off — no network use; cached and local photos still show",
+                       else "Off: no network use. Cached and local photos still show",
             checked = online
         ) { online = it; ArtistPhotoPrefs.setFetchOnline(ctx, it) }
         PhotoToggleRow(

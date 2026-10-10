@@ -49,13 +49,13 @@ import java.util.Locale
 enum class VolumeHudStyle(val key: String, val title: String, val description: String) {
     RIGHT_CYBER_BAR(
         "right_bar",
-        "Right-Edge Cyber Bar",
-        "Vertical sliding neon bar anchored on the right edge of the screen (Default)"
+        "Right-edge bar",
+        "A vertical bar on the right edge of the screen (default)"
     ),
     CENTER_CYBER_MODAL(
         "center_modal",
-        "Center Cyber Dial / Modal",
-        "Prominent centered holographic volume modal with hazard warning meter (Miku Music Style)"
+        "Center popup",
+        "A centered popup with a loudness warning meter (Miku Music style)"
     )
 }
 
@@ -576,7 +576,7 @@ fun MikuCyberVolumeHudOverlay(
                             .padding(horizontal = 4.5.dp, vertical = 1.dp)
                     ) {
                         Text(
-                            text = "⚠️ >80dB",
+                            text = ">80dB",
                             color = Color.White,
                             fontSize = 6.5.sp,
                             fontWeight = FontWeight.Black,

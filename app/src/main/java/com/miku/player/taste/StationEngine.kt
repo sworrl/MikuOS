@@ -101,7 +101,7 @@ object StationEngine {
     fun start(ctx: Context, newSeed: Seed, library: List<Track>? = null): Boolean {
         val app = ctx.applicationContext
         val lib = library ?: FastLibraryStore.loadSync(app) ?: emptyList()
-        if (lib.isEmpty()) { lastMessage = "Library index is empty — run a scan first"; return false }
+        if (lib.isEmpty()) { lastMessage = "The library is empty. Run a scan first."; return false }
         libraryOverride = library
         loadPrefs(app)
         val player = PlayerHolder.ensure(app)
@@ -128,7 +128,7 @@ object StationEngine {
                 list.addAll(batch)
                 if (list.isEmpty()) {
                     active = false
-                    lastMessage = "Not enough listening history to build this station yet — listen more to unlock"
+                    lastMessage = "Not enough listening history for this station yet. Listen more to unlock it."
                     return@post
                 }
                 val p = PlayerHolder.player ?: return@post

@@ -423,7 +423,7 @@ fun MikuBatteryObservatoryModal(
                                 Spacer(Modifier.width(10.dp))
                                 Column {
                                     Text(
-                                        text = "KOKORO ENERGY CELL",
+                                        text = "BATTERY",
                                         color = Color.White,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Black,
@@ -507,14 +507,14 @@ fun MikuBatteryObservatoryModal(
                                         // Runtime / time-to-full only when REAL current and REAL charge
                                         // counters exist; otherwise the status alone, no estimate.
                                         text = when {
-                                            isNetDischargingOnUsb -> "⚠️ ${telemetry.status}" +
+                                            isNetDischargingOnUsb -> "${telemetry.status}" +
                                                 (if (telemetry.estTimeToEmptyMin > 0) " · ${telemetry.estTimeToEmptyMin / 60}h ${telemetry.estTimeToEmptyMin % 60}m to empty" else "")
-                                            telemetry.status.contains("equilibrium") -> "⚡ ${telemetry.status} · battery holding steady"
-                                            telemetry.isCharging -> "⚡ ${telemetry.status.ifBlank { "Charging" }}" +
+                                            telemetry.status.contains("equilibrium") -> "${telemetry.status} · battery holding steady"
+                                            telemetry.isCharging -> "${telemetry.status.ifBlank { "Charging" }}" +
                                                 (if (telemetry.estTimeToFullMin > 0) " · ${telemetry.estTimeToFullMin}m to full" else " · time to full not measurable")
-                                            telemetry.estTimeToEmptyMin > 0 -> "🔋 ${telemetry.status} · ~${telemetry.estTimeToEmptyMin / 60}h ${telemetry.estTimeToEmptyMin % 60}m (${telemetry.powerMw} mW)"
-                                            telemetry.status.isNotBlank() -> "🔋 ${telemetry.status}" + (if (telemetry.powerMw > 0) " (${telemetry.powerMw} mW)" else "")
-                                            else -> "🔋 Battery status not reported"
+                                            telemetry.estTimeToEmptyMin > 0 -> "${telemetry.status} · ~${telemetry.estTimeToEmptyMin / 60}h ${telemetry.estTimeToEmptyMin % 60}m (${telemetry.powerMw} mW)"
+                                            telemetry.status.isNotBlank() -> "${telemetry.status}" + (if (telemetry.powerMw > 0) " (${telemetry.powerMw} mW)" else "")
+                                            else -> "Battery status not reported"
                                         },
                                         color = if (isNetDischargingOnUsb) Color(0xFFFF9100) else if (telemetry.isCharging) com.miku.launcher.ui.MikuIdentity.Leek else Color.White,
                                         fontSize = 10.5.sp,
@@ -580,8 +580,8 @@ fun MikuBatteryObservatoryModal(
                                         // a permanently empty canvas on a unit that exposes no
                                         // current node.
                                         text = if (currentHistory.isEmpty() && voltageHistory.isEmpty())
-                                            "⚡ POWER DRAIN & VOLTAGE HISTOGRAM · NO SAMPLES"
-                                        else "⚡ REAL-TIME POWER DRAIN & VOLTAGE HISTOGRAM",
+                                            "POWER AND VOLTAGE · NO SAMPLES YET"
+                                        else "POWER AND VOLTAGE",
                                         color = batteryColor,
                                         fontSize = 9.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -671,7 +671,7 @@ fun MikuBatteryObservatoryModal(
                                     modifier = Modifier.weight(1f),
                                     title = "POWER DRAW",
                                     value = if (telemetry.powerMw > 0) "${telemetry.powerMw} mW" else "— mW",
-                                    sub = if (telemetry.powerMw > 0) "${String.format(Locale.US, "%.2f", telemetry.powerMw / 1000.0)} W Total" else "needs V + I",
+                                    sub = if (telemetry.powerMw > 0) "${String.format(Locale.US, "%.2f", telemetry.powerMw / 1000.0)} W total" else "needs V + I",
                                     icon = Icons.Default.ElectricBolt,
                                     color = com.miku.launcher.ui.MikuIdentity.Gold
                                 )
@@ -724,7 +724,7 @@ fun MikuBatteryObservatoryModal(
                         // ==========================================
                         Column {
                             Text(
-                                text = "TELEMETRY SOURCES · PLUG STATE",
+                                text = "SOURCES AND PLUG",
                                 color = MikuCyan,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,

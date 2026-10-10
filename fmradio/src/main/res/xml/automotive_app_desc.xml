@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto descriptor. Lists the radio as a media app. Referenced from the
+     com.google.android.gms.car.application meta-data in AndroidManifest.xml. -->
+<automotiveApp>
+    <uses name="media" />
+</automotiveApp>

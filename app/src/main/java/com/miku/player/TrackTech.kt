@@ -710,8 +710,8 @@ object TrackTech {
 
         val badgeSymbol = when {
             isVinylRip -> "⊚"
-            highestTier == 4 -> "💎"
-            highestTier == 3 -> "👑"
+            highestTier == 4 -> "◆"
+            highestTier == 3 -> "◇"
             highestTier == 2 -> "✧"
             else -> "♪"
         }

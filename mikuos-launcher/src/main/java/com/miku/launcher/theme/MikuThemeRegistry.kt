@@ -91,7 +91,7 @@ object MikuThemeRegistry {
     val Default = MikuTheme(
         id = "default",
         displayName = "Default (Beach)",
-        description = "Miku on the shoreline at sunrise — the shipping default.",
+        description = "Miku on the shore at sunrise. This is the default.",
         wallpaperDrawableName = "miku_wallpaper", // already exists: R.drawable.miku_wallpaper
         lockscreenDrawableName = "miku_wallpaper",
         accentPalette = MikuAccentPalette(
@@ -110,7 +110,7 @@ object MikuThemeRegistry {
     val Halloween = MikuTheme(
         id = "halloween",
         displayName = "Halloween",
-        description = "Jack-o-lantern Miku, witch hat + candy palette.",
+        description = "Jack-o-lantern Miku, witch hat and candy colors.",
         wallpaperDrawableName = "theme_halloween_wallpaper", // present: res/drawable-nodpi/theme_halloween_wallpaper.jpg
         lockscreenDrawableName = "theme_halloween_wallpaper",
         accentPalette = MikuAccentPalette(

@@ -8,6 +8,10 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.os.Build
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.roundToInt
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
@@ -53,6 +57,16 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
  *
  * FOCUS. The window is FLAG_NOT_FOCUSABLE while hidden so it never eats input meant for the app
  * underneath. Opening clears that flag so the back key reaches the shade; closing sets it again.
+ * Back goes through the OnBackPressedDispatcher, so the shade's own BackHandler gets it first
+ * (close the tile editor, then collapse QS); the dispatcher's fallback closes the window.
+ *
+ * BLUR. On API 31+ with cross-window blur enabled (SurfaceFlinger support, not battery saver),
+ * the shown window asks for FLAG_BLUR_BEHIND: one backdrop blur of whatever app is underneath,
+ * done by the compositor, instead of anything per-tile in Compose. The radius steps up with the
+ * pull in quarters, so a slow pull does not blur the whole screen on the first pixel, while the
+ * window relayouts stay at a handful per gesture. MikuGlass.backdropBlur tells the composables so
+ * they can switch to the clearer glass tint. Never set while hidden: a hidden full-screen window
+ * that still blurs would blur the device.
  */
 class MikuShadeWindow(
     private val ctx: Context,
@@ -79,6 +93,11 @@ class MikuShadeWindow(
 
     private var view: ComposeView? = null
     private var params: WindowManager.LayoutParams? = null
+    private var blurListener: java.util.function.Consumer<Boolean>? = null
+    /** Cross-window blur available right now (listener-driven; false below API 31). */
+    @Volatile private var blurAvailable = false
+    /** Blur step currently applied, 0..4 quarters of [MikuGlass.BACKDROP_BLUR_DP]. */
+    private var blurStep = 0
 
     /** Visible to the user right now. */
     @Volatile var isOpen = false
@@ -105,11 +124,11 @@ class MikuShadeWindow(
             setViewTreeOnBackPressedDispatcherOwner(this@MikuShadeWindow)
             visibility = View.GONE
             setContent { ShadeContent() }
-            // Back dismisses the shade. The window only has focus while open, so this never
-            // steals the key from the app underneath.
+            // Back goes to the shade's BackHandler (editor, then QS, then close). The window only
+            // has focus while open, so this never steals the key from the app underneath.
             setOnKeyListener { _, keyCode, event ->
                 if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP && isOpen) {
-                    close(); true
+                    onBackPressedDispatcher.onBackPressed(); true
                 } else false
             }
             isFocusableInTouchMode = true
@@ -127,6 +146,7 @@ class MikuShadeWindow(
                 view = v; params = p
                 lifecycleRegistry.currentState = Lifecycle.State.STARTED
                 Log.i(TAG, "shade window attached (composed once, shown on demand)")
+                watchBlur()
             }
             .onFailure { Log.w(TAG, "shade window add failed: $it") }
     }
@@ -141,7 +161,36 @@ class MikuShadeWindow(
     private fun shownFlags() =
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+            (if (blurAvailable) WindowManager.LayoutParams.FLAG_BLUR_BEHIND else 0)
+
+    /** Follow cross-window blur availability (it drops in battery saver, tunnelled video, etc). */
+    private fun watchBlur() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || blurListener != null) return
+        val l = java.util.function.Consumer<Boolean> { enabled ->
+            blurAvailable = enabled
+            MikuGlass.setBackdropBlur(enabled)
+            Log.i(TAG, "cross-window blur " + (if (enabled) "available" else "unavailable"))
+            if (isOpen) applyBlur(if (enabled) 4 else 0, force = true)
+        }
+        runCatching { windowManager.addCrossWindowBlurEnabledListener(ctx.mainExecutor, l) }
+            .onSuccess { blurListener = l }
+            .onFailure { Log.w(TAG, "blur listener: $it") }
+    }
+
+    /** Blur-behind radius in quarters (0..4). Each change is a window relayout, so callers step. */
+    private fun applyBlur(step: Int, force: Boolean = false) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val s = if (blurAvailable && isOpen) step.coerceIn(0, 4) else 0
+        if (s == blurStep && !force) return
+        blurStep = s
+        val v = view ?: return
+        val p = params ?: return
+        val px = (MikuGlass.BACKDROP_BLUR_DP * ctx.resources.displayMetrics.density * s / 4f).toInt()
+        p.flags = if (isOpen) shownFlags() else hiddenFlags()
+        p.blurBehindRadius = px
+        runCatching { windowManager.updateViewLayout(v, p) }
+    }
 
     /** Show the shade. [dragOffsetPx] >= 0 means a finger is already pulling it down. */
     fun open(dragOffsetPx: Int = -1, expanded: Boolean = false) {
@@ -152,6 +201,10 @@ class MikuShadeWindow(
         isOpen = true
         params?.let { p ->
             p.flags = shownFlags()
+            // Opens unblurred; ShadeContent steps the blur up as the panel is revealed, for a
+            // finger pull and a programmatic slide-in alike.
+            blurStep = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) p.blurBehindRadius = 0
             runCatching { windowManager.updateViewLayout(v, p) }
         }
         v.visibility = View.VISIBLE
@@ -168,11 +221,17 @@ class MikuShadeWindow(
         v.visibility = View.GONE
         params?.let { p ->
             p.flags = hiddenFlags()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) p.blurBehindRadius = 0
+            blurStep = 0
             runCatching { windowManager.updateViewLayout(v, p) }
         }
     }
 
     fun detach() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            blurListener?.let { l -> runCatching { windowManager.removeCrossWindowBlurEnabledListener(l) } }
+        }
+        blurListener = null
         view?.let { v -> runCatching { windowManager.removeView(v) } }
         view = null; params = null; isOpen = false
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
@@ -207,11 +266,20 @@ class MikuShadeWindow(
                     } else if (wasDown) {
                         wasDown = false
                         val vel = s.velocityPxS
-                        val revealed = ((panelH + ty.value) / panelH).coerceIn(0f, 1f)
-                        if (vel < -900f || (revealed < 0.45f && vel < 600f)) {
+                        // Px of panel showing. The old rule was "under 45% of the panel and not
+                        // flung down = close". The panel is taller than a landscape screen, so a
+                        // full-length drag there could never pass 45% and the shade closed on
+                        // every release. Now: open past a quarter of the screen or 120dp
+                        // (whichever is less), or on any downward fling. Close on an upward fling.
+                        val shownPx = (panelH + ty.value).coerceAtLeast(0f)
+                        val dm = ctx.resources.displayMetrics
+                        val openAt = minOf(dm.heightPixels * 0.25f, 120f * dm.density, panelH * 0.45f)
+                        if (vel < -900f || (shownPx < openAt && vel < 600f)) {
+                            MikuHaptics.tick(ctx)                     // released: shade goes away
                             ty.animateTo(-panelH - 40f, tween(MikuMotion.ms(150), easing = FastOutSlowInEasing))
                             close()
                         } else {
+                            MikuHaptics.confirm(ctx)                  // released: shade stays open
                             ty.animateTo(0f, MikuMotion.settle(), initialVelocity = vel.coerceIn(-4000f, 4000f))
                         }
                     }
@@ -225,6 +293,15 @@ class MikuShadeWindow(
         LaunchedEffect(closeSerial) {
             if (closeSerial == 0) return@LaunchedEffect
             ty.snapTo(-panelH - 40f)
+        }
+
+        // Backdrop blur follows the reveal in quarters (see BLUR above). snapshotFlow +
+        // distinctUntilChanged: the flow emits a handful of times per pull, not per frame.
+        LaunchedEffect(openSerial) {
+            if (openSerial == 0) return@LaunchedEffect
+            snapshotFlow { (((panelH + ty.value) / panelH).coerceIn(0f, 1f) * 4f).roundToInt() }
+                .distinctUntilChanged()
+                .collect { q -> if (isOpen) applyBlur(q) }
         }
 
         MikuNotificationShadeView(
